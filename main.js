@@ -31,13 +31,11 @@ async function init() {
 
         // --- SYSTÈME DE ZOOM ---
         container.addEventListener('wheel', (e) => {
-            if (e.ctrlKey) { // Optionnel: Zoom seulement si CTRL est enfoncé, ou enlève la condition pour zoom direct
                 e.preventDefault();
                 const delta = e.deltaY > 0 ? -0.1 : 0.1;
                 zoomLevel = Math.min(Math.max(0.2, zoomLevel + delta), 2); // Limite entre 20% et 200%
                 board.style.transform = `scale(${zoomLevel})`;
                 board.style.transformOrigin = "center center";
-            }
         }, { passive: false });
 
         // Rotation
@@ -92,3 +90,4 @@ function genererSlotsAutour(x, y) {
 }
 
 init();
+
