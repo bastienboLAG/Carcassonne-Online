@@ -1,66 +1,67 @@
 /* style.css */
-body {
-    background-color: #1a1a1a; /* Fond très sombre */
-    color: white;
-    font-family: sans-serif;
+html, body {
     margin: 0;
-    height: 100vh;
+    padding: 0;
+    height: 100%;
+    background-color: #1a1a1a;
+    overflow: hidden; /* Empêche le rebond du scroll sur mobile/mac */
+}
+
+body {
     display: flex;
-    flex-direction: column;
-    overflow: hidden;
+    flex-direction: column; /* Interface en haut, Plateau en bas */
 }
 
 #game-ui {
-    background: #2a2a2a;
-    padding: 15px;
+    height: 120px; /* Taille fixe pour l'interface */
+    background-color: #2c3e50; /* Bleu nuit pour bien le différencier */
     display: flex;
     align-items: center;
-    gap: 30px;
-    border-bottom: 2px solid #444;
-    z-index: 100;
+    padding: 0 20px;
+    gap: 20px;
+    border-bottom: 3px solid #000;
+    z-index: 10;
 }
 
 #board-container {
-    flex: 1;
+    flex: 1; /* Prend tout le reste de l'écran */
     overflow: auto;
     background-color: #1a1a1a;
 }
 
 #board {
     display: grid;
-    /* 100 colonnes de 104px */
+    /* On définit 100 colonnes et lignes de 104px */
     grid-template-columns: repeat(100, 104px);
     grid-template-rows: repeat(100, 104px);
     width: 10400px;
     height: 10400px;
     background-image: radial-gradient(#333 2px, transparent 2px);
-    background-size: 104px 104px; /* Aligné sur la taille des tuiles */
+    background-size: 104px 104px;
 }
 
+/* Les tuiles posées */
 .tile {
     width: 104px;
     height: 104px;
-    display: block;
 }
 
-/* Style des zones cliquables (Slots) */
+/* Les zones cliquables */
 .slot {
-    width: 90px;  /* Légèrement plus petit pour l'esthétique */
-    height: 90px;
+    width: 94px;
+    height: 94px;
     border: 2px dashed #555;
-    margin: 5px;
+    margin: 3px;
+    background-color: rgba(255, 255, 255, 0.05);
     cursor: pointer;
-    background: rgba(255, 255, 255, 0.05);
-    transition: all 0.2s;
 }
 
 .slot:hover {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: gold;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-color: #f1c40f;
 }
 
 #tile-preview img {
-    width: 80px;
-    height: 80px;
-    border: 2px solid gold;
+    height: 90px;
+    border: 2px solid #f1c40f;
 }
