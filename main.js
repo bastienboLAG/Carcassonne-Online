@@ -6,11 +6,12 @@ let tuileEnMain = null;
 
 async function init() {
     try {
+        // 1. Chargement de la tuile de départ
         const response = await fetch('./data/Base/04.json');
         const data = await response.json();
         tuileEnMain = new Tile(data);
 
-        // Preview
+        // 2. Affichage Preview
         const previewContainer = document.getElementById('tile-preview');
         const imgPreview = document.createElement('img');
         imgPreview.src = tuileEnMain.imagePath;
@@ -18,17 +19,17 @@ async function init() {
         previewContainer.innerHTML = ''; 
         previewContainer.appendChild(imgPreview);
 
-        // On pose la tuile de départ au centre
+        // 3. Pose de la tuile de départ (50, 50)
         poserTuile(50, 50, tuileEnMain);
 
-        // Centrage initial
+        // 4. Centrage du plateau
         setTimeout(() => {
             const container = document.getElementById('board-container');
             container.scrollLeft = 5200 - (container.clientWidth / 2);
             container.scrollTop = 5200 - (container.clientHeight / 2);
         }, 100);
 
-        // Rotation
+        // 5. Rotation
         let totalRotation = 0;
         document.getElementById('rotate-btn').onclick = () => {
             totalRotation += 90;
@@ -36,13 +37,15 @@ async function init() {
             tuileEnMain.rotation = totalRotation % 360;
         };
 
-    } catch (error) { console.error(error); }
+    } catch (error) {
+        console.error("Erreur d'initialisation :", error);
+    }
 }
 
 function poserTuile(x, y, tile) {
     const boardElement = document.getElementById('board');
     
-    // 1. On crée l'image de la tuile
+    // Création de l'image sur le plateau
     const img = document.createElement('img');
     img.src = tile.imagePath;
     img.className = "tile";
@@ -53,40 +56,38 @@ function poserTuile(x, y, tile) {
     boardElement.appendChild(img);
     plateau.addTile(x, y, tile);
 
-    // 2. On supprime le slot sur lequel on a cliqué s'il existe
-    const oldSlot = document.querySelector(`.slot[data-x="${x}"][data-y="${y}"]`);
-    if (oldSlot) oldSlot.remove();
+    // Supprimer le slot cliquable ici même
+    const existingSlot = document.querySelector(`.slot[data-x="${x}"][data-y="${y}"]`);
+    if (existingSlot) existingSlot.remove();
 
-    // 3. On génère des slots autour de la nouvelle tuile
+    // Créer les nouveaux slots autour
     genererSlotsAutour(x, y);
 }
 
 function genererSlotsAutour(x, y) {
     const directions = [
-        { dx: 0, dy: -1 }, // Nord
-        { dx: 1, dy: 0 },  // Est
-        { dx: 0, dy: 1 },  // Sud
-        { dx: -1, dy: 0 }  // Ouest
+        { dx: 0, dy: -1 }, { dx: 1, dy: 0 },
+        { dx: 0, dy: 1 }, { dx: -1, dy: 0 }
     ];
 
     directions.forEach(dir => {
         const nx = x + dir.dx;
         const ny = y + dir.dy;
 
-        // Si la case est vide, on place un slot cliquable
-        if (plateau.isFree(nx, ny) && !document.querySelector(`.slot[data-x="${nx}"][data-y="${ny}"]`)) {
-            const slot = document.createElement('div');
-            slot.className = "slot";
-            slot.dataset.x = nx;
-            slot.dataset.y = ny;
-            slot.style.gridColumn = nx;
-            slot.style.gridRow = ny;
+        // On vérifie si la case est libre dans Board.js
+        if (plateau.isFree(nx, ny)) {
+            // Éviter de créer deux fois le même slot
+            if (!document.querySelector(`.slot[data-x="${nx}"][data-y="${ny}"]`)) {
+                const slot = document.createElement('div');
+                slot.className = "slot";
+                slot.dataset.x = nx;
+                slot.dataset.y = ny;
+                slot.style.gridColumn = nx;
+                slot.style.gridRow = ny;
 
-            slot.onclick = () => {
-                poserTuile(nx, ny, tuileEnMain);
-            };
-
-            document.getElementById('board').appendChild(slot);
+                slot.onclick = () => poserTuile(nx, ny, tuileEnMain);
+                document.getElementById('board').appendChild(slot);
+            }
         }
     });
 }
