@@ -3,7 +3,7 @@ html, body {
     margin: 0;
     padding: 0;
     height: 100%;
-    background-color: #1a1a1a;
+    background-color: #000; /* Fond noir pur */
     color: white;
     font-family: sans-serif;
     overflow: hidden;
@@ -11,34 +11,37 @@ html, body {
 
 body {
     display: flex;
-    flex-direction: column;
+    flex-direction: row; /* Aligne l'interface à gauche et le plateau à droite */
 }
 
-/* Le bandeau du haut (Interface) */
+/* Le bandeau à gauche (Interface) */
 #game-ui {
-    height: 140px; 
+    width: 250px; /* Largeur fixe à gauche */
+    height: 100vh;
     background-color: #2c3e50;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    border-bottom: 3px solid #000;
+    padding: 20px;
+    gap: 20px;
+    border-right: 3px solid #444;
     z-index: 10;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    box-shadow: 4px 0 10px rgba(0,0,0,0.5);
 }
 
 #current-tile-container {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 20px;
+    gap: 15px;
+    text-align: center;
 }
 
 /* La zone de jeu (Plateau) */
 #board-container {
     flex: 1; 
     overflow: auto;
-    background-color: #1a1a1a;
-    cursor: grab;
+    background-color: #000; /* Fond noir pur */
 }
 
 #board {
@@ -47,34 +50,38 @@ body {
     grid-template-rows: repeat(100, 104px);
     width: 10400px;
     height: 10400px;
-    /* Petit quadrillage pour aider à se repérer */
-    background-image: radial-gradient(#333 2px, transparent 2px);
-    background-size: 104px 104px;
+    /* On a supprimé le radial-gradient ici */
 }
 
-/* Les tuiles sur le plateau */
 .tile {
     width: 104px;
     height: 104px;
 }
 
-/* Les slots (zones de clic) */
 .slot {
     width: 94px;
     height: 94px;
-    border: 2px dashed #555;
-    margin: 3px;
-    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px dashed #444; /* Pointillés plus discrets */
+    margin: 5px;
+    background-color: rgba(255, 255, 255, 0.02);
     cursor: pointer;
 }
 
 .slot:hover {
-    background-color: rgba(255, 255, 255, 0.2);
-    border-color: #f1c40f;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: gold;
 }
 
-/* Image de preview en haut */
 #tile-preview img {
-    height: 80px;
-    border: 2px solid #f1c40f;
+    width: 120px; /* Un peu plus grand en preview à gauche */
+    border: 2px solid gold;
+}
+
+button {
+    padding: 10px 20px;
+    cursor: pointer;
+    background: gold;
+    border: none;
+    border-radius: 5px;
+    font-weight: bold;
 }
