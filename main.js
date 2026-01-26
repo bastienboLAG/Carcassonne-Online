@@ -1,33 +1,30 @@
-// main.js
 import { Tile } from './modules/Tile.js';
 
-async function testGame() {
+async function init() {
     try {
-        // 1. On va chercher le JSON dans data/base
+        // On charge le JSON de la tuile 04 qui est dans data/base/
         const response = await fetch('./data/base/04.json');
         const data = await response.json();
 
-        // 2. On crée une tuile avec ces données
+        // On crée la tuile avec les données
         const maTuile = new Tile(data);
 
-        // 3. On l'affiche dans le HTML
+        // On l'affiche
         const container = document.getElementById('tile-preview');
         const img = document.createElement('img');
-        img.src = maTuile.imagePath;
+        img.src = maTuile.imagePath; // Utilise le chemin assets/Base/C2/04.png
         img.id = "current-tile-img";
         container.appendChild(img);
 
-        // 4. On gère le bouton de rotation
-        const btn = document.getElementById('rotate-btn');
-        btn.addEventListener('click', () => {
+        // On gère le bouton pour tourner
+        document.getElementById('rotate-btn').addEventListener('click', () => {
             maTuile.rotation = (maTuile.rotation + 90) % 360;
             document.getElementById('current-tile-img').style.transform = `rotate(${maTuile.rotation}deg)`;
-            console.log("Nouvelle rotation :", maTuile.rotation);
         });
 
     } catch (error) {
-        console.error("Erreur lors du chargement :", error);
+        console.error("Erreur de chargement :", error);
     }
 }
 
-testGame();
+init();
