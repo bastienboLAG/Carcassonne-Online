@@ -1,51 +1,46 @@
 /* style.css */
 body {
     background-color: #1a1a1a;
-    color: white;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     margin: 0;
-    overflow: hidden; /* Empêche le scroll de toute la page */
+    height: 100vh;
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    overflow: hidden;
 }
 
 #game-ui {
+    background: #333;
     padding: 10px;
-    background: rgba(0, 0, 0, 0.8);
-    z-index: 10; /* Reste au-dessus du plateau */
+    z-index: 100;
     display: flex;
-    align-items: center;
     gap: 20px;
+    align-items: center;
+    border-bottom: 2px solid #444;
 }
 
-/* Zone du plateau (infinie/scrollable) */
 #board-container {
-    flex-grow: 1;
-    overflow: auto; /* Permet de scroller si le plateau devient grand */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background-image: radial-gradient(#333 1px, transparent 1px);
-    background-size: 50px 50px; /* Petit quadrillage de fond */
+    flex: 1;
+    overflow: auto; /* Permet de naviguer dans le plateau */
+    background-image: radial-gradient(#444 1px, transparent 1px);
+    background-size: 104px 104px;
 }
 
 #board {
     display: grid;
-    /* On crée une grille où chaque case fait 104px */
-    grid-auto-columns: 104px;
-    grid-auto-rows: 104px;
-    gap: 2px;
-}
-
-#tile-preview img {
-    width: 80px; /* Plus petit dans l'interface */
-    height: 80px;
-    border: 2px solid gold;
-    transition: transform 0.3s ease;
+    /* On crée une grille de 100x100 cases de 104px */
+    grid-template-columns: repeat(100, 104px);
+    grid-template-rows: repeat(100, 104px);
+    width: 10400px; /* 100 cases * 104px */
+    height: 10400px;
 }
 
 .tile {
     width: 104px;
     height: 104px;
+    object-fit: contain;
+}
+
+#tile-preview img {
+    width: 80px;
+    border: 2px solid gold;
 }
