@@ -1,0 +1,22 @@
+{
+  "id": "17",
+  "quantity": 1,
+  "extension": "base",
+  "image": "17.png",
+  "zones": [
+    {
+      "id": 1,
+      "type": "city",
+      "edges": ["north", "west", "east"],
+      "features": ["shield"],
+      "meeplePosition": "9"
+    },
+    {
+      "id": 2,
+      "type": "field",
+      "edges": ["south"],
+      "features": [],
+      "meeplePosition": "23"
+    }
+  ]
+}
