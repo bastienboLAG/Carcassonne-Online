@@ -2,61 +2,93 @@ import { Tile } from './modules/Tile.js';
 import { Board } from './modules/Board.js';
 
 const plateau = new Board();
+let tuileEnMain = null;
 
 async function init() {
     try {
         const response = await fetch('./data/Base/04.json');
         const data = await response.json();
-        const maTuile = new Tile(data);
+        tuileEnMain = new Tile(data);
 
         // Preview
         const previewContainer = document.getElementById('tile-preview');
         const imgPreview = document.createElement('img');
-        imgPreview.src = maTuile.imagePath;
+        imgPreview.src = tuileEnMain.imagePath;
         imgPreview.id = "current-tile-img";
         previewContainer.innerHTML = ''; 
         previewContainer.appendChild(imgPreview);
 
-        // Pose sur le plateau (On utilise 50, 50 comme centre)
-        poserTuileSurPlateau(maTuile, 50, 50);
+        // On pose la tuile de départ au centre
+        poserTuile(50, 50, tuileEnMain);
 
-        // FORCE LE SCROLL APRÈS UN COURT DÉLAI
+        // Centrage initial
         setTimeout(() => {
             const container = document.getElementById('board-container');
-            if (container) {
-                // Le milieu de 10400px est 5200. 
-                // On retire la moitié de la largeur de la fenêtre pour être pile au centre.
-                const centerX = 5200 - (container.clientWidth / 2);
-                const centerY = 5200 - (container.clientHeight / 2);
-                
-                container.scrollLeft = centerX;
-                container.scrollTop = centerY;
-                console.log("Plateau centré en :", centerX, centerY);
-            }
-        }, 100); 
+            container.scrollLeft = 5200 - (container.clientWidth / 2);
+            container.scrollTop = 5200 - (container.clientHeight / 2);
+        }, 100);
 
         // Rotation
         let totalRotation = 0;
         document.getElementById('rotate-btn').onclick = () => {
             totalRotation += 90;
             imgPreview.style.transform = `rotate(${totalRotation}deg)`;
-            maTuile.rotation = totalRotation % 360;
+            tuileEnMain.rotation = totalRotation % 360;
         };
 
-    } catch (error) {
-        console.error("Erreur :", error);
-    }
+    } catch (error) { console.error(error); }
 }
 
-function poserTuileSurPlateau(tile, x, y) {
+function poserTuile(x, y, tile) {
     const boardElement = document.getElementById('board');
+    
+    // 1. On crée l'image de la tuile
     const img = document.createElement('img');
     img.src = tile.imagePath;
     img.className = "tile";
     img.style.gridColumn = x; 
     img.style.gridRow = y;
+    img.style.transform = `rotate(${tile.rotation}deg)`;
+    
     boardElement.appendChild(img);
     plateau.addTile(x, y, tile);
+
+    // 2. On supprime le slot sur lequel on a cliqué s'il existe
+    const oldSlot = document.querySelector(`.slot[data-x="${x}"][data-y="${y}"]`);
+    if (oldSlot) oldSlot.remove();
+
+    // 3. On génère des slots autour de la nouvelle tuile
+    genererSlotsAutour(x, y);
+}
+
+function genererSlotsAutour(x, y) {
+    const directions = [
+        { dx: 0, dy: -1 }, // Nord
+        { dx: 1, dy: 0 },  // Est
+        { dx: 0, dy: 1 },  // Sud
+        { dx: -1, dy: 0 }  // Ouest
+    ];
+
+    directions.forEach(dir => {
+        const nx = x + dir.dx;
+        const ny = y + dir.dy;
+
+        // Si la case est vide, on place un slot cliquable
+        if (plateau.isFree(nx, ny) && !document.querySelector(`.slot[data-x="${nx}"][data-y="${ny}"]`)) {
+            const slot = document.createElement('div');
+            slot.className = "slot";
+            slot.dataset.x = nx;
+            slot.dataset.y = ny;
+            slot.style.gridColumn = nx;
+            slot.style.gridRow = ny;
+
+            slot.onclick = () => {
+                poserTuile(nx, ny, tuileEnMain);
+            };
+
+            document.getElementById('board').appendChild(slot);
+        }
+    });
 }
 
 init();
