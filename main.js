@@ -8,7 +8,9 @@ let zoomLevel = 1;
 async function init() {
     try {
         const response = await fetch('./data/Base/04.json');
+        if (!response.ok) throw new Error("Fichier JSON introuvable");
         const data = await response.json();
+        
         tuileEnMain = new Tile(data);
 
         const previewContainer = document.getElementById('tile-preview');
@@ -18,7 +20,7 @@ async function init() {
         previewContainer.innerHTML = ''; 
         previewContainer.appendChild(imgPreview);
 
-        // Pose initiale forcée au centre
+        // Pose de départ obligatoire au centre
         poserTuile(50, 50, tuileEnMain);
 
         const container = document.getElementById('board-container');
@@ -29,7 +31,7 @@ async function init() {
             container.scrollTop = 5200 - (container.clientHeight / 2);
         }, 100);
 
-        // Zoom
+        // Zoom et Drag
         container.addEventListener('wheel', (e) => {
             e.preventDefault();
             const delta = e.deltaY > 0 ? -0.1 : 0.1;
@@ -37,7 +39,6 @@ async function init() {
             board.style.transform = `scale(${zoomLevel})`;
         }, { passive: false });
 
-        // Drag
         let isDown = false, startX, startY, scrollLeft, scrollTop;
         container.addEventListener('mousedown', (e) => {
             if (e.target !== container && e.target !== board) return;
@@ -50,22 +51,17 @@ async function init() {
         window.addEventListener('mouseup', () => isDown = false);
         container.addEventListener('mousemove', (e) => {
             if (!isDown) return;
-            const x = e.pageX - container.offsetLeft;
-            const y = e.pageY - container.offsetTop;
-            container.scrollLeft = scrollLeft - (x - startX);
-            container.scrollTop = scrollTop - (y - startY);
+            container.scrollLeft = scrollLeft - (e.pageX - container.offsetLeft - startX);
+            container.scrollTop = scrollTop - (e.pageY - container.offsetTop - startY);
         });
 
-        // Rotation + Refresh des slots
         document.getElementById('rotate-btn').onclick = () => {
             tuileEnMain.rotation = (tuileEnMain.rotation + 90) % 360;
             imgPreview.style.transform = `rotate(${tuileEnMain.rotation}deg)`;
-            
-            // Crucial : Quand on tourne la tuile, les endroits où on peut la poser changent !
             rafraichirTousLesSlots();
         };
 
-    } catch (error) { console.error(error); }
+    } catch (error) { console.error("Erreur :", error); }
 }
 
 function poserTuile(x, y, tile) {
@@ -78,7 +74,6 @@ function poserTuile(x, y, tile) {
     img.style.transform = `rotate(${tile.rotation}deg)`;
     boardElement.appendChild(img);
     
-    // On crée une COPIE de la tuile pour le plateau
     const tuileFixee = new Tile({id: tile.id, zones: tile.zones});
     tuileFixee.rotation = tile.rotation;
     plateau.addTile(x, y, tuileFixee);
@@ -87,10 +82,7 @@ function poserTuile(x, y, tile) {
 }
 
 function rafraichirTousLesSlots() {
-    // Supprime tous les slots existants
     document.querySelectorAll('.slot').forEach(s => s.remove());
-    
-    // Pour chaque tuile déjà posée, on regarde autour
     for (let coord in plateau.placedTiles) {
         const [x, y] = coord.split(',').map(Number);
         genererSlotsAutour(x, y);
@@ -103,7 +95,6 @@ function genererSlotsAutour(x, y) {
         const nx = x + dir.dx;
         const ny = y + dir.dy;
         if (plateau.isFree(nx, ny)) {
-            // ON VERIFIE SI LA TUILE EN MAIN PEUT ALLER LA
             if (plateau.canPlaceTile(nx, ny, tuileEnMain)) {
                 if (!document.querySelector(`.slot[data-x="${nx}"][data-y="${ny}"]`)) {
                     const slot = document.createElement('div');
