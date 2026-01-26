@@ -1,24 +1,51 @@
+/* style.css */
 body {
-    background-color: #2c3e50;
+    background-color: #1a1a1a;
     color: white;
-    font-family: sans-serif;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    overflow: hidden; /* Empêche le scroll de toute la page */
     display: flex;
-    justify-content: center;
-    padding: 20px;
+    flex-direction: column;
+    height: 100vh;
 }
 
-#tile-preview img {
-    width: 104px;
-    height: 104px;
-    border: 2px solid gold;
-    transition: transform 0.3s ease; /* Animation fluide quand on tourne */
+#game-ui {
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 10; /* Reste au-dessus du plateau */
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+/* Zone du plateau (infinie/scrollable) */
+#board-container {
+    flex-grow: 1;
+    overflow: auto; /* Permet de scroller si le plateau devient grand */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-image: radial-gradient(#333 1px, transparent 1px);
+    background-size: 50px 50px; /* Petit quadrillage de fond */
 }
 
 #board {
     display: grid;
-    grid-template-columns: repeat(10, 104px); /* Grille temporaire */
+    /* On crée une grille où chaque case fait 104px */
+    grid-auto-columns: 104px;
+    grid-auto-rows: 104px;
     gap: 2px;
-    margin-top: 20px;
-    background-color: #34495e;
-    padding: 10px;
+}
+
+#tile-preview img {
+    width: 80px; /* Plus petit dans l'interface */
+    height: 80px;
+    border: 2px solid gold;
+    transition: transform 0.3s ease;
+}
+
+.tile {
+    width: 104px;
+    height: 104px;
 }
