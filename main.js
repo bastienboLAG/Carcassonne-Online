@@ -25,10 +25,15 @@ async function init() {
         container.appendChild(img);
 
         // Rotation
-        document.getElementById('rotate-btn').onclick = () => {
-            maTuile.rotation = (maTuile.rotation + 90) % 360;
-            img.style.transform = `rotate(${maTuile.rotation}deg)`;
-        };
+	let currentRotation = 0; // 0, 90, 180, 270
+	document.getElementById('rotate-btn').onclick = () => {
+   	currentRotation += 90;
+ 	// On applique la rotation visuelle sans se soucier du retour à zéro
+    	img.style.transform = `rotate(${currentRotation}deg)`;
+    
+    	// Pour la logique interne du jeu (tes JSON), on garde une valeur entre 0 et 270
+   	 maTuile.rotation = currentRotation % 360;
+	};
 
     } catch (error) {
         console.error("Erreur détaillée :", error);
