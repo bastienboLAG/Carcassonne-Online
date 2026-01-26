@@ -1,7 +1,7 @@
 export class Tile {
     constructor(data) {
         this.id = data.id;
-        this.imagePath = `./assets/Base/C2/${data.id}.jpg`;
+        this.imagePath = `./assets/Base/C2/${data.id}.png`;
         this.zones = data.zones; // Contient tes données : { "north-left": "city", ... }
         this.rotation = 0; // Sera 0, 90, 180 ou 270
     }
@@ -33,4 +33,5 @@ export class Tile {
         return rotatedZones;
     }
 }
+
 
