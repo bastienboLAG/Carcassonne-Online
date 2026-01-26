@@ -4,49 +4,61 @@ html, body {
     padding: 0;
     height: 100%;
     background-color: #1a1a1a;
-    overflow: hidden; /* Empêche le rebond du scroll sur mobile/mac */
+    color: white;
+    font-family: sans-serif;
+    overflow: hidden;
 }
 
 body {
     display: flex;
-    flex-direction: column; /* Interface en haut, Plateau en bas */
+    flex-direction: column;
 }
 
+/* Le bandeau du haut (Interface) */
 #game-ui {
-    height: 120px; /* Taille fixe pour l'interface */
-    background-color: #2c3e50; /* Bleu nuit pour bien le différencier */
+    height: 140px; 
+    background-color: #2c3e50;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    padding: 0 20px;
-    gap: 20px;
+    justify-content: center;
     border-bottom: 3px solid #000;
     z-index: 10;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
 }
 
+#current-tile-container {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+/* La zone de jeu (Plateau) */
 #board-container {
-    flex: 1; /* Prend tout le reste de l'écran */
+    flex: 1; 
     overflow: auto;
     background-color: #1a1a1a;
+    cursor: grab;
 }
 
 #board {
     display: grid;
-    /* On définit 100 colonnes et lignes de 104px */
     grid-template-columns: repeat(100, 104px);
     grid-template-rows: repeat(100, 104px);
     width: 10400px;
     height: 10400px;
+    /* Petit quadrillage pour aider à se repérer */
     background-image: radial-gradient(#333 2px, transparent 2px);
     background-size: 104px 104px;
 }
 
-/* Les tuiles posées */
+/* Les tuiles sur le plateau */
 .tile {
     width: 104px;
     height: 104px;
 }
 
-/* Les zones cliquables */
+/* Les slots (zones de clic) */
 .slot {
     width: 94px;
     height: 94px;
@@ -61,7 +73,8 @@ body {
     border-color: #f1c40f;
 }
 
+/* Image de preview en haut */
 #tile-preview img {
-    height: 90px;
+    height: 80px;
     border: 2px solid #f1c40f;
 }
