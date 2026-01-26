@@ -3,15 +3,14 @@ import { Board } from './modules/Board.js';
 
 const plateau = new Board();
 let tuileEnMain = null;
+let zoomLevel = 1; // Niveau de zoom initial
 
 async function init() {
     try {
-        // 1. Chargement de la tuile de départ
         const response = await fetch('./data/Base/04.json');
         const data = await response.json();
         tuileEnMain = new Tile(data);
 
-        // 2. Affichage Preview
         const previewContainer = document.getElementById('tile-preview');
         const imgPreview = document.createElement('img');
         imgPreview.src = tuileEnMain.imagePath;
@@ -19,17 +18,29 @@ async function init() {
         previewContainer.innerHTML = ''; 
         previewContainer.appendChild(imgPreview);
 
-        // 3. Pose de la tuile de départ (50, 50)
         poserTuile(50, 50, tuileEnMain);
 
-        // 4. Centrage du plateau
+        const container = document.getElementById('board-container');
+        const board = document.getElementById('board');
+
+        // Centrage initial
         setTimeout(() => {
-            const container = document.getElementById('board-container');
             container.scrollLeft = 5200 - (container.clientWidth / 2);
             container.scrollTop = 5200 - (container.clientHeight / 2);
         }, 100);
 
-        // 5. Rotation
+        // --- SYSTÈME DE ZOOM ---
+        container.addEventListener('wheel', (e) => {
+            if (e.ctrlKey) { // Optionnel: Zoom seulement si CTRL est enfoncé, ou enlève la condition pour zoom direct
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                zoomLevel = Math.min(Math.max(0.2, zoomLevel + delta), 2); // Limite entre 20% et 200%
+                board.style.transform = `scale(${zoomLevel})`;
+                board.style.transformOrigin = "center center";
+            }
+        }, { passive: false });
+
+        // Rotation
         let totalRotation = 0;
         document.getElementById('rotate-btn').onclick = () => {
             totalRotation += 90;
@@ -38,45 +49,34 @@ async function init() {
         };
 
     } catch (error) {
-        console.error("Erreur d'initialisation :", error);
+        console.error("Erreur :", error);
     }
 }
 
+// ... garde le reste de tes fonctions poserTuile et genererSlotsAutour identiques ...
+
 function poserTuile(x, y, tile) {
     const boardElement = document.getElementById('board');
-    
-    // Création de l'image sur le plateau
     const img = document.createElement('img');
     img.src = tile.imagePath;
     img.className = "tile";
     img.style.gridColumn = x; 
     img.style.gridRow = y;
     img.style.transform = `rotate(${tile.rotation}deg)`;
-    
     boardElement.appendChild(img);
     plateau.addTile(x, y, tile);
 
-    // Supprimer le slot cliquable ici même
     const existingSlot = document.querySelector(`.slot[data-x="${x}"][data-y="${y}"]`);
     if (existingSlot) existingSlot.remove();
-
-    // Créer les nouveaux slots autour
     genererSlotsAutour(x, y);
 }
 
 function genererSlotsAutour(x, y) {
-    const directions = [
-        { dx: 0, dy: -1 }, { dx: 1, dy: 0 },
-        { dx: 0, dy: 1 }, { dx: -1, dy: 0 }
-    ];
-
+    const directions = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
     directions.forEach(dir => {
         const nx = x + dir.dx;
         const ny = y + dir.dy;
-
-        // On vérifie si la case est libre dans Board.js
         if (plateau.isFree(nx, ny)) {
-            // Éviter de créer deux fois le même slot
             if (!document.querySelector(`.slot[data-x="${nx}"][data-y="${ny}"]`)) {
                 const slot = document.createElement('div');
                 slot.className = "slot";
@@ -84,7 +84,6 @@ function genererSlotsAutour(x, y) {
                 slot.dataset.y = ny;
                 slot.style.gridColumn = nx;
                 slot.style.gridRow = ny;
-
                 slot.onclick = () => poserTuile(nx, ny, tuileEnMain);
                 document.getElementById('board').appendChild(slot);
             }
