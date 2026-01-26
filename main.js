@@ -5,13 +5,11 @@ const plateau = new Board();
 
 async function init() {
     try {
-        // 1. Chargement de la tuile de départ (04.json)
         const response = await fetch('./data/Base/04.json');
-        if (!response.ok) throw new Error("Impossible de charger le JSON");
         const data = await response.json();
         const maTuile = new Tile(data);
 
-        // 2. Affichage dans la "main" du joueur (Preview en haut)
+        // Preview
         const previewContainer = document.getElementById('tile-preview');
         const imgPreview = document.createElement('img');
         imgPreview.src = maTuile.imagePath;
@@ -19,16 +17,25 @@ async function init() {
         previewContainer.innerHTML = ''; 
         previewContainer.appendChild(imgPreview);
 
-        // 3. Pose de la tuile de départ au centre (50, 50)
+        // Pose sur le plateau (On utilise 50, 50 comme centre)
         poserTuileSurPlateau(maTuile, 50, 50);
 
-        // 4. Centrer la vue du joueur sur le milieu du plateau
-        const container = document.getElementById('board-container');
-        // 5200px est le milieu exact (100 cases * 104px / 2)
-        container.scrollLeft = 5200 - (container.clientWidth / 2);
-        container.scrollTop = 5200 - (container.clientHeight / 2);
+        // FORCE LE SCROLL APRÈS UN COURT DÉLAI
+        setTimeout(() => {
+            const container = document.getElementById('board-container');
+            if (container) {
+                // Le milieu de 10400px est 5200. 
+                // On retire la moitié de la largeur de la fenêtre pour être pile au centre.
+                const centerX = 5200 - (container.clientWidth / 2);
+                const centerY = 5200 - (container.clientHeight / 2);
+                
+                container.scrollLeft = centerX;
+                container.scrollTop = centerY;
+                console.log("Plateau centré en :", centerX, centerY);
+            }
+        }, 100); 
 
-        // 5. Gestion de la rotation (visuelle + logique)
+        // Rotation
         let totalRotation = 0;
         document.getElementById('rotate-btn').onclick = () => {
             totalRotation += 90;
@@ -37,29 +44,19 @@ async function init() {
         };
 
     } catch (error) {
-        console.error("Erreur d'initialisation :", error);
+        console.error("Erreur :", error);
     }
 }
 
-/**
- * Fonction pour ajouter visuellement et logiquement une tuile sur la grille
- */
 function poserTuileSurPlateau(tile, x, y) {
     const boardElement = document.getElementById('board');
     const img = document.createElement('img');
-    
     img.src = tile.imagePath;
     img.className = "tile";
-    
-    // Positionnement dans la grille CSS
     img.style.gridColumn = x; 
     img.style.gridRow = y;
-    
     boardElement.appendChild(img);
-    
-    // On l'enregistre dans notre objet Board
     plateau.addTile(x, y, tile);
 }
 
-// Lancement du jeu
 init();
