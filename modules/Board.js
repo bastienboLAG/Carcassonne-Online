@@ -1,48 +1,28 @@
 export class Board {
-    constructor() {
-        this.placedTiles = {}; 
-    }
-
-    addTile(x, y, tile) {
-        this.placedTiles[`${x},${y}`] = tile;
-    }
-
-    isFree(x, y) {
-        return this.placedTiles[`${x},${y}`] === undefined;
-    }
-
-    getTileAt(x, y) {
-        return this.placedTiles[`${x},${y}`] || null;
-    }
+    constructor() { this.placedTiles = {}; }
+    addTile(x, y, tile) { this.placedTiles[`${x},${y}`] = tile; }
+    isFree(x, y) { return !this.placedTiles[`${x},${y}`]; }
 
     canPlaceTile(x, y, newTile) {
-        const neighbors = [
-            { nx: x, ny: y - 1, segments: ['north', 'north-left', 'north-right'], opposite: ['south', 'south-left', 'south-right'] },
-            { nx: x + 1, ny: y, segments: ['east', 'east-top', 'east-bottom'], opposite: ['west', 'west-top', 'west-bottom'] },
-            { nx: x, ny: y + 1, segments: ['south', 'south-left', 'south-right'], opposite: ['north', 'north-left', 'north-right'] },
-            { nx: x - 1, ny: y, segments: ['west', 'west-top', 'west-bottom'], opposite: ['east', 'east-top', 'east-bottom'] }
+        const adj = [
+            { nx: x, ny: y - 1, s: ['north', 'north-left', 'north-right'], o: ['south', 'south-left', 'south-right'] },
+            { nx: x + 1, ny: y, s: ['east', 'east-top', 'east-bottom'], o: ['west', 'west-top', 'west-bottom'] },
+            { nx: x, ny: y + 1, s: ['south', 'south-left', 'south-right'], o: ['north', 'north-left', 'north-right'] },
+            { nx: x - 1, ny: y, s: ['west', 'west-top', 'west-bottom'], o: ['east', 'east-top', 'east-bottom'] }
         ];
 
-        const newZones = newTile.currentZones;
         let hasNeighbor = false;
+        const newZ = newTile.currentZones;
 
-        for (const { nx, ny, segments, opposite } of neighbors) {
-            const neighborTile = this.getTileAt(nx, ny);
-            
-            if (neighborTile) {
+        for (const { nx, ny, s, o } of adj) {
+            const target = this.placedTiles[`${nx},${ny}`];
+            if (target) {
                 hasNeighbor = true;
-                const neighborZones = neighborTile.currentZones;
-                
-                // Vérification stricte de chaque segment
-                for (let i = 0; i < segments.length; i++) {
-                    if (newZones[segments[i]] !== neighborZones[opposite[i]]) {
-                        return false; // Si un seul segment diffère, pose interdite
-                    }
-                }
+                const targetZ = target.currentZones;
+                // Si un seul segment ne matche pas, on renvoie false
+                if (s.some((side, i) => newZ[side] !== targetZ[o[i]])) return false;
             }
         }
-
-        // Doit toucher au moins une tuile (sauf pour la première tuile posée via forceFirstTile)
         return hasNeighbor;
     }
 }
