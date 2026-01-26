@@ -19,10 +19,11 @@ body {
 }
 
 #board-container {
-    flex: 1;
-    overflow: auto; /* Permet de naviguer dans le plateau */
-    background-image: radial-gradient(#444 1px, transparent 1px);
-    background-size: 104px 104px;
+    flex: 1; /* Prend tout l'espace restant sous le menu */
+    width: 100vw; /* Toute la largeur */
+    height: calc(100vh - 100px); /* Toute la hauteur moins le menu du haut */
+    overflow: auto; 
+    position: relative;
 }
 
 #board {
@@ -44,3 +45,4 @@ body {
     width: 80px;
     border: 2px solid gold;
 }
+
