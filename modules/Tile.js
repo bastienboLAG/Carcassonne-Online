@@ -1,14 +1,19 @@
-// modules/Tile.js
 export class Tile {
-    constructor(config) {
-        this.id = config.id;
-        // On construit le chemin vers l'image en fonction de ta nouvelle structure
-        this.imagePath = `assets/Base/C2/${config.image}`;
-        this.zones = config.zones;
-        this.rotation = 0; 
+    constructor(data) {
+        this.id = data.id;
+        this.imagePath = `./assets/Base/${data.id}.jpg`;
+        this.zones = data.zones; // Contient tes données : { "north-left": "city", ... }
+        this.rotation = 0; // Sera 0, 90, 180 ou 270
     }
 
-    getRotatedEdges(zone) {
+    /**
+     * Renvoie les zones de la tuile après application de la rotation actuelle
+     */
+    get currentZones() {
+        let rotatedZones = { ...this.zones };
+        const steps = (this.rotation / 90) % 4;
+
+        // On applique le mapping autant de fois que nécessaire
         const transform = {
             'north': 'east', 'north-left': 'east-top', 'north-right': 'east-bottom',
             'east': 'south', 'east-top': 'south-right', 'east-bottom': 'south-left',
@@ -16,12 +21,15 @@ export class Tile {
             'west': 'north', 'west-top': 'north-right', 'west-bottom': 'north-left'
         };
 
-        let currentEdges = [...zone.edges];
-        let steps = (this.rotation / 90) % 4;
-
         for (let i = 0; i < steps; i++) {
-            currentEdges = currentEdges.map(edge => transform[edge] || edge);
+            let nextState = {};
+            for (let [zone, type] of Object.entries(rotatedZones)) {
+                const newZoneName = transform[zone] || zone; // On transforme si le nom existe dans le map
+                nextState[newZoneName] = type;
+            }
+            rotatedZones = nextState;
         }
-        return currentEdges;
+
+        return rotatedZones;
     }
 }
