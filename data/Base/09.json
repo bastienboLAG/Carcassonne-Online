@@ -14,14 +14,14 @@
     {
       "id": 2,
       "type": "city",
-      "edges": ["west"],
+      "edges": ["east"],
       "features": [],
       "meeplePosition": "11"
     },
     {
       "id": 3,
       "type": "field",
-      "edges": ["east", "south"],
+      "edges": ["west", "south"],
       "features": [],
       "meeplePosition": "13"
     }
