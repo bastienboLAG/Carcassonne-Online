@@ -26,9 +26,9 @@ export class Tile {
             'south': 'west',
             'south-left': 'west-top',
             
-            'west-bottom': 'north-left',  // ✅ CORRECTION
+            'west-bottom': 'north-left',
             'west': 'north',
-            'west-top': 'north-right'     // ✅ CORRECTION
+            'west-top': 'north-right'
         };
 
         let currentEdge = edgeName;
@@ -69,5 +69,18 @@ export class Tile {
 
         // Pas trouvé (normalement impossible si JSON correct)
         return null;
+    }
+
+    /**
+     * ✅ NOUVEAU : Crée une copie profonde de la tuile
+     * @returns {Tile} Une nouvelle instance de Tile avec les mêmes données
+     */
+    clone() {
+        const clonedTile = new Tile({
+            id: this.id,
+            zones: this.zones  // Les zones sont déjà des objets, pas besoin de deep copy
+        });
+        clonedTile.rotation = this.rotation;
+        return clonedTile;
     }
 }
