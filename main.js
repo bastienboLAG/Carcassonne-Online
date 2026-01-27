@@ -5,6 +5,7 @@ import { Deck } from './modules/Deck.js';
 const plateau = new Board();
 const deck = new Deck();
 let tuileEnMain = null;
+let tuilePosee = false; // ✅ NOUVEAU : Flag pour savoir si la tuile a été posée
 let zoomLevel = 1;
 
 // Variables pour le drag-to-pan
@@ -42,6 +43,12 @@ async function init() {
         };
 
         document.getElementById('end-turn-btn').onclick = () => {
+            // ✅ CORRECTION : Vérifier que la tuile a été posée
+            if (!tuilePosee) {
+                alert('Vous devez poser la tuile avant de terminer votre tour !');
+                return;
+            }
+            
             // Pour l'instant, on pioche juste une nouvelle tuile
             // Plus tard : placement de meeple, calcul de points, etc.
             piocherNouvelleTuile();
@@ -68,6 +75,7 @@ function piocherNouvelleTuile() {
 
     tuileEnMain = new Tile(tileData);
     tuileEnMain.rotation = 0;
+    tuilePosee = false; // ✅ NOUVEAU : Réinitialiser le flag
 
     // Affichage de l'image dans le deck (aperçu)
     const previewContainer = document.getElementById('tile-preview');
@@ -96,8 +104,9 @@ function poserTuile(x, y, tile, isFirst = false) {
     plateau.addTile(x, y, copy);
 
     if (!isFirst) {
-        // Après avoir posé la tuile, on pioche la suivante
-        piocherNouvelleTuile();
+        tuilePosee = true; // ✅ NOUVEAU : Marquer la tuile comme posée
+        rafraichirTousLesSlots();
+        // On ne pioche plus automatiquement, on attend le bouton "Terminer mon tour"
     } else {
         rafraichirTousLesSlots();
     }
@@ -129,7 +138,6 @@ function genererSlotsAutour(x, y) {
 function mettreAJourCompteur() {
     const remaining = deck.remaining();
     const total = deck.total();
-    const placed = total - remaining - 1; // -1 pour la tuile en main
     document.getElementById('tile-counter').textContent = `Tuiles : ${remaining} / ${total}`;
 }
 
