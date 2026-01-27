@@ -14,7 +14,6 @@ export class Board {
     }
 
     canPlaceTile(x, y, tileEnMain) {
-        // 1. On vérifie si la case est libre
         if (!this.isFree(x, y)) return false;
 
         let hasNeighbor = false;
@@ -29,13 +28,12 @@ export class Board {
             const neighbor = this.placedTiles[`${x + dir.dx},${y + dir.dy}`];
             if (neighbor) {
                 hasNeighbor = true;
-                // On vérifie la compatibilité via le Validator
+                // Si Validator n'est pas chargé ou renvoie false, on bloque
                 if (!areEdgesCompatible(tileEnMain, tileEnMain.rotation, neighbor, neighbor.rotation, dir.side)) {
-                    return false; 
+                    return false;
                 }
             }
         }
-
         return hasNeighbor;
     }
 }
