@@ -9,25 +9,38 @@ const rotateBtn = document.getElementById('rotate-btn');
 let deck = [];
 let currentTile = null;
 let currentRotation = 0;
-const placedTiles = {}; // Stockage des tuiles : "x,y": { tile, rotation }
+const placedTiles = {}; 
 
-// --- LOGIQUE DE ROTATION ET CORRESPONDANCE ---
+// --- MAPPAGE DES ROTATIONS (NL -> ET -> SR -> WB) ---
 
-/**
- * Mappe les segments du JSON vers leurs positions physiques après rotation.
- * Si rotation = 90, la face "North" physique correspond à l'ancienne face "West" du JSON.
- */
-const sideToJSON = {
-    0:   { north: 'north', east: 'east', south: 'south', west: 'west' },
-    90:  { north: 'west',  east: 'north', south: 'east',  west: 'south' },
-    180: { north: 'south', east: 'west',  south: 'north', west: 'east' },
-    270: { north: 'east',  east: 'south', south: 'west',  west: 'north' }
+// On définit ce que devient chaque clé JSON après une rotation de 90°
+const rotateKey = (key) => {
+    const mapping = {
+        "north": "east", "east": "south", "south": "west", "west": "north",
+        "north-left": "east-top", "east-top": "south-right", "south-right": "west-bottom", "west-bottom": "north-left",
+        "north-right": "east-bottom", "east-bottom": "south-left", "south-left": "west-top", "west-top": "north-right"
+    };
+    return mapping[key] || key;
 };
 
-/**
- * Définit quel suffixe (-left, -top, etc.) correspond à quel segment opposé.
- */
-const segmentMatch = {
+// Récupère l'ID de zone d'un segment physique après X rotations
+function getZoneAtPhysicalSide(tile, physicalSide, rotation) {
+    let currentEdges = { ...tile.edges };
+    const steps = (rotation / 90) % 4;
+    
+    // On fait tourner les clés virtuellement
+    for (let i = 0; i < steps; i++) {
+        let nextEdges = {};
+        for (let key in currentEdges) {
+            nextEdges[rotateKey(key)] = currentEdges[key];
+        }
+        currentEdges = nextEdges;
+    }
+    return currentEdges[physicalSide];
+}
+
+// Correspondance des segments face à face
+const opposites = {
     "north": "south", "south": "north", "east": "west", "west": "east",
     "north-left": "south-left", "south-left": "north-left",
     "north-right": "south-right", "south-right": "north-right",
@@ -36,46 +49,39 @@ const segmentMatch = {
 };
 
 /**
- * Vérifie si le placement à (x, y) est légal selon les types de zones.
+ * Validation bord à bord
  */
 function isPlacementLegal(x, y, tile, rotation) {
-    if (!tile) return false;
     let hasNeighbor = false;
-
-    const neighbors = [
-        { dx: 0, dy: -1, side: 'north' },
-        { dx: 0, dy: 1,  side: 'south' },
-        { dx: 1, dy: 0,  side: 'east' },
-        { dx: -1, dy: 0, side: 'west' }
+    const checks = [
+        { dx: 0, dy: -1, physSide: 'north' },
+        { dx: 0, dy: 1,  physSide: 'south' },
+        { dx: 1, dy: 0,  physSide: 'east' },
+        { dx: -1, dy: 0, physSide: 'west' }
     ];
 
-    for (const n of neighbors) {
-        const neighborData = placedTiles[`${x + n.dx},${y + n.dy}`];
-        if (neighborData) {
+    for (const n of checks) {
+        const neighbor = placedTiles[`${x + n.dx},${y + n.dy}`];
+        if (neighbor) {
             hasNeighbor = true;
+            
+            // On vérifie les 3 segments potentiels de cette face (ex: north, north-left, north-right)
+            const segmentsToTest = [n.physSide];
+            if (n.physSide === 'north' || n.physSide === 'south') {
+                segmentsToTest.push(`${n.physSide}-left`, `${n.physSide}-right`);
+            } else {
+                segmentsToTest.push(`${n.physSide}-top`, `${n.physSide}-bottom`);
+            }
 
-            // On récupère les segments de la face concernée
-            const myJsonSide = sideToJSON[rotation][n.side];
-            const neighborJsonSide = sideToJSON[neighborData.rotation][segmentMatch[n.side]];
+            for (const physSeg of segmentsToTest) {
+                const myZoneId = getZoneAtPhysicalSide(tile, physSeg, rotation);
+                const oppPhysSeg = opposites[physSeg];
+                const neighborZoneId = getZoneAtPhysicalSide(neighbor.tile, oppPhysSeg, neighbor.rotation);
 
-            // Liste des segments à tester sur cette face
-            const segments = (n.side === 'north' || n.side === 'south') 
-                ? [myJsonSide, `${myJsonSide}-left`, `${myJsonSide}-right`]
-                : [myJsonSide, `${myJsonSide}-top`, `${myJsonSide}-bottom`];
-
-            for (const seg of segments) {
-                const myZoneId = tile.edges[seg];
-                if (!myZoneId) continue;
-
-                // Trouver le segment correspondant chez le voisin
-                const oppSeg = segmentMatch[seg];
-                const neighborZoneId = neighborData.tile.edges[oppSeg];
-
-                if (neighborZoneId) {
-                    const myType = tile.zones[myZoneId]?.type;
-                    const neighborType = neighborData.tile.zones[neighborZoneId]?.type;
-
-                    if (myType !== neighborType) return false;
+                if (myZoneId && neighborZoneId) {
+                    if (tile.zones[myZoneId].type !== neighbor.tile.zones[neighborZoneId].type) {
+                        return false; 
+                    }
                 }
             }
         }
@@ -83,7 +89,7 @@ function isPlacementLegal(x, y, tile, rotation) {
     return hasNeighbor;
 }
 
-// --- RENDU ET JEU ---
+// --- RENDU ET INTERFACE ---
 
 function renderBoard() {
     board.innerHTML = '';
@@ -130,8 +136,7 @@ function drawTile() {
         currentRotation = 0;
         updateTileDisplay();
         renderBoard();
-    } else if (deck.length === 0 && currentTile !== null) {
-        // Cas de la dernière tuile posée
+    } else {
         currentTile = null;
         updateTileDisplay();
         renderBoard();
@@ -139,40 +144,37 @@ function drawTile() {
 }
 
 function updateTileDisplay() {
-    if (currentTile) {
+    if (currentTile && currentTileImg) {
         currentTileImg.src = currentTile.image;
         currentTileImg.style.transform = `rotate(${currentRotation}deg)`;
         currentTileImg.style.display = "block";
-    } else {
+    } else if (currentTileImg) {
         currentTileImg.style.display = "none";
     }
 }
 
 rotateBtn.onclick = () => {
-    if (currentTile) {
-        currentRotation = (currentRotation + 90) % 360;
-        updateTileDisplay();
-        renderBoard();
-    }
+    if (!currentTile) return;
+    currentRotation = (currentRotation + 90) % 360;
+    updateTileDisplay();
+    renderBoard();
 };
 
 async function init() {
     try {
-        // Utilisation du chemin relatif strict
-        const response = await fetch('./data/tuiles.json');
-        if (!response.ok) throw new Error("Erreur HTTP: " + response.status);
+        // ESSAI DE CHEMIN SANS SLASH INITIAL
+        const response = await fetch('data/tuiles.json'); 
+        if (!response.ok) throw new Error("Fichier non trouvé (404)");
         
         const data = await response.json();
         deck = data.tuiles.sort(() => Math.random() - 0.5);
 
-        // Tuile de départ au centre (50, 50)
         const startTile = deck.pop();
         placedTiles["50,50"] = { tile: startTile, rotation: 0 };
 
         drawTile();
     } catch (e) {
-        console.error("Erreur fatale lors du chargement :", e);
-        alert("Impossible de charger les tuiles. Vérifiez la console (F12).");
+        console.error("Erreur d'initialisation :", e);
     }
 }
 
