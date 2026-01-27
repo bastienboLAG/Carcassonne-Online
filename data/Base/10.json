@@ -14,7 +14,7 @@
     {
       "id": 2,
       "type": "field",
-      "edges": ["west", "east-top"],
+      "edges": ["west", "east-top", "south-left"],
       "features": [],
       "meeplePosition": "11"
     },
