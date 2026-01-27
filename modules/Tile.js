@@ -8,34 +8,41 @@ export class Tile {
 
     /**
      * Traduit une position d'edge selon la rotation actuelle
+     * Pour trouver où chercher dans les données d'origine, on fait la rotation INVERSE
      * @param {string} edgeName - Ex: "north-left", "east", "south-right"
-     * @returns {string} - L'edge après rotation
+     * @returns {string} - L'edge dans les données d'origine
      */
     _rotateEdgeName(edgeName) {
-        // Rotation de 90° horaire
-        const rotationMap = {
-            'north-left': 'east-top',
-            'north': 'east',
-            'north-right': 'east-bottom',
+        // ✅ ROTATION INVERSE (anti-horaire) pour retrouver la position d'origine
+        // Si la tuile a tourné de 90° horaire, on remonte de 90° anti-horaire
+        const inverseRotationMap = {
+            // Anti-horaire : north → west
+            'north-left': 'west-bottom',
+            'north': 'west',
+            'north-right': 'west-top',
             
-            'east-top': 'south-right',
-            'east': 'south',
-            'east-bottom': 'south-left',
+            // Anti-horaire : east → north
+            'east-top': 'north-left',
+            'east': 'north',
+            'east-bottom': 'north-right',
             
-            'south-right': 'west-bottom',
-            'south': 'west',
-            'south-left': 'west-top',
+            // Anti-horaire : south → east
+            'south-right': 'east-top',
+            'south': 'east',
+            'south-left': 'east-bottom',
             
-            'west-bottom': 'north-left',
-            'west': 'north',
-            'west-top': 'north-right'
+            // Anti-horaire : west → south
+            'west-top': 'south-right',
+            'west': 'south',
+            'west-bottom': 'south-left'
         };
 
         let currentEdge = edgeName;
         const steps = (this.rotation / 90) % 4;
 
+        // On applique la rotation INVERSE autant de fois que nécessaire
         for (let i = 0; i < steps; i++) {
-            currentEdge = rotationMap[currentEdge] || currentEdge;
+            currentEdge = inverseRotationMap[currentEdge] || currentEdge;
         }
 
         return currentEdge;
@@ -47,19 +54,19 @@ export class Tile {
      * @returns {string|null} - Le type de zone ("city", "road", "field", "abbey") ou null
      */
     getEdgeType(edgeName) {
-        // Traduire l'edge selon la rotation actuelle
-        const rotatedEdge = this._rotateEdgeName(edgeName);
+        // Traduire l'edge pour savoir où chercher dans les données d'origine
+        const originalEdge = this._rotateEdgeName(edgeName);
 
         // Chercher d'abord l'edge spécifique (ex: "north-left")
         for (const zone of this.zones) {
-            if (zone.edges.includes(rotatedEdge)) {
+            if (zone.edges.includes(originalEdge)) {
                 return zone.type;
             }
         }
 
         // Si pas trouvé, chercher l'edge générique (ex: "north" pour "north-left")
-        const genericEdge = rotatedEdge.split('-')[0]; // "north-left" → "north"
-        if (genericEdge !== rotatedEdge) {
+        const genericEdge = originalEdge.split('-')[0];
+        if (genericEdge !== originalEdge) {
             for (const zone of this.zones) {
                 if (zone.edges.includes(genericEdge)) {
                     return zone.type;
@@ -67,18 +74,17 @@ export class Tile {
             }
         }
 
-        // Pas trouvé (normalement impossible si JSON correct)
         return null;
     }
 
     /**
-     * ✅ NOUVEAU : Crée une copie profonde de la tuile
+     * Crée une copie profonde de la tuile
      * @returns {Tile} Une nouvelle instance de Tile avec les mêmes données
      */
     clone() {
         const clonedTile = new Tile({
             id: this.id,
-            zones: this.zones  // Les zones sont déjà des objets, pas besoin de deep copy
+            zones: this.zones
         });
         clonedTile.rotation = this.rotation;
         return clonedTile;
