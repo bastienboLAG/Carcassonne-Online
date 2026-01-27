@@ -12,19 +12,24 @@ export class Tile {
      * @returns {string} - L'edge après rotation
      */
     _rotateEdgeName(edgeName) {
+        // CORRECTION : Rotation de 90° horaire
+        // Le bord NORD devient EST, et left→top, right→bottom
         const rotationMap = {
             'north-left': 'east-top',
             'north': 'east',
             'north-right': 'east-bottom',
+            
             'east-top': 'south-right',
             'east': 'south',
             'east-bottom': 'south-left',
-            'south-left': 'west-bottom',
+            
+            'south-right': 'west-bottom',
             'south': 'west',
-            'south-right': 'west-top',
-            'west-top': 'north-right',
+            'south-left': 'west-top',
+            
+            'west-bottom': 'north-right',
             'west': 'north',
-            'west-bottom': 'north-left'
+            'west-top': 'north-left'
         };
 
         let currentEdge = edgeName;
