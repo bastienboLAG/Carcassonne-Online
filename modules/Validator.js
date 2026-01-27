@@ -1,7 +1,6 @@
 /**
  * Validator.js
  */
-
 const rotationMap = {
     "north": "east", "east": "south", "south": "west", "west": "north",
     "north-left": "east-top", "east-top": "south-right", "south-right": "west-bottom", "west-bottom": "north-left",
@@ -25,10 +24,9 @@ function getPhysicalKey(originalKey, rotation) {
     return key;
 }
 
-export function areEdgesCompatible(tileA, rotA, tileB, rotB, sideA) {
+// On attache la fonction à window pour qu'elle soit accessible partout sans import
+window.areEdgesCompatible = function(tileA, rotA, tileB, rotB, sideA) {
     const sideB = opposites[sideA];
-    
-    // On extrait tous les segments de la tuile A qui finissent sur le côté physique sideA
     const segmentsA = Object.keys(tileA.edges).filter(key => {
         const phys = getPhysicalKey(key, rotA);
         return phys === sideA || phys.startsWith(sideA + '-');
@@ -36,9 +34,7 @@ export function areEdgesCompatible(tileA, rotA, tileB, rotB, sideA) {
 
     for (const keyA of segmentsA) {
         const physA = getPhysicalKey(keyA, rotA);
-        const physB = opposites[physA]; // Le segment exact qu'on cherche chez le voisin
-
-        // Trouver quelle clé JSON de tileB atterrit sur physB
+        const physB = opposites[physA];
         const keyB = Object.keys(tileB.edges).find(k => getPhysicalKey(k, rotB) === physB);
 
         if (keyB) {
@@ -48,4 +44,4 @@ export function areEdgesCompatible(tileA, rotA, tileB, rotB, sideA) {
         }
     }
     return true;
-}
+};
