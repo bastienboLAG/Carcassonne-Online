@@ -1,35 +1,80 @@
 import { Tile } from './modules/Tile.js';
 import { Board } from './modules/Board.js';
+import { Deck } from './modules/Deck.js';
 
 const plateau = new Board();
+const deck = new Deck();
 let tuileEnMain = null;
 let zoomLevel = 1;
 
+// Variables pour le drag-to-pan
+let isDragging = false;
+let startX = 0;
+let startY = 0;
+let scrollLeft = 0;
+let scrollTop = 0;
+
 async function init() {
     try {
-        const response = await fetch('./data/Base/04.json');
-        const data = await response.json();
-        tuileEnMain = new Tile(data);
+        // Charger toutes les tuiles
+        await deck.loadAllTiles();
 
-        // Affichage de l'image dans le deck (aperçu)
-        const previewContainer = document.getElementById('tile-preview');
-        previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}">`;
+        // Créer la tuile de départ (04)
+        const startTileData = await fetch('./data/Base/04.json').then(r => r.json());
+        const startTile = new Tile(startTileData);
 
-        // Pose de départ forcée au centre
-        poserTuile(50, 50, tuileEnMain, true);
+        // Poser la tuile de départ au centre
+        poserTuile(50, 50, startTile, true);
+
+        // Piocher la première tuile en main
+        piocherNouvelleTuile();
 
         const container = document.getElementById('board-container');
         const board = document.getElementById('board');
 
         // Interactions
         document.getElementById('rotate-btn').onclick = () => {
-            tuileEnMain.rotation = (tuileEnMain.rotation + 90) % 360;
-            document.getElementById('current-tile-img').style.transform = `rotate(${tuileEnMain.rotation}deg)`;
-            rafraichirTousLesSlots();
+            if (tuileEnMain) {
+                tuileEnMain.rotation = (tuileEnMain.rotation + 90) % 360;
+                document.getElementById('current-tile-img').style.transform = `rotate(${tuileEnMain.rotation}deg)`;
+                rafraichirTousLesSlots();
+            }
+        };
+
+        document.getElementById('end-turn-btn').onclick = () => {
+            // Pour l'instant, on pioche juste une nouvelle tuile
+            // Plus tard : placement de meeple, calcul de points, etc.
+            piocherNouvelleTuile();
         };
 
         setupNavigation(container, board);
-    } catch (e) { console.error(e); }
+        mettreAJourCompteur();
+    } catch (e) { 
+        console.error(e); 
+    }
+}
+
+function piocherNouvelleTuile() {
+    const tileData = deck.draw();
+    
+    if (!tileData) {
+        // Pioche vide - Fin de partie
+        alert('Partie terminée ! Plus de tuiles dans la pioche.');
+        document.getElementById('tile-preview').innerHTML = '<p>Fin de partie</p>';
+        document.getElementById('rotate-btn').disabled = true;
+        document.getElementById('end-turn-btn').disabled = true;
+        return;
+    }
+
+    tuileEnMain = new Tile(tileData);
+    tuileEnMain.rotation = 0;
+
+    // Affichage de l'image dans le deck (aperçu)
+    const previewContainer = document.getElementById('tile-preview');
+    previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}">`;
+
+    rafraichirTousLesSlots();
+    mettreAJourCompteur();
 }
 
 function poserTuile(x, y, tile, isFirst = false) {
@@ -50,7 +95,12 @@ function poserTuile(x, y, tile, isFirst = false) {
     copy.rotation = tile.rotation;
     plateau.addTile(x, y, copy);
 
-    rafraichirTousLesSlots();
+    if (!isFirst) {
+        // Après avoir posé la tuile, on pioche la suivante
+        piocherNouvelleTuile();
+    } else {
+        rafraichirTousLesSlots();
+    }
 }
 
 function rafraichirTousLesSlots() {
@@ -65,23 +115,70 @@ function genererSlotsAutour(x, y) {
     const directions = [{dx:0, dy:-1}, {dx:1, dy:0}, {dx:0, dy:1}, {dx:-1, dy:0}];
     directions.forEach(dir => {
         const nx = x + dir.dx, ny = y + dir.dy;
-        if (plateau.isFree(nx, ny) && plateau.canPlaceTile(nx, ny, tuileEnMain)) {
+        if (tuileEnMain && plateau.isFree(nx, ny) && plateau.canPlaceTile(nx, ny, tuileEnMain)) {
             const slot = document.createElement('div');
             slot.className = "slot";
-            slot.style.gridColumn = nx; slot.style.gridRow = ny;
+            slot.style.gridColumn = nx; 
+            slot.style.gridRow = ny;
             slot.onclick = () => poserTuile(nx, ny, tuileEnMain);
             document.getElementById('board').appendChild(slot);
         }
     });
 }
 
+function mettreAJourCompteur() {
+    const remaining = deck.remaining();
+    const total = deck.total();
+    const placed = total - remaining - 1; // -1 pour la tuile en main
+    document.getElementById('tile-counter').textContent = `Tuiles : ${remaining} / ${total}`;
+}
+
 function setupNavigation(container, board) {
+    // Zoom avec la molette
     container.addEventListener('wheel', (e) => {
         e.preventDefault();
         zoomLevel += e.deltaY > 0 ? -0.1 : 0.1;
-        board.style.transform = `scale(${Math.max(0.2, zoomLevel)})`;
+        zoomLevel = Math.max(0.2, Math.min(3, zoomLevel)); // Limiter entre 0.2 et 3
+        board.style.transform = `scale(${zoomLevel})`;
     }, { passive: false });
-    // ... (centrage auto)
+
+    // Drag-to-pan (clic-glisser)
+    container.addEventListener('mousedown', (e) => {
+        // Ne pas activer le drag si on clique sur une tuile ou un slot
+        if (e.target.classList.contains('tile') || e.target.classList.contains('slot')) {
+            return;
+        }
+        
+        isDragging = true;
+        container.style.cursor = 'grabbing';
+        startX = e.pageX - container.offsetLeft;
+        startY = e.pageY - container.offsetTop;
+        scrollLeft = container.scrollLeft;
+        scrollTop = container.scrollTop;
+    });
+
+    container.addEventListener('mouseleave', () => {
+        isDragging = false;
+        container.style.cursor = 'grab';
+    });
+
+    container.addEventListener('mouseup', () => {
+        isDragging = false;
+        container.style.cursor = 'grab';
+    });
+
+    container.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        const x = e.pageX - container.offsetLeft;
+        const y = e.pageY - container.offsetTop;
+        const walkX = (x - startX) * 2; // Multiplieur pour vitesse de déplacement
+        const walkY = (y - startY) * 2;
+        container.scrollLeft = scrollLeft - walkX;
+        container.scrollTop = scrollTop - walkY;
+    });
+
+    // Centrage initial
     container.scrollLeft = 5200 - (container.clientWidth / 2);
     container.scrollTop = 5200 - (container.clientHeight / 2);
 }
