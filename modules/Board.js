@@ -1,11 +1,8 @@
-/**
- * modules/Board.js
- */
 import { areEdgesCompatible } from './Validator.js';
 
 export class Board {
     constructor() {
-        this.placedTiles = {}; // "x,y": Tile object
+        this.placedTiles = {}; 
     }
 
     addTile(x, y, tile) {
@@ -16,38 +13,29 @@ export class Board {
         return !this.placedTiles[`${x},${y}`];
     }
 
-    /**
-     * Vérifie si une tuile peut être posée à (x, y)
-     * 1. Doit avoir au moins un voisin.
-     * 2. Tous les bords touchés doivent être compatibles.
-     */
     canPlaceTile(x, y, tileEnMain) {
-        // Sécurité : si la case est déjà prise
+        // 1. On vérifie si la case est libre
         if (!this.isFree(x, y)) return false;
 
         let hasNeighbor = false;
-        const neighbors = [
-            { dx: 0,  dy: -1, side: 'north' }, // Voisin au dessus (on regarde notre Nord)
-            { dx: 0,  dy: 1,  side: 'south' }, // Voisin en dessous (on regarde notre Sud)
-            { dx: 1,  dy: 0,  side: 'east'  }, // Voisin à droite (on regarde notre Est)
-            { dx: -1, dy: 0,  side: 'west'  }  // Voisin à gauche (on regarde notre Ouest)
+        const directions = [
+            {dx: 0, dy: -1, side: 'north'},
+            {dx: 1, dy: 0,  side: 'east'},
+            {dx: 0, dy: 1,  side: 'south'},
+            {dx: -1, dy: 0, side: 'west'}
         ];
 
-        for (const n of neighbors) {
-            const neighborTile = this.placedTiles[`${x + n.dx},${y + n.dy}`];
-            
-            if (neighborTile) {
+        for (let dir of directions) {
+            const neighbor = this.placedTiles[`${x + dir.dx},${y + dir.dy}`];
+            if (neighbor) {
                 hasNeighbor = true;
-                
-                // On utilise le Validator pour comparer notre bord 'side' 
-                // avec le bord opposé du voisin.
-                if (!areEdgesCompatible(tileEnMain, tileEnMain.rotation, neighborTile, neighborTile.rotation, n.side)) {
-                    return false; // Désaccord de terrain (ex: route vs ville)
+                // On vérifie la compatibilité via le Validator
+                if (!areEdgesCompatible(tileEnMain, tileEnMain.rotation, neighbor, neighbor.rotation, dir.side)) {
+                    return false; 
                 }
             }
         }
 
-        // Le placement est valide si on a au moins un voisin et aucune erreur de bord
         return hasNeighbor;
     }
 }
