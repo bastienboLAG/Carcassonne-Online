@@ -5,7 +5,7 @@ import { Deck } from './modules/Deck.js';
 const plateau = new Board();
 const deck = new Deck();
 let tuileEnMain = null;
-let tuilePosee = false; // ✅ NOUVEAU : Flag pour savoir si la tuile a été posée
+let tuilePosee = false;
 let zoomLevel = 1;
 
 // Variables pour le drag-to-pan
@@ -43,7 +43,7 @@ async function init() {
         };
 
         document.getElementById('end-turn-btn').onclick = () => {
-            // ✅ CORRECTION : Vérifier que la tuile a été posée
+            // Vérifier que la tuile a été posée
             if (!tuilePosee) {
                 alert('Vous devez poser la tuile avant de terminer votre tour !');
                 return;
@@ -75,7 +75,7 @@ function piocherNouvelleTuile() {
 
     tuileEnMain = new Tile(tileData);
     tuileEnMain.rotation = 0;
-    tuilePosee = false; // ✅ NOUVEAU : Réinitialiser le flag
+    tuilePosee = false;
 
     // Affichage de l'image dans le deck (aperçu)
     const previewContainer = document.getElementById('tile-preview');
@@ -104,9 +104,14 @@ function poserTuile(x, y, tile, isFirst = false) {
     plateau.addTile(x, y, copy);
 
     if (!isFirst) {
-        tuilePosee = true; // ✅ NOUVEAU : Marquer la tuile comme posée
-        rafraichirTousLesSlots();
-        // On ne pioche plus automatiquement, on attend le bouton "Terminer mon tour"
+        tuilePosee = true;
+        
+        // NOUVEAU : Supprimer tous les slots immédiatement après placement
+        document.querySelectorAll('.slot').forEach(s => s.remove());
+        
+        // Vider la tuile en main pour empêcher un nouveau placement
+        // (elle sera recréée au clic sur "Terminer mon tour")
+        tuileEnMain = null;
     } else {
         rafraichirTousLesSlots();
     }
@@ -114,6 +119,10 @@ function poserTuile(x, y, tile, isFirst = false) {
 
 function rafraichirTousLesSlots() {
     document.querySelectorAll('.slot').forEach(s => s.remove());
+    
+    // NOUVEAU : Ne générer des slots que si on a une tuile en main
+    if (!tuileEnMain) return;
+    
     for (let coord in plateau.placedTiles) {
         const [x, y] = coord.split(',').map(Number);
         genererSlotsAutour(x, y);
@@ -146,13 +155,12 @@ function setupNavigation(container, board) {
     container.addEventListener('wheel', (e) => {
         e.preventDefault();
         zoomLevel += e.deltaY > 0 ? -0.1 : 0.1;
-        zoomLevel = Math.max(0.2, Math.min(3, zoomLevel)); // Limiter entre 0.2 et 3
+        zoomLevel = Math.max(0.2, Math.min(3, zoomLevel));
         board.style.transform = `scale(${zoomLevel})`;
     }, { passive: false });
 
     // Drag-to-pan (clic-glisser)
     container.addEventListener('mousedown', (e) => {
-        // Ne pas activer le drag si on clique sur une tuile ou un slot
         if (e.target.classList.contains('tile') || e.target.classList.contains('slot')) {
             return;
         }
@@ -180,7 +188,7 @@ function setupNavigation(container, board) {
         e.preventDefault();
         const x = e.pageX - container.offsetLeft;
         const y = e.pageY - container.offsetTop;
-        const walkX = (x - startX) * 2; // Multiplieur pour vitesse de déplacement
+        const walkX = (x - startX) * 2;
         const walkY = (y - startY) * 2;
         container.scrollLeft = scrollLeft - walkX;
         container.scrollTop = scrollTop - walkY;
