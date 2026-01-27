@@ -2,21 +2,24 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Carcassonne Online</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
     <div id="game-ui">
-        <h1>Carcassonne</h1>
+        <h2>Carcassonne</h2>
+        
         <div id="current-tile-container">
-            <p>Tuile piochée :</p>
+            <h3>Tuile en main</h3>
             <div id="tile-preview"></div>
-            <button id="rotate-btn">Tourner la tuile</button>
+            <button id="rotate-btn">Rotate</button>
         </div>
+
+        <div id="tile-counter">Tuiles : 0 / 24</div>
+        
+        <button id="end-turn-btn">Terminer mon tour</button>
     </div>
-    
+
     <div id="board-container">
         <div id="board"></div>
     </div>
