@@ -49,8 +49,7 @@ async function init() {
                 return;
             }
             
-            // Pour l'instant, on pioche juste une nouvelle tuile
-            // Plus tard : placement de meeple, calcul de points, etc.
+            // Piocher une nouvelle tuile
             piocherNouvelleTuile();
         };
 
@@ -98,19 +97,20 @@ function poserTuile(x, y, tile, isFirst = false) {
     img.style.transform = `rotate(${tile.rotation}deg)`;
     boardElement.appendChild(img);
     
-    // Sauvegarde logique
-    const copy = new Tile({id: tile.id, zones: tile.zones});
-    copy.rotation = tile.rotation;
+    // ✅ CORRECTION : Utiliser clone() pour créer une vraie copie
+    const copy = tile.clone();
     plateau.addTile(x, y, copy);
 
     if (!isFirst) {
         tuilePosee = true;
         
-        // NOUVEAU : Supprimer tous les slots immédiatement après placement
+        // Supprimer tous les slots immédiatement après placement
         document.querySelectorAll('.slot').forEach(s => s.remove());
         
+        // ✅ NOUVEAU : Cacher la tuile en main après placement
+        document.getElementById('tile-preview').innerHTML = '<p style="color: #999;">Tuile posée<br>Terminez votre tour</p>';
+        
         // Vider la tuile en main pour empêcher un nouveau placement
-        // (elle sera recréée au clic sur "Terminer mon tour")
         tuileEnMain = null;
     } else {
         rafraichirTousLesSlots();
@@ -120,7 +120,7 @@ function poserTuile(x, y, tile, isFirst = false) {
 function rafraichirTousLesSlots() {
     document.querySelectorAll('.slot').forEach(s => s.remove());
     
-    // NOUVEAU : Ne générer des slots que si on a une tuile en main
+    // Ne générer des slots que si on a une tuile en main
     if (!tuileEnMain) return;
     
     for (let coord in plateau.placedTiles) {
