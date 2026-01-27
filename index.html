@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Carcassonne Online - Accueil</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="home-page">
+    <div class="home-container">
+        <div class="home-left">
+            <h1>CARCASSONNE</h1>
+            
+            <div class="lobby-section">
+                <h3>Lobby de partie</h3>
+                
+                <!-- Liste des joueurs -->
+                <div class="players-list">
+                    <div class="player-slot" id="player-1">
+                        <span class="player-name">bastienbo</span>
+                        <span class="player-meeple">🔵</span>
+                    </div>
+                    <div class="player-slot" id="player-2">
+                        <span class="player-name">Invité</span>
+                        <span class="player-meeple">⚫</span>
+                    </div>
+                    <div class="player-slot empty" id="player-3">
+                        <span class="player-name">En attente...</span>
+                    </div>
+                    <div class="player-slot empty" id="player-4">
+                        <span class="player-name">En attente...</span>
+                    </div>
+                    <div class="player-slot empty" id="player-5">
+                        <span class="player-name">En attente...</span>
+                    </div>
+                    <div class="player-slot empty" id="player-6">
+                        <span class="player-name">En attente...</span>
+                    </div>
+                </div>
+
+                <!-- Choix de couleur -->
+                <div class="color-picker">
+                    <h4>Choisissez votre couleur :</h4>
+                    <div class="color-grid">
+                        <label class="color-option">
+                            <input type="radio" name="color" value="black">
+                            <span class="meeple-icon">⚫</span>
+                        </label>
+                        <label class="color-option">
+                            <input type="radio" name="color" value="red">
+                            <span class="meeple-icon">🔴</span>
+                        </label>
+                        <label class="color-option">
+                            <input type="radio" name="color" value="pink">
+                            <span class="meeple-icon">🩷</span>
+                        </label>
+                        <label class="color-option">
+                            <input type="radio" name="color" value="green">
+                            <span class="meeple-icon">🟢</span>
+                        </label>
+                        <label class="color-option selected">
+                            <input type="radio" name="color" value="blue" checked>
+                            <span class="meeple-icon">🔵</span>
+                        </label>
+                        <label class="color-option">
+                            <input type="radio" name="color" value="yellow">
+                            <span class="meeple-icon">🟡</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="home-right">
+            <h2>Choix des règles</h2>
+            
+            <!-- Départ -->
+            <div class="config-section">
+                <h3>Départ</h3>
+                <div class="radio-group">
+                    <label><input type="radio" name="start" value="unique" checked> Tuile unique</label>
+                    <label><input type="radio" name="start" value="river1"> Rivière I</label>
+                    <label><input type="radio" name="start" value="river2"> Rivière II</label>
+                    <label><input type="radio" name="start" value="carcassonne"> Carcassonne</label>
+                </div>
+            </div>
+
+            <!-- Visuel -->
+            <div class="config-section">
+                <h3>Visuel</h3>
+                <div class="radio-group">
+                    <label><input type="radio" name="visual" value="c2" checked> Visuel C2</label>
+                    <label><input type="radio" name="visual" value="c3"> Visuel C3</label>
+                </div>
+                <p class="config-note">+ chaque ext indépendamment</p>
+            </div>
+
+            <!-- Options -->
+            <div class="config-section">
+                <h3>Options</h3>
+                <label class="toggle-option">
+                    <input type="checkbox" id="placement-assist" checked>
+                    <span>Assistance au placement</span>
+                </label>
+                <label class="toggle-option">
+                    <input type="checkbox" id="list-remaining">
+                    <span>Lister les tuiles restantes</span>
+                </label>
+                <label class="toggle-option">
+                    <input type="checkbox" id="use-all-tiles" checked>
+                    <span>Utiliser toutes les tuiles (172)</span>
+                </label>
+            </div>
+
+            <!-- Extensions -->
+            <div class="config-section extensions-section">
+                <h3>Extensions</h3>
+                <details open>
+                    <summary><strong>Base - Les champs</strong></summary>
+                </details>
+                <details>
+                    <summary><strong>Extension 0:</strong></summary>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext0-abbe">
+                        <span>L'abbé</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext0-jardin">
+                        <span>Le jardin</span>
+                    </label>
+                </details>
+                <details>
+                    <summary><strong>Extension 1: Auberges & Cathédrales</strong></summary>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext1-meeple">
+                        <span>Grand Meeple</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext1-cathedrale">
+                        <span>Cathédrale</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext1-auberge">
+                        <span>Auberge</span>
+                    </label>
+                </details>
+            </div>
+
+            <!-- Bouton démarrer -->
+            <a href="game.html" class="start-button">Démarrer la partie</a>
+        </div>
+    </div>
+
+    <script type="module" src="home.js"></script>
+</body>
+</html>
