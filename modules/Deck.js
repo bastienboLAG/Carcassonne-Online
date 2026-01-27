@@ -2,6 +2,7 @@ export class Deck {
     constructor() {
         this.tiles = [];       // Pioche complète (avec doublons selon quantity)
         this.currentIndex = 0; // Index de la prochaine tuile à piocher
+        this.totalTiles = 0;   // ✅ NOUVEAU : Nombre total de tuiles dans le jeu
     }
 
     /**
@@ -21,6 +22,9 @@ export class Deck {
                 console.error(`Erreur lors du chargement de la tuile ${id}:`, error);
             }
         }
+
+        // Calculer le total de tuiles AVANT de créer la pioche
+        this.totalTiles = allTileData.reduce((sum, data) => sum + data.quantity, 0);
 
         // Créer la pioche avec les bonnes quantités (sauf tuile 04 qui est la tuile de départ)
         for (const data of allTileData) {
@@ -72,6 +76,6 @@ export class Deck {
      * @returns {number}
      */
     total() {
-        return 24; // 24 tuiles au total (incluant la tuile de départ)
+        return this.totalTiles; // ✅ CORRECTION : Retourne le vrai total (72)
     }
 }
