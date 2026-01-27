@@ -10,18 +10,16 @@ const rotateBtn = document.getElementById('rotate-btn');
 let deck = [];
 let currentTile = null;
 let currentRotation = 0;
-const placedTiles = {}; // Stockage : "x,y": { tile, rotation }
+const placedTiles = {}; 
 
 // --- CONFIGURATION DES ROTATIONS ET CORRESPONDANCES ---
 
-// Comment les segments se déplacent lors d'une rotation de 90° horaire
 const rotationMapping = {
     "north": "east", "east": "south", "south": "west", "west": "north",
     "north-left": "east-top", "east-top": "south-right", "south-right": "west-bottom", "west-bottom": "north-left",
     "north-right": "east-bottom", "east-bottom": "south-left", "south-left": "west-top", "west-top": "north-right"
 };
 
-// Quels segments doivent correspondre entre deux tuiles adjacentes
 const opposites = {
     "north": "south", "south": "north", "east": "west", "west": "east",
     "north-left": "south-left", "south-left": "north-left",
@@ -31,7 +29,7 @@ const opposites = {
 };
 
 /**
- * Calcule l'état des bords d'une tuile après une certaine rotation
+ * Calcule l'état des bords d'une tuile après une rotation
  */
 function getRotatedEdges(tile, rotation) {
     const numRotations = (rotation / 90) % 4;
@@ -49,41 +47,39 @@ function getRotatedEdges(tile, rotation) {
 }
 
 /**
- * Vérifie si une tuile peut être posée à une coordonnée précise
+ * Vérifie si une tuile peut être posée
  */
 function canPlaceTileAt(x, y, tile, rotation) {
     const myEdges = getRotatedEdges(tile, rotation);
     let hasNeighbor = false;
 
-    // Définition des 4 directions de voisinage
     const checks = [
-        { nx: x, ny: y - 1, side: 'north' }, // Voisin au Nord
-        { nx: x, ny: y + 1, side: 'south' }, // Voisin au Sud
-        { nx: x + 1, ny: y, side: 'east' },  // Voisin à l'Est
-        { nx: x - 1, ny: y, side: 'west' }   // Voisin à l'Ouest
+        { nx: x, ny: y - 1, side: 'north' }, 
+        { nx: x, ny: y + 1, side: 'south' }, 
+        { nx: x + 1, ny: y, side: 'east' },  
+        { nx: x - 1, ny: y, side: 'west' }   
     ];
 
     for (const check of checks) {
-        const neighborData = placedTiles[`${check.nx},${check.ny}`];
+        const neighborKey = `${check.nx},${check.ny}`;
+        const neighborData = placedTiles[neighborKey];
         
         if (neighborData) {
             hasNeighbor = true;
             const neighborEdges = getRotatedEdges(neighborData.tile, neighborData.rotation);
 
-            // On vérifie tous les segments du côté concerné (ex: si on check le Nord, on regarde north, north-left, north-right)
             for (const segmentKey of Object.keys(myEdges)) {
                 if (segmentKey.startsWith(check.side)) {
                     const myZoneId = myEdges[segmentKey];
                     const oppSegmentKey = opposites[segmentKey];
                     const neighborZoneId = neighborEdges[oppSegmentKey];
 
-                    // Si le voisin possède ce segment, on compare le type de zone
                     if (neighborZoneId) {
-                        const myType = tile.zones[myZoneId].type;
-                        const neighborType = neighborData.tile.zones[neighborZoneId].type;
+                        const myType = tile.zones[myZoneId]?.type;
+                        const neighborType = neighborData.tile.zones[neighborZoneId]?.type;
 
                         if (myType !== neighborType) {
-                            return false; // Incompatible !
+                            return false; 
                         }
                     }
                 }
@@ -96,12 +92,14 @@ function canPlaceTileAt(x, y, tile, rotation) {
 // --- INITIALISATION ET RENDU ---
 
 async function loadTiles() {
+    // Utilisation d'un chemin relatif sans le slash initial pour GitHub Pages
     try {
         const response = await fetch('data/tuiles.json');
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
         deck = shuffle(data.tuiles);
         
-        // Placement de la tuile de départ par défaut à (0,0)
+        // Placement de la première tuile
         const startTile = deck.pop();
         placedTiles["0,0"] = { tile: startTile, rotation: 0 };
         
@@ -122,7 +120,7 @@ function drawTile() {
         updateTileDisplay();
         renderBoard();
     } else {
-        alert("Plus de tuiles dans le deck !");
+        alert("Plus de tuiles !");
     }
 }
 
@@ -133,7 +131,6 @@ function updateTileDisplay() {
 
 function renderBoard() {
     board.innerHTML = '';
-    
     const keys = Object.keys(placedTiles);
     if (keys.length === 0) return;
 
@@ -167,10 +164,7 @@ function renderBoard() {
 }
 
 function placeTile(x, y) {
-    placedTiles[`${x},${y}`] = {
-        tile: currentTile,
-        rotation: currentRotation
-    };
+    placedTiles[`${x},${y}`] = { tile: currentTile, rotation: currentRotation };
     drawTile();
 }
 
@@ -180,5 +174,4 @@ rotateBtn.onclick = () => {
     renderBoard();
 };
 
-// Démarrage du jeu
 loadTiles();
