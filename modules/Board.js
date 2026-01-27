@@ -1,12 +1,12 @@
-import { areEdgesCompatible } from './Validator.js';
-
+/**
+ * modules/Board.js
+ */
 export class Board {
     constructor() {
         this.placedTiles = {}; 
     }
 
     addTile(x, y, tile) {
-        // On s'assure que les coordonnées sont bien stockées en string "x,y"
         this.placedTiles[`${x},${y}`] = tile;
     }
 
@@ -15,11 +15,6 @@ export class Board {
     }
 
     canPlaceTile(x, y, tileEnMain) {
-        // 1. Toujours autoriser la toute première tuile du jeu
-        if (Object.keys(this.placedTiles).length === 0) {
-            return true;
-        }
-
         if (!this.isFree(x, y)) return false;
 
         let hasNeighbor = false;
@@ -35,19 +30,14 @@ export class Board {
             if (neighbor) {
                 hasNeighbor = true;
                 
-                // On vérifie la compatibilité. 
-                // Si Validator échoue ou n'est pas prêt, on renvoie false par sécurité
-                try {
-                    if (!areEdgesCompatible(tileEnMain, tileEnMain.rotation, neighbor, neighbor.rotation, dir.side)) {
+                // On appelle la fonction via window
+                if (window.areEdgesCompatible) {
+                    if (!window.areEdgesCompatible(tileEnMain, tileEnMain.rotation, neighbor, neighbor.rotation, dir.side)) {
                         return false; 
                     }
-                } catch (err) {
-                    console.error("Erreur Validator:", err);
-                    return false;
                 }
             }
         }
-
         return hasNeighbor;
     }
 }
