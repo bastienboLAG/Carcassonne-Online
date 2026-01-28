@@ -8,7 +8,6 @@ let tuileEnMain = null;
 let tuilePosee = false;
 let zoomLevel = 1;
 
-// Variables pour le drag-to-pan
 let isDragging = false;
 let startX = 0;
 let startY = 0;
@@ -17,30 +16,25 @@ let scrollTop = 0;
 
 async function init() {
     try {
-        // Charger toutes les tuiles
         await deck.loadAllTiles();
 
-        // Créer la tuile de départ (04)
         const startTileData = await fetch('./data/Base/04.json').then(r => r.json());
         const startTile = new Tile(startTileData);
 
-        // Poser la tuile de départ au centre
         poserTuile(50, 50, startTile, true);
-
-        // Piocher la première tuile en main
         piocherNouvelleTuile();
 
         const container = document.getElementById('board-container');
         const board = document.getElementById('board');
 
-        // Interactions
-        document.getElementById('rotate-btn').onclick = () => {
-            if (tuileEnMain) {
+        // ✅ NOUVEAU : Clic sur la tuile pour la tourner
+        document.getElementById('tile-preview').addEventListener('click', () => {
+            if (tuileEnMain && !tuilePosee) {
                 tuileEnMain.rotation = (tuileEnMain.rotation + 90) % 360;
                 document.getElementById('current-tile-img').style.transform = `rotate(${tuileEnMain.rotation}deg)`;
                 rafraichirTousLesSlots();
             }
-        };
+        });
 
         document.getElementById('end-turn-btn').onclick = () => {
             if (!tuilePosee) {
@@ -48,6 +42,12 @@ async function init() {
                 return;
             }
             piocherNouvelleTuile();
+        };
+
+        // ✅ NOUVEAU : Bouton recentrer
+        document.getElementById('recenter-btn').onclick = () => {
+            container.scrollLeft = 5200 - (container.clientWidth / 2);
+            container.scrollTop = 5200 - (container.clientHeight / 2);
         };
 
         setupNavigation(container, board);
@@ -63,7 +63,6 @@ function piocherNouvelleTuile() {
     if (!tileData) {
         alert('Partie terminée ! Plus de tuiles dans la pioche.');
         document.getElementById('tile-preview').innerHTML = '<p>Fin de partie</p>';
-        document.getElementById('rotate-btn').disabled = true;
         document.getElementById('end-turn-btn').disabled = true;
         return;
     }
@@ -73,7 +72,7 @@ function piocherNouvelleTuile() {
     tuilePosee = false;
 
     const previewContainer = document.getElementById('tile-preview');
-    previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}">`;
+    previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="cursor: pointer;" title="Cliquez pour tourner">`;
 
     rafraichirTousLesSlots();
     mettreAJourCompteur();
@@ -97,10 +96,7 @@ function poserTuile(x, y, tile, isFirst = false) {
     if (!isFirst) {
         tuilePosee = true;
         document.querySelectorAll('.slot').forEach(s => s.remove());
-        
-        // Afficher le verso de la tuile
         document.getElementById('tile-preview').innerHTML = '<img src="./assets/Base/C2/verso.png" style="width: 120px; border: 2px solid #666;">';
-        
         tuileEnMain = null;
     } else {
         rafraichirTousLesSlots();
