@@ -10,10 +10,10 @@
         <div class="home-left">
             <h1>CARCASSONNE</h1>
             
-            <!-- ✅ NOUVEAU : Choix du pseudo -->
+            <!-- Choix du pseudo -->
             <div class="pseudo-section">
                 <label for="pseudo-input">Votre pseudo :</label>
-                <input type="text" id="pseudo-input" placeholder="Entrez votre pseudo" maxlength="20" value="bastienbo">
+                <input type="text" id="pseudo-input" placeholder="Entrez votre pseudo" maxlength="20">
             </div>
             
             <!-- Boutons multijoueur -->
@@ -21,7 +21,7 @@
                 <button id="create-game-btn" class="mp-button">Créer une partie</button>
                 <button id="join-game-btn" class="mp-button">Rejoindre une partie</button>
                 
-                <!-- ✅ NOUVEAU : Affichage du code avec bouton copier -->
+                <!-- Affichage du code avec bouton copier -->
                 <div id="game-code-container" style="display: none;">
                     <div class="code-display">
                         <span id="game-code-text"></span>
@@ -33,7 +33,7 @@
             <div class="lobby-section">
                 <h3>Lobby de partie</h3>
                 
-                <!-- ✅ MODIFIÉ : Liste vide au départ, remplie dynamiquement -->
+                <!-- Liste vide au départ, remplie dynamiquement -->
                 <div class="players-list" id="players-list">
                     <div class="player-slot empty">
                         <span class="player-name">En attente de joueurs...</span>
@@ -42,30 +42,30 @@
 
                 <div class="color-picker">
                     <h4>Choisissez votre couleur :</h4>
-                    <div class="color-grid">
-                        <label class="color-option">
+                    <div class="color-grid" id="color-grid">
+                        <label class="color-option" data-color="black">
                             <input type="radio" name="color" value="black">
-                            <span class="meeple-icon">⚫</span>
+                            <img src="./assets/Meeples/Black/Normal.png" class="meeple-img" alt="Black">
                         </label>
-                        <label class="color-option">
+                        <label class="color-option" data-color="red">
                             <input type="radio" name="color" value="red">
-                            <span class="meeple-icon">🔴</span>
+                            <img src="./assets/Meeples/Red/Normal.png" class="meeple-img" alt="Red">
                         </label>
-                        <label class="color-option">
+                        <label class="color-option" data-color="pink">
                             <input type="radio" name="color" value="pink">
-                            <span class="meeple-icon">🩷</span>
+                            <img src="./assets/Meeples/Pink/Normal.png" class="meeple-img" alt="Pink">
                         </label>
-                        <label class="color-option">
+                        <label class="color-option" data-color="green">
                             <input type="radio" name="color" value="green">
-                            <span class="meeple-icon">🟢</span>
+                            <img src="./assets/Meeples/Green/Normal.png" class="meeple-img" alt="Green">
                         </label>
-                        <label class="color-option selected">
+                        <label class="color-option selected" data-color="blue">
                             <input type="radio" name="color" value="blue" checked>
-                            <span class="meeple-icon">🔵</span>
+                            <img src="./assets/Meeples/Blue/Normal.png" class="meeple-img" alt="Blue">
                         </label>
-                        <label class="color-option">
+                        <label class="color-option" data-color="yellow">
                             <input type="radio" name="color" value="yellow">
-                            <span class="meeple-icon">🟡</span>
+                            <img src="./assets/Meeples/Yellow/Normal.png" class="meeple-img" alt="Yellow">
                         </label>
                     </div>
                 </div>
@@ -147,7 +147,7 @@
         </div>
     </div>
 
-    <!-- ✅ NOUVEAU : Modale pour rejoindre une partie -->
+    <!-- Modale pour rejoindre une partie -->
     <div id="join-modal" class="modal" style="display: none;">
         <div class="modal-content">
             <h2>Rejoindre une partie</h2>
