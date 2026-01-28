@@ -10,10 +10,16 @@
         <div class="home-left">
             <h1>CARCASSONNE</h1>
             
+            <!-- ✅ NOUVEAU : Boutons multijoueur -->
+            <div class="multiplayer-buttons">
+                <button id="create-game-btn" class="mp-button">Créer une partie</button>
+                <button id="join-game-btn" class="mp-button">Rejoindre une partie</button>
+                <p id="game-code-display"></p>
+            </div>
+            
             <div class="lobby-section">
                 <h3>Lobby de partie</h3>
                 
-                <!-- Liste des joueurs -->
                 <div class="players-list">
                     <div class="player-slot" id="player-1">
                         <span class="player-name">bastienbo</span>
@@ -37,7 +43,6 @@
                     </div>
                 </div>
 
-                <!-- Choix de couleur -->
                 <div class="color-picker">
                     <h4>Choisissez votre couleur :</h4>
                     <div class="color-grid">
@@ -73,7 +78,6 @@
         <div class="home-right">
             <h2>Choix des règles</h2>
             
-            <!-- Départ -->
             <div class="config-section">
                 <h3>Départ</h3>
                 <div class="radio-group">
@@ -84,7 +88,6 @@
                 </div>
             </div>
 
-            <!-- Visuel -->
             <div class="config-section">
                 <h3>Visuel</h3>
                 <div class="radio-group">
@@ -94,7 +97,6 @@
                 <p class="config-note">+ chaque ext indépendamment</p>
             </div>
 
-            <!-- Options -->
             <div class="config-section">
                 <h3>Options</h3>
                 <label class="toggle-option">
@@ -111,7 +113,6 @@
                 </label>
             </div>
 
-            <!-- Extensions -->
             <div class="config-section extensions-section">
                 <h3>Extensions</h3>
                 <details open>
@@ -145,7 +146,6 @@
                 </details>
             </div>
 
-            <!-- Bouton démarrer -->
             <a href="game.html" class="start-button">Démarrer la partie</a>
         </div>
     </div>
