@@ -19,11 +19,12 @@ export class Deck {
             }
         }
 
+        // ✅ CORRECTION : Calculer le total AVANT de créer la pioche
         this.totalTiles = allTileData.reduce((sum, data) => sum + data.quantity, 0);
 
-        // ✅ MODIFICATION : Ne plus exclure la tuile 04, on l'ajoute normalement
+        // Créer la pioche avec toutes les tuiles
         for (const data of allTileData) {
-            const quantity = data.quantity; // Toutes les tuiles, y compris 04
+            const quantity = data.quantity;
             
             for (let i = 0; i < quantity; i++) {
                 this.tiles.push({
@@ -36,12 +37,14 @@ export class Deck {
         // Mélanger la pioche
         this.shuffle();
         
-        // ✅ NOUVEAU : Forcer la tuile 04 en première position
+        // Forcer la tuile 04 en première position
         const index04 = this.tiles.findIndex(t => t.id === "04");
-        if (index04 > 0) {
+        if (index04 !== -1) {
             const tile04 = this.tiles.splice(index04, 1)[0];
-            this.tiles.unshift(tile04); // Mettre en premier
+            this.tiles.unshift(tile04);
         }
+        
+        console.log(`📦 Deck chargé: ${this.tiles.length} tuiles (total: ${this.totalTiles})`);
     }
 
     shuffle() {
