@@ -20,7 +20,6 @@ const colorImages = {
 
 const allColors = ['black', 'red', 'pink', 'green', 'blue', 'yellow'];
 
-// Gestion du pseudo
 document.getElementById('pseudo-input').addEventListener('input', (e) => {
     playerName = e.target.value.trim();
 });
@@ -51,7 +50,6 @@ function updateAvailableColors() {
     });
 }
 
-// ✅ CORRECTION : Fonction pour afficher/masquer le sélecteur de couleur
 function updateColorPickerVisibility() {
     const colorPicker = document.querySelector('.color-picker');
     
@@ -62,14 +60,12 @@ function updateColorPickerVisibility() {
     }
 }
 
-// ✅ CORRECTION : Désactiver UNIQUEMENT les options de configuration (pas tout)
 function updateOptionsAccess() {
     const configInputs = document.querySelectorAll('.home-right input');
     const configLabels = document.querySelectorAll('.home-right label');
     const startButton = document.querySelector('.start-button');
     
     if (inLobby && !isHost) {
-        // Désactiver les options pour les invités
         configInputs.forEach(input => {
             input.disabled = true;
         });
@@ -84,7 +80,6 @@ function updateOptionsAccess() {
             startButton.textContent = 'En attente de l\'hôte...';
         }
     } else if (inLobby && isHost) {
-        // Réactiver pour l'hôte
         configInputs.forEach(input => {
             input.disabled = false;
         });
@@ -117,7 +112,6 @@ function updateLobbyUI() {
     updateOptionsAccess();
 }
 
-// Gestion du choix de couleur
 const colorOptions = document.querySelectorAll('.color-option');
 colorOptions.forEach(option => {
     option.addEventListener('click', () => {
@@ -130,13 +124,14 @@ colorOptions.forEach(option => {
         playerColor = input.value;
         
         if (multiplayer.peer && multiplayer.peer.open) {
+            // ✅ CORRECTION : Mettre à jour localement pour l'hôte aussi
             const me = players.find(p => p.id === multiplayer.playerId);
             if (me) {
                 me.color = playerColor;
+                updatePlayersList();
             }
             
-            updatePlayersList();
-            
+            // Envoyer à tout le monde
             multiplayer.broadcast({
                 type: 'color-change',
                 playerId: multiplayer.playerId,
@@ -146,7 +141,6 @@ colorOptions.forEach(option => {
     });
 });
 
-// Gestion des toggles
 const toggles = document.querySelectorAll('input[type="checkbox"]');
 toggles.forEach(toggle => {
     toggle.addEventListener('change', () => {
@@ -154,7 +148,6 @@ toggles.forEach(toggle => {
     });
 });
 
-// Gestion des radios
 const radios = document.querySelectorAll('input[type="radio"]');
 radios.forEach(radio => {
     radio.addEventListener('change', () => {
@@ -192,19 +185,14 @@ function updatePlayersList() {
     }
 }
 
-// Créer une partie
 document.getElementById('create-game-btn').addEventListener('click', async () => {
-    console.log('🖱️ Clic sur "Créer une partie"'); // Debug
-    
     if (!playerName) {
         alert('Veuillez entrer un pseudo !');
         return;
     }
     
     try {
-        console.log('📞 Appel de createGame()...'); // Debug
         gameCode = await multiplayer.createGame();
-        console.log('✅ Partie créée, code:', gameCode); // Debug
         
         inLobby = true;
         isHost = true;
@@ -236,7 +224,6 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
                     let assignedColor = data.color;
                     if (takenColors.includes(data.color)) {
                         assignedColor = getAvailableColor();
-                        console.log(`⚠️ Couleur ${data.color} déjà prise, attribution de ${assignedColor}`);
                     }
                     
                     players.push({
@@ -255,6 +242,7 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
             }
             
             if (data.type === 'color-change') {
+                console.log('🎨 Changement de couleur reçu:', data.playerId, '→', data.color);
                 const player = players.find(p => p.id === data.playerId);
                 if (player) {
                     const colorTaken = players.some(p => p.id !== data.playerId && p.color === data.color);
@@ -263,6 +251,7 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
                         player.color = data.color;
                         updatePlayersList();
                         
+                        // ✅ CORRECTION : Redistribuer à TOUS les joueurs
                         multiplayer.broadcast({
                             type: 'players-update',
                             players: players
@@ -281,7 +270,6 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
     }
 });
 
-// Bouton copier le code
 document.getElementById('copy-code-btn').addEventListener('click', () => {
     navigator.clipboard.writeText(gameCode).then(() => {
         const btn = document.getElementById('copy-code-btn');
@@ -294,7 +282,6 @@ document.getElementById('copy-code-btn').addEventListener('click', () => {
     });
 });
 
-// Rejoindre une partie
 document.getElementById('join-game-btn').addEventListener('click', () => {
     if (!playerName) {
         alert('Veuillez entrer un pseudo !');
@@ -324,6 +311,7 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
             }
             
             if (data.type === 'players-update') {
+                console.log('👥 Mise à jour liste joueurs:', data.players);
                 players = data.players;
                 
                 const me = players.find(p => p.id === multiplayer.playerId);
@@ -371,7 +359,6 @@ function showJoinError(message) {
     errorEl.style.display = 'block';
 }
 
-// ✅ Initialisation : masquer le sélecteur de couleur au départ
 updateColorPickerVisibility();
 
 console.log('Page d\'accueil chargée');
