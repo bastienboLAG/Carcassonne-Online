@@ -6,7 +6,8 @@ let playerName = '';
 let playerColor = 'blue';
 let players = [];
 let takenColors = [];
-let inLobby = false; // ✅ NOUVEAU : Flag pour savoir si on est dans un lobby
+let inLobby = false;
+let isHost = false; // ✅ NOUVEAU : Flag pour savoir si on est l'hôte
 
 // Mapping des couleurs vers les chemins d'images
 const colorImages = {
@@ -25,17 +26,17 @@ document.getElementById('pseudo-input').addEventListener('input', (e) => {
     playerName = e.target.value.trim();
 });
 
-// ✅ Fonction pour trouver une couleur disponible
+// Fonction pour trouver une couleur disponible
 function getAvailableColor() {
     for (const color of allColors) {
         if (!takenColors.includes(color)) {
             return color;
         }
     }
-    return 'blue'; // Fallback
+    return 'blue';
 }
 
-// ✅ Fonction pour mettre à jour les couleurs disponibles
+// Fonction pour mettre à jour les couleurs disponibles
 function updateAvailableColors() {
     const colorOptions = document.querySelectorAll('.color-option');
     
@@ -53,7 +54,46 @@ function updateAvailableColors() {
     });
 }
 
-// ✅ Fonction pour masquer/afficher les boutons
+// ✅ Fonction pour désactiver les options si on n'est pas hôte
+function updateOptionsAccess() {
+    const configSections = document.querySelectorAll('.config-section input, .config-section label');
+    const startButton = document.querySelector('.start-button');
+    
+    if (inLobby && !isHost) {
+        // Désactiver toutes les options pour les invités
+        configSections.forEach(el => {
+            if (el.tagName === 'INPUT') {
+                el.disabled = true;
+            }
+            el.style.opacity = '0.5';
+            el.style.pointerEvents = 'none';
+        });
+        
+        // Changer le bouton "Démarrer" en "En attente de l'hôte"
+        if (startButton) {
+            startButton.style.pointerEvents = 'none';
+            startButton.style.opacity = '0.5';
+            startButton.textContent = 'En attente de l\'hôte...';
+        }
+    } else {
+        // Réactiver pour l'hôte
+        configSections.forEach(el => {
+            if (el.tagName === 'INPUT') {
+                el.disabled = false;
+            }
+            el.style.opacity = '1';
+            el.style.pointerEvents = 'auto';
+        });
+        
+        if (startButton) {
+            startButton.style.pointerEvents = 'auto';
+            startButton.style.opacity = '1';
+            startButton.textContent = 'Démarrer la partie';
+        }
+    }
+}
+
+// Fonction pour masquer/afficher les boutons
 function updateLobbyUI() {
     const createBtn = document.getElementById('create-game-btn');
     const joinBtn = document.getElementById('join-game-btn');
@@ -65,6 +105,8 @@ function updateLobbyUI() {
         createBtn.style.display = 'block';
         joinBtn.style.display = 'block';
     }
+    
+    updateOptionsAccess();
 }
 
 // Gestion du choix de couleur
@@ -81,9 +123,8 @@ colorOptions.forEach(option => {
         input.checked = true;
         playerColor = input.value;
         
-        // ✅ Synchroniser le changement de couleur si connecté
+        // Synchroniser le changement de couleur si connecté
         if (multiplayer.peer && multiplayer.peer.open) {
-            // Mettre à jour localement
             const me = players.find(p => p.id === multiplayer.playerId);
             if (me) {
                 me.color = playerColor;
@@ -91,7 +132,6 @@ colorOptions.forEach(option => {
             
             updatePlayersList();
             
-            // Envoyer à tout le monde
             multiplayer.broadcast({
                 type: 'color-change',
                 playerId: multiplayer.playerId,
@@ -122,7 +162,6 @@ function updatePlayersList() {
     const playersList = document.getElementById('players-list');
     playersList.innerHTML = '';
     
-    // Mettre à jour les couleurs prises
     takenColors = players.map(p => p.color);
     updateAvailableColors();
     
@@ -136,198 +175,4 @@ function updatePlayersList() {
         slot.className = 'player-slot';
         slot.innerHTML = `
             <span class="player-name">${player.name}${player.isHost ? ' 👑' : ''}</span>
-            <img src="${colorImages[player.color]}" class="player-meeple-img" alt="${player.color}">
-        `;
-        playersList.appendChild(slot);
-    });
-    
-    // Ajouter des slots vides jusqu'à 6
-    for (let i = players.length; i < 6; i++) {
-        const slot = document.createElement('div');
-        slot.className = 'player-slot empty';
-        slot.innerHTML = '<span class="player-name">En attente...</span>';
-        playersList.appendChild(slot);
-    }
-}
-
-// Créer une partie
-document.getElementById('create-game-btn').addEventListener('click', async () => {
-    if (!playerName) {
-        alert('Veuillez entrer un pseudo !');
-        return;
-    }
-    
-    try {
-        gameCode = await multiplayer.createGame();
-        inLobby = true; // ✅ On est dans un lobby
-        updateLobbyUI();
-        
-        document.getElementById('game-code-container').style.display = 'block';
-        document.getElementById('game-code-text').textContent = `Code: ${gameCode}`;
-        
-        // Ajouter le joueur hôte
-        players.push({
-            id: multiplayer.playerId,
-            name: playerName,
-            color: playerColor,
-            isHost: true
-        });
-        updatePlayersList();
-        
-        console.log('🎮 Partie créée ! Code:', gameCode);
-        
-        multiplayer.onPlayerJoined = (playerId) => {
-            console.log('👤 Nouveau joueur connecté (ID):', playerId);
-        };
-        
-        multiplayer.onDataReceived = (data, from) => {
-            console.log('📨 [HÔTE] Reçu:', data);
-            
-            if (data.type === 'player-info') {
-                const existingPlayer = players.find(p => p.id === from);
-                if (!existingPlayer) {
-                    // ✅ Vérifier si la couleur est déjà prise
-                    let assignedColor = data.color;
-                    if (takenColors.includes(data.color)) {
-                        assignedColor = getAvailableColor();
-                        console.log(`⚠️ Couleur ${data.color} déjà prise, attribution de ${assignedColor}`);
-                    }
-                    
-                    players.push({
-                        id: from,
-                        name: data.name,
-                        color: assignedColor,
-                        isHost: false
-                    });
-                    updatePlayersList();
-                }
-                
-                // Envoyer la liste à tout le monde
-                multiplayer.broadcast({
-                    type: 'players-update',
-                    players: players
-                });
-            }
-            
-            if (data.type === 'color-change') {
-                const player = players.find(p => p.id === data.playerId);
-                if (player) {
-                    // ✅ Vérifier que la couleur n'est pas déjà prise par quelqu'un d'autre
-                    const colorTaken = players.some(p => p.id !== data.playerId && p.color === data.color);
-                    
-                    if (!colorTaken) {
-                        player.color = data.color;
-                        updatePlayersList();
-                        
-                        // Redistribuer la liste
-                        multiplayer.broadcast({
-                            type: 'players-update',
-                            players: players
-                        });
-                    }
-                }
-            }
-        };
-        
-    } catch (error) {
-        console.error('❌ Erreur:', error);
-        alert('Erreur lors de la création de la partie: ' + error.message);
-        inLobby = false;
-        updateLobbyUI();
-    }
-});
-
-// Bouton copier le code
-document.getElementById('copy-code-btn').addEventListener('click', () => {
-    navigator.clipboard.writeText(gameCode).then(() => {
-        const btn = document.getElementById('copy-code-btn');
-        btn.textContent = '✅ Copié !';
-        setTimeout(() => {
-            btn.textContent = '📋 Copier';
-        }, 2000);
-    }).catch(err => {
-        console.error('Erreur copie:', err);
-    });
-});
-
-// Rejoindre une partie - Ouvrir la modale
-document.getElementById('join-game-btn').addEventListener('click', () => {
-    if (!playerName) {
-        alert('Veuillez entrer un pseudo !');
-        return;
-    }
-    
-    document.getElementById('join-modal').style.display = 'flex';
-    document.getElementById('join-code-input').value = '';
-    document.getElementById('join-error').style.display = 'none';
-    document.getElementById('join-code-input').focus();
-});
-
-// Rejoindre - Confirmer
-document.getElementById('join-confirm-btn').addEventListener('click', async () => {
-    const code = document.getElementById('join-code-input').value.trim();
-    
-    if (!code) {
-        showJoinError('Veuillez entrer un code !');
-        return;
-    }
-    
-    try {
-        multiplayer.onDataReceived = (data, from) => {
-            console.log('📨 [INVITÉ] Reçu:', data);
-            
-            if (data.type === 'welcome') {
-                console.log('🎉', data.message);
-            }
-            
-            if (data.type === 'players-update') {
-                players = data.players;
-                
-                // ✅ Mettre à jour ma couleur si elle a été changée par l'hôte
-                const me = players.find(p => p.id === multiplayer.playerId);
-                if (me && me.color !== playerColor) {
-                    playerColor = me.color;
-                    // Sélectionner visuellement la bonne couleur
-                    const colorOption = document.querySelector(`.color-option[data-color="${playerColor}"]`);
-                    if (colorOption) {
-                        colorOptions.forEach(opt => opt.classList.remove('selected'));
-                        colorOption.classList.add('selected');
-                        colorOption.querySelector('input').checked = true;
-                    }
-                }
-                
-                updatePlayersList();
-            }
-        };
-        
-        await multiplayer.joinGame(code);
-        document.getElementById('join-modal').style.display = 'none';
-        inLobby = true; // ✅ On est dans un lobby
-        updateLobbyUI();
-        
-        setTimeout(() => {
-            multiplayer.broadcast({
-                type: 'player-info',
-                name: playerName,
-                color: playerColor
-            });
-        }, 500);
-        
-    } catch (error) {
-        console.error('❌ Erreur de connexion:', error);
-        showJoinError('Impossible de rejoindre: ' + error.message);
-    }
-});
-
-// Rejoindre - Annuler
-document.getElementById('join-cancel-btn').addEventListener('click', () => {
-    document.getElementById('join-modal').style.display = 'none';
-});
-
-function showJoinError(message) {
-    const errorEl = document.getElementById('join-error');
-    errorEl.textContent = message;
-    errorEl.style.display = 'block';
-}
-
-console.log('Page d\'accueil chargée');
+            <img src="${colorImages[player.color]}" class="player-meeple-img
