@@ -16,7 +16,7 @@ const colorEmojis = {
     'yellow': '🟡'
 };
 
-// ✅ Gestion du pseudo
+// Gestion du pseudo
 document.getElementById('pseudo-input').addEventListener('input', (e) => {
     playerName = e.target.value.trim() || 'Joueur';
 });
@@ -49,7 +49,7 @@ radios.forEach(radio => {
     });
 });
 
-// ✅ Fonction pour mettre à jour la liste des joueurs
+// Fonction pour mettre à jour la liste des joueurs
 function updatePlayersList() {
     const playersList = document.getElementById('players-list');
     playersList.innerHTML = '';
@@ -78,7 +78,7 @@ function updatePlayersList() {
     }
 }
 
-// ✅ Créer une partie
+// Créer une partie
 document.getElementById('create-game-btn').addEventListener('click', async () => {
     if (!playerName) {
         alert('Veuillez entrer un pseudo !');
@@ -102,40 +102,48 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
         updatePlayersList();
         
         console.log('🎮 Partie créée ! Code:', gameCode);
+        console.log('👤 Hôte:', playerName, playerColor);
         
-        // Callbacks
+        // ✅ CORRECTION : Définir les callbacks AVANT que les joueurs se connectent
         multiplayer.onPlayerJoined = (playerId) => {
-            console.log('👤 Nouveau joueur connecté:', playerId);
+            console.log('👤 Nouveau joueur connecté (ID):', playerId);
         };
         
         multiplayer.onDataReceived = (data, from) => {
-            console.log('📨 Reçu de', from, ':', data);
+            console.log('📨 [HÔTE] Reçu de', from, ':', data);
             
             if (data.type === 'player-info') {
-                // Un joueur envoie ses infos
-                players.push({
-                    id: from,
-                    name: data.name,
-                    color: data.color,
-                    isHost: false
-                });
-                updatePlayersList();
+                console.log('✅ Infos joueur reçues:', data.name, data.color);
+                
+                // Vérifier si le joueur n'est pas déjà dans la liste
+                const existingPlayer = players.find(p => p.id === from);
+                if (!existingPlayer) {
+                    players.push({
+                        id: from,
+                        name: data.name,
+                        color: data.color,
+                        isHost: false
+                    });
+                    updatePlayersList();
+                    console.log('👥 Liste des joueurs mise à jour:', players.length, 'joueurs');
+                }
                 
                 // Envoyer la liste complète à tout le monde
                 multiplayer.broadcast({
                     type: 'players-update',
                     players: players
                 });
+                console.log('📤 Liste envoyée à tous les joueurs');
             }
         };
         
     } catch (error) {
-        console.error('Erreur:', error);
-        showError('Erreur lors de la création de la partie: ' + error.message);
+        console.error('❌ Erreur:', error);
+        alert('Erreur lors de la création de la partie: ' + error.message);
     }
 });
 
-// ✅ Bouton copier le code
+// Bouton copier le code
 document.getElementById('copy-code-btn').addEventListener('click', () => {
     navigator.clipboard.writeText(gameCode).then(() => {
         const btn = document.getElementById('copy-code-btn');
@@ -148,7 +156,7 @@ document.getElementById('copy-code-btn').addEventListener('click', () => {
     });
 });
 
-// ✅ Rejoindre une partie - Ouvrir la modale
+// Rejoindre une partie - Ouvrir la modale
 document.getElementById('join-game-btn').addEventListener('click', () => {
     if (!playerName) {
         alert('Veuillez entrer un pseudo !');
@@ -161,7 +169,7 @@ document.getElementById('join-game-btn').addEventListener('click', () => {
     document.getElementById('join-code-input').focus();
 });
 
-// ✅ Rejoindre - Confirmer
+// Rejoindre - Confirmer
 document.getElementById('join-confirm-btn').addEventListener('click', async () => {
     const code = document.getElementById('join-code-input').value.trim();
     
@@ -171,56 +179,57 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
     }
     
     try {
-        await multiplayer.joinGame(code);
+        console.log('🔌 Tentative de connexion au code:', code);
         
-        // Fermer la modale
-        document.getElementById('join-modal').style.display = 'none';
-        
-        console.log('✅ Connecté à la partie !');
-        
-        // Envoyer nos infos à l'hôte
-        multiplayer.broadcast({
-            type: 'player-info',
-            name: playerName,
-            color: playerColor
-        });
-        
+        // ✅ CORRECTION : Définir les callbacks AVANT de rejoindre
         multiplayer.onDataReceived = (data, from) => {
-            console.log('📨 Reçu:', data);
+            console.log('📨 [INVITÉ] Reçu:', data);
             
             if (data.type === 'welcome') {
                 console.log('🎉', data.message);
             }
             
             if (data.type === 'players-update') {
-                // Mise à jour de la liste des joueurs
+                console.log('👥 Mise à jour de la liste des joueurs:', data.players.length, 'joueurs');
                 players = data.players;
                 updatePlayersList();
             }
         };
         
+        await multiplayer.joinGame(code);
+        
+        // Fermer la modale
+        document.getElementById('join-modal').style.display = 'none';
+        
+        console.log('✅ Connecté à la partie !');
+        console.log('👤 Mon ID:', multiplayer.playerId);
+        
+        // ✅ CORRECTION : Attendre un peu que la connexion soit stable
+        setTimeout(() => {
+            console.log('📤 Envoi de mes infos:', playerName, playerColor);
+            multiplayer.broadcast({
+                type: 'player-info',
+                name: playerName,
+                color: playerColor
+            });
+        }, 500);
+        
     } catch (error) {
-        console.error('Erreur de connexion:', error);
+        console.error('❌ Erreur de connexion:', error);
         showJoinError('Impossible de rejoindre: ' + error.message);
     }
 });
 
-// ✅ Rejoindre - Annuler
+// Rejoindre - Annuler
 document.getElementById('join-cancel-btn').addEventListener('click', () => {
     document.getElementById('join-modal').style.display = 'none';
 });
 
-// ✅ Fonctions d'affichage d'erreur
+// Fonctions d'affichage d'erreur
 function showJoinError(message) {
     const errorEl = document.getElementById('join-error');
     errorEl.textContent = message;
     errorEl.style.display = 'block';
-}
-
-function showError(message) {
-    // Pour les erreurs générales, on peut utiliser un toast ou une notification
-    console.error(message);
-    alert(message); // Temporaire, à améliorer plus tard
 }
 
 console.log('Page d\'accueil chargée');
