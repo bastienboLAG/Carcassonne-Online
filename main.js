@@ -18,20 +18,26 @@ async function init() {
     try {
         await deck.loadAllTiles();
 
-        const startTileData = await fetch('./data/Base/04.json').then(r => r.json());
-        const startTile = new Tile(startTileData);
+        // ✅ NOUVEAU : Ne plus poser la tuile 04 automatiquement
+        // Juste créer un slot au centre
+        creerSlotCentral();
 
-        poserTuile(50, 50, startTile, true);
+        // ✅ NOUVEAU : La tuile 04 est la première piochée
         piocherNouvelleTuile();
 
         const container = document.getElementById('board-container');
         const board = document.getElementById('board');
 
-        // ✅ NOUVEAU : Clic sur la tuile pour la tourner
+        // Clic sur la tuile pour la tourner
         document.getElementById('tile-preview').addEventListener('click', () => {
             if (tuileEnMain && !tuilePosee) {
-                tuileEnMain.rotation = (tuileEnMain.rotation + 90) % 360;
-                document.getElementById('current-tile-img').style.transform = `rotate(${tuileEnMain.rotation}deg)`;
+                // ✅ CORRECTION : Rotation visuelle toujours en sens horaire
+                const currentImg = document.getElementById('current-tile-img');
+                const currentRotation = tuileEnMain.rotation;
+                const newRotation = (currentRotation + 90) % 360;
+                
+                tuileEnMain.rotation = newRotation;
+                currentImg.style.transform = `rotate(${newRotation}deg)`;
                 rafraichirTousLesSlots();
             }
         });
@@ -44,7 +50,6 @@ async function init() {
             piocherNouvelleTuile();
         };
 
-        // ✅ NOUVEAU : Bouton recentrer
         document.getElementById('recenter-btn').onclick = () => {
             container.scrollLeft = 5200 - (container.clientWidth / 2);
             container.scrollTop = 5200 - (container.clientHeight / 2);
@@ -55,6 +60,20 @@ async function init() {
     } catch (e) { 
         console.error(e); 
     }
+}
+
+// ✅ NOUVEAU : Créer un slot au centre du plateau
+function creerSlotCentral() {
+    const slot = document.createElement('div');
+    slot.className = "slot";
+    slot.style.gridColumn = 50;
+    slot.style.gridRow = 50;
+    slot.onclick = () => {
+        if (tuileEnMain) {
+            poserTuile(50, 50, tuileEnMain, true);
+        }
+    };
+    document.getElementById('board').appendChild(slot);
 }
 
 function piocherNouvelleTuile() {
@@ -72,7 +91,7 @@ function piocherNouvelleTuile() {
     tuilePosee = false;
 
     const previewContainer = document.getElementById('tile-preview');
-    previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="cursor: pointer;" title="Cliquez pour tourner">`;
+    previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="cursor: pointer; transform: rotate(0deg);" title="Cliquez pour tourner">`;
 
     rafraichirTousLesSlots();
     mettreAJourCompteur();
@@ -99,6 +118,8 @@ function poserTuile(x, y, tile, isFirst = false) {
         document.getElementById('tile-preview').innerHTML = '<img src="./assets/Base/C2/verso.png" style="width: 120px; border: 2px solid #666;">';
         tuileEnMain = null;
     } else {
+        // ✅ Première tuile posée, supprimer le slot central et générer les slots autour
+        document.querySelectorAll('.slot').forEach(s => s.remove());
         rafraichirTousLesSlots();
     }
 }
@@ -171,12 +192,4 @@ function setupNavigation(container, board) {
         const y = e.pageY - container.offsetTop;
         const walkX = (x - startX) * 2;
         const walkY = (y - startY) * 2;
-        container.scrollLeft = scrollLeft - walkX;
-        container.scrollTop = scrollTop - walkY;
-    });
-
-    container.scrollLeft = 5200 - (container.clientWidth / 2);
-    container.scrollTop = 5200 - (container.clientHeight / 2);
-}
-
-init();
+        container
