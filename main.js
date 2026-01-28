@@ -16,25 +16,26 @@ let scrollTop = 0;
 
 async function init() {
     try {
+        console.log('🎮 Initialisation du jeu...');
+        
         await deck.loadAllTiles();
+        console.log('📦 Deck chargé');
 
-        // ✅ NOUVEAU : Ne plus poser la tuile 04 automatiquement
-        // Juste créer un slot au centre
+        // Créer un slot au centre
         creerSlotCentral();
+        console.log('🎯 Slot central créé');
 
-        // ✅ NOUVEAU : La tuile 04 est la première piochée
+        // Piocher la première tuile
         piocherNouvelleTuile();
+        console.log('🃏 Première tuile piochée');
 
         const container = document.getElementById('board-container');
         const board = document.getElementById('board');
 
-        // Clic sur la tuile pour la tourner
         document.getElementById('tile-preview').addEventListener('click', () => {
             if (tuileEnMain && !tuilePosee) {
-                // ✅ CORRECTION : Rotation visuelle toujours en sens horaire
                 const currentImg = document.getElementById('current-tile-img');
-                const currentRotation = tuileEnMain.rotation;
-                const newRotation = (currentRotation + 90) % 360;
+                const newRotation = (tuileEnMain.rotation + 90) % 360;
                 
                 tuileEnMain.rotation = newRotation;
                 currentImg.style.transform = `rotate(${newRotation}deg)`;
@@ -57,12 +58,13 @@ async function init() {
 
         setupNavigation(container, board);
         mettreAJourCompteur();
+        
+        console.log('✅ Initialisation terminée');
     } catch (e) { 
-        console.error(e); 
+        console.error('❌ Erreur init:', e); 
     }
 }
 
-// ✅ NOUVEAU : Créer un slot au centre du plateau
 function creerSlotCentral() {
     const slot = document.createElement('div');
     slot.className = "slot";
@@ -77,15 +79,18 @@ function creerSlotCentral() {
 }
 
 function piocherNouvelleTuile() {
+    console.log('🎲 Pioche d\'une nouvelle tuile...');
     const tileData = deck.draw();
     
     if (!tileData) {
+        console.log('⚠️ Pioche vide !');
         alert('Partie terminée ! Plus de tuiles dans la pioche.');
         document.getElementById('tile-preview').innerHTML = '<p>Fin de partie</p>';
         document.getElementById('end-turn-btn').disabled = true;
         return;
     }
 
+    console.log('🃏 Tuile piochée:', tileData.id);
     tuileEnMain = new Tile(tileData);
     tuileEnMain.rotation = 0;
     tuilePosee = false;
@@ -118,7 +123,6 @@ function poserTuile(x, y, tile, isFirst = false) {
         document.getElementById('tile-preview').innerHTML = '<img src="./assets/Base/C2/verso.png" style="width: 120px; border: 2px solid #666;">';
         tuileEnMain = null;
     } else {
-        // ✅ Première tuile posée, supprimer le slot central et générer les slots autour
         document.querySelectorAll('.slot').forEach(s => s.remove());
         rafraichirTousLesSlots();
     }
@@ -152,6 +156,7 @@ function genererSlotsAutour(x, y) {
 function mettreAJourCompteur() {
     const remaining = deck.remaining();
     const total = deck.total();
+    console.log(`📊 Compteur: ${remaining} / ${total}`);
     document.getElementById('tile-counter').textContent = `Tuiles : ${remaining} / ${total}`;
 }
 
@@ -192,4 +197,12 @@ function setupNavigation(container, board) {
         const y = e.pageY - container.offsetTop;
         const walkX = (x - startX) * 2;
         const walkY = (y - startY) * 2;
-        container
+        container.scrollLeft = scrollLeft - walkX;
+        container.scrollTop = scrollTop - walkY;
+    });
+
+    container.scrollLeft = 5200 - (container.clientWidth / 2);
+    container.scrollTop = 5200 - (container.clientHeight / 2);
+}
+
+init();
