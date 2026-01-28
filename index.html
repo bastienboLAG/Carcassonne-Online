@@ -10,36 +10,33 @@
         <div class="home-left">
             <h1>CARCASSONNE</h1>
             
-            <!-- ✅ NOUVEAU : Boutons multijoueur -->
+            <!-- ✅ NOUVEAU : Choix du pseudo -->
+            <div class="pseudo-section">
+                <label for="pseudo-input">Votre pseudo :</label>
+                <input type="text" id="pseudo-input" placeholder="Entrez votre pseudo" maxlength="20" value="bastienbo">
+            </div>
+            
+            <!-- Boutons multijoueur -->
             <div class="multiplayer-buttons">
                 <button id="create-game-btn" class="mp-button">Créer une partie</button>
                 <button id="join-game-btn" class="mp-button">Rejoindre une partie</button>
-                <p id="game-code-display"></p>
+                
+                <!-- ✅ NOUVEAU : Affichage du code avec bouton copier -->
+                <div id="game-code-container" style="display: none;">
+                    <div class="code-display">
+                        <span id="game-code-text"></span>
+                        <button id="copy-code-btn" class="copy-btn">📋 Copier</button>
+                    </div>
+                </div>
             </div>
             
             <div class="lobby-section">
                 <h3>Lobby de partie</h3>
                 
-                <div class="players-list">
-                    <div class="player-slot" id="player-1">
-                        <span class="player-name">bastienbo</span>
-                        <span class="player-meeple">🔵</span>
-                    </div>
-                    <div class="player-slot" id="player-2">
-                        <span class="player-name">Invité</span>
-                        <span class="player-meeple">⚫</span>
-                    </div>
-                    <div class="player-slot empty" id="player-3">
-                        <span class="player-name">En attente...</span>
-                    </div>
-                    <div class="player-slot empty" id="player-4">
-                        <span class="player-name">En attente...</span>
-                    </div>
-                    <div class="player-slot empty" id="player-5">
-                        <span class="player-name">En attente...</span>
-                    </div>
-                    <div class="player-slot empty" id="player-6">
-                        <span class="player-name">En attente...</span>
+                <!-- ✅ MODIFIÉ : Liste vide au départ, remplie dynamiquement -->
+                <div class="players-list" id="players-list">
+                    <div class="player-slot empty">
+                        <span class="player-name">En attente de joueurs...</span>
                     </div>
                 </div>
 
@@ -147,6 +144,20 @@
             </div>
 
             <a href="game.html" class="start-button">Démarrer la partie</a>
+        </div>
+    </div>
+
+    <!-- ✅ NOUVEAU : Modale pour rejoindre une partie -->
+    <div id="join-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>Rejoindre une partie</h2>
+            <p>Entrez le code de la partie :</p>
+            <input type="text" id="join-code-input" placeholder="Code de la partie" maxlength="50">
+            <div class="modal-buttons">
+                <button id="join-confirm-btn" class="modal-btn confirm">Rejoindre</button>
+                <button id="join-cancel-btn" class="modal-btn cancel">Annuler</button>
+            </div>
+            <p id="join-error" class="error-message" style="display: none;"></p>
         </div>
     </div>
 
