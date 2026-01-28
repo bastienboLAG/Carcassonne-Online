@@ -2,34 +2,66 @@ import { Multiplayer } from './modules/Multiplayer.js';
 
 const multiplayer = new Multiplayer();
 let gameCode = null;
-let playerName = 'bastienbo';
+let playerName = '';
 let playerColor = 'blue';
-let players = []; // Liste des joueurs connectés
+let players = [];
+let takenColors = []; // Couleurs déjà prises
+let gameCreated = false; // ✅ NOUVEAU : Flag pour éviter les duplications
 
-// Mapping des couleurs vers les emojis
-const colorEmojis = {
-    'black': '⚫',
-    'red': '🔴',
-    'pink': '🩷',
-    'green': '🟢',
-    'blue': '🔵',
-    'yellow': '🟡'
+// Mapping des couleurs vers les chemins d'images
+const colorImages = {
+    'black': './assets/Meeples/Black/Normal.png',
+    'red': './assets/Meeples/Red/Normal.png',
+    'pink': './assets/Meeples/Pink/Normal.png',
+    'green': './assets/Meeples/Green/Normal.png',
+    'blue': './assets/Meeples/Blue/Normal.png',
+    'yellow': './assets/Meeples/Yellow/Normal.png'
 };
 
 // Gestion du pseudo
 document.getElementById('pseudo-input').addEventListener('input', (e) => {
-    playerName = e.target.value.trim() || 'Joueur';
+    playerName = e.target.value.trim();
 });
+
+// ✅ Fonction pour mettre à jour les couleurs disponibles
+function updateAvailableColors() {
+    const colorOptions = document.querySelectorAll('.color-option');
+    
+    colorOptions.forEach(option => {
+        const color = option.dataset.color;
+        const input = option.querySelector('input');
+        
+        if (takenColors.includes(color) && color !== playerColor) {
+            // Couleur prise par quelqu'un d'autre
+            option.classList.add('disabled');
+            input.disabled = true;
+        } else {
+            option.classList.remove('disabled');
+            input.disabled = false;
+        }
+    });
+}
 
 // Gestion du choix de couleur
 const colorOptions = document.querySelectorAll('.color-option');
 colorOptions.forEach(option => {
     option.addEventListener('click', () => {
+        if (option.classList.contains('disabled')) return;
+        
         colorOptions.forEach(opt => opt.classList.remove('selected'));
         option.classList.add('selected');
         const input = option.querySelector('input');
         input.checked = true;
         playerColor = input.value;
+        
+        // ✅ Synchroniser le changement de couleur si connecté
+        if (multiplayer.peer && multiplayer.peer.open) {
+            multiplayer.broadcast({
+                type: 'color-change',
+                playerId: multiplayer.playerId,
+                color: playerColor
+            });
+        }
     });
 });
 
@@ -54,17 +86,21 @@ function updatePlayersList() {
     const playersList = document.getElementById('players-list');
     playersList.innerHTML = '';
     
+    // ✅ Mettre à jour les couleurs prises
+    takenColors = players.map(p => p.color);
+    updateAvailableColors();
+    
     if (players.length === 0) {
         playersList.innerHTML = '<div class="player-slot empty"><span class="player-name">En attente de joueurs...</span></div>';
         return;
     }
     
-    players.forEach((player, index) => {
+    players.forEach((player) => {
         const slot = document.createElement('div');
         slot.className = 'player-slot';
         slot.innerHTML = `
             <span class="player-name">${player.name}</span>
-            <span class="player-meeple">${colorEmojis[player.color] || '⚪'}</span>
+            <img src="${colorImages[player.color]}" class="player-meeple-img" alt="${player.color}">
         `;
         playersList.appendChild(slot);
     });
@@ -85,8 +121,15 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
         return;
     }
     
+    // ✅ Empêcher la création multiple
+    if (gameCreated) {
+        alert('Une partie est déjà créée !');
+        return;
+    }
+    
     try {
         gameCode = await multiplayer.createGame();
+        gameCreated = true;
         
         // Afficher le code avec le bouton copier
         document.getElementById('game-code-container').style.display = 'block';
@@ -102,20 +145,15 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
         updatePlayersList();
         
         console.log('🎮 Partie créée ! Code:', gameCode);
-        console.log('👤 Hôte:', playerName, playerColor);
         
-        // ✅ CORRECTION : Définir les callbacks AVANT que les joueurs se connectent
         multiplayer.onPlayerJoined = (playerId) => {
             console.log('👤 Nouveau joueur connecté (ID):', playerId);
         };
         
         multiplayer.onDataReceived = (data, from) => {
-            console.log('📨 [HÔTE] Reçu de', from, ':', data);
+            console.log('📨 [HÔTE] Reçu:', data);
             
             if (data.type === 'player-info') {
-                console.log('✅ Infos joueur reçues:', data.name, data.color);
-                
-                // Vérifier si le joueur n'est pas déjà dans la liste
                 const existingPlayer = players.find(p => p.id === from);
                 if (!existingPlayer) {
                     players.push({
@@ -125,15 +163,27 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
                         isHost: false
                     });
                     updatePlayersList();
-                    console.log('👥 Liste des joueurs mise à jour:', players.length, 'joueurs');
                 }
                 
-                // Envoyer la liste complète à tout le monde
                 multiplayer.broadcast({
                     type: 'players-update',
                     players: players
                 });
-                console.log('📤 Liste envoyée à tous les joueurs');
+            }
+            
+            // ✅ Gestion du changement de couleur
+            if (data.type === 'color-change') {
+                const player = players.find(p => p.id === data.playerId);
+                if (player) {
+                    player.color = data.color;
+                    updatePlayersList();
+                    
+                    // Redistribuer la liste
+                    multiplayer.broadcast({
+                        type: 'players-update',
+                        players: players
+                    });
+                }
             }
         };
         
@@ -179,9 +229,6 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
     }
     
     try {
-        console.log('🔌 Tentative de connexion au code:', code);
-        
-        // ✅ CORRECTION : Définir les callbacks AVANT de rejoindre
         multiplayer.onDataReceived = (data, from) => {
             console.log('📨 [INVITÉ] Reçu:', data);
             
@@ -190,23 +237,15 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
             }
             
             if (data.type === 'players-update') {
-                console.log('👥 Mise à jour de la liste des joueurs:', data.players.length, 'joueurs');
                 players = data.players;
                 updatePlayersList();
             }
         };
         
         await multiplayer.joinGame(code);
-        
-        // Fermer la modale
         document.getElementById('join-modal').style.display = 'none';
         
-        console.log('✅ Connecté à la partie !');
-        console.log('👤 Mon ID:', multiplayer.playerId);
-        
-        // ✅ CORRECTION : Attendre un peu que la connexion soit stable
         setTimeout(() => {
-            console.log('📤 Envoi de mes infos:', playerName, playerColor);
             multiplayer.broadcast({
                 type: 'player-info',
                 name: playerName,
@@ -225,7 +264,6 @@ document.getElementById('join-cancel-btn').addEventListener('click', () => {
     document.getElementById('join-modal').style.display = 'none';
 });
 
-// Fonctions d'affichage d'erreur
 function showJoinError(message) {
     const errorEl = document.getElementById('join-error');
     errorEl.textContent = message;
