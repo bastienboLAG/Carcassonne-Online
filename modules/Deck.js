@@ -1,18 +1,14 @@
 export class Deck {
     constructor() {
-        this.tiles = [];       // Pioche complète (avec doublons selon quantity)
-        this.currentIndex = 0; // Index de la prochaine tuile à piocher
-        this.totalTiles = 0;   // ✅ NOUVEAU : Nombre total de tuiles dans le jeu
+        this.tiles = [];
+        this.currentIndex = 0;
+        this.totalTiles = 0;
     }
 
-    /**
-     * Charge toutes les tuiles depuis les JSON et crée la pioche
-     */
     async loadAllTiles() {
         const tileIds = Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, '0'));
         const allTileData = [];
 
-        // Charger tous les JSON
         for (const id of tileIds) {
             try {
                 const response = await fetch(`./data/Base/${id}.json`);
@@ -23,12 +19,11 @@ export class Deck {
             }
         }
 
-        // Calculer le total de tuiles AVANT de créer la pioche
         this.totalTiles = allTileData.reduce((sum, data) => sum + data.quantity, 0);
 
-        // Créer la pioche avec les bonnes quantités (sauf tuile 04 qui est la tuile de départ)
+        // ✅ MODIFICATION : Ne plus exclure la tuile 04, on l'ajoute normalement
         for (const data of allTileData) {
-            const quantity = data.id === "04" ? data.quantity - 1 : data.quantity;
+            const quantity = data.quantity; // Toutes les tuiles, y compris 04
             
             for (let i = 0; i < quantity; i++) {
                 this.tiles.push({
@@ -40,11 +35,15 @@ export class Deck {
 
         // Mélanger la pioche
         this.shuffle();
+        
+        // ✅ NOUVEAU : Forcer la tuile 04 en première position
+        const index04 = this.tiles.findIndex(t => t.id === "04");
+        if (index04 > 0) {
+            const tile04 = this.tiles.splice(index04, 1)[0];
+            this.tiles.unshift(tile04); // Mettre en premier
+        }
     }
 
-    /**
-     * Mélange la pioche (algorithme de Fisher-Yates)
-     */
     shuffle() {
         for (let i = this.tiles.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -52,30 +51,18 @@ export class Deck {
         }
     }
 
-    /**
-     * Pioche une tuile
-     * @returns {Object|null} Les données de la tuile ou null si la pioche est vide
-     */
     draw() {
         if (this.currentIndex >= this.tiles.length) {
-            return null; // Pioche vide
+            return null;
         }
         return this.tiles[this.currentIndex++];
     }
 
-    /**
-     * Retourne le nombre de tuiles restantes dans la pioche
-     * @returns {number}
-     */
     remaining() {
         return this.tiles.length - this.currentIndex;
     }
 
-    /**
-     * Retourne le nombre total de tuiles dans le jeu
-     * @returns {number}
-     */
     total() {
-        return this.totalTiles; // ✅ CORRECTION : Retourne le vrai total (72)
+        return this.totalTiles;
     }
 }
