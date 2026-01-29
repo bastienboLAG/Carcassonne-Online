@@ -124,14 +124,12 @@ colorOptions.forEach(option => {
         playerColor = input.value;
         
         if (multiplayer.peer && multiplayer.peer.open) {
-            // ✅ CORRECTION : Mettre à jour localement pour l'hôte aussi
             const me = players.find(p => p.id === multiplayer.playerId);
             if (me) {
                 me.color = playerColor;
                 updatePlayersList();
             }
             
-            // Envoyer à tout le monde
             multiplayer.broadcast({
                 type: 'color-change',
                 playerId: multiplayer.playerId,
@@ -251,7 +249,6 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
                         player.color = data.color;
                         updatePlayersList();
                         
-                        // ✅ CORRECTION : Redistribuer à TOUS les joueurs
                         multiplayer.broadcast({
                             type: 'players-update',
                             players: players
@@ -303,6 +300,7 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
     }
     
     try {
+        // ✅ CORRECTION : Définir le callback COMPLET pour l'invité
         multiplayer.onDataReceived = (data, from) => {
             console.log('📨 [INVITÉ] Reçu:', data);
             
@@ -326,6 +324,16 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
                 }
                 
                 updatePlayersList();
+            }
+            
+            // ✅ AJOUT : Gérer color-change côté invité aussi
+            if (data.type === 'color-change') {
+                console.log('🎨 [INVITÉ] Changement de couleur reçu:', data.playerId, '→', data.color);
+                const player = players.find(p => p.id === data.playerId);
+                if (player) {
+                    player.color = data.color;
+                    updatePlayersList();
+                }
             }
         };
         
