@@ -335,6 +335,30 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
                     updatePlayersList();
                 }
             }
+            
+            // ✅ NOUVEAU : Écouter le signal de démarrage
+            if (data.type === 'game-starting') {
+                console.log('🎮 [INVITÉ] L\'hôte démarre la partie !');
+                
+                // Sauvegarder la session
+                const sessionData = {
+                    multiplayer: {
+                        peerId: multiplayer.playerId,
+                        isHost: isHost,
+                        gameCode: gameCode
+                    },
+                    players: players,
+                    playerName: playerName,
+                    playerColor: playerColor
+                };
+                
+                localStorage.setItem('carcassonne-session', JSON.stringify(sessionData));
+                
+                // Rediriger automatiquement
+                setTimeout(() => {
+                    window.location.href = 'game.html';
+                }, 100);
+            }
         };
         
         await multiplayer.joinGame(code);
@@ -366,6 +390,41 @@ function showJoinError(message) {
     errorEl.textContent = message;
     errorEl.style.display = 'block';
 }
+
+// ✅ NOUVEAU : Gérer le clic sur "Démarrer la partie"
+document.querySelector('.start-button').addEventListener('click', (e) => {
+    if (inLobby) {
+        e.preventDefault(); // Empêcher la navigation immédiate
+        
+        // Sauvegarder les données de session dans localStorage
+        const sessionData = {
+            multiplayer: {
+                peerId: multiplayer.playerId,
+                isHost: isHost,
+                gameCode: gameCode
+            },
+            players: players,
+            playerName: playerName,
+            playerColor: playerColor
+        };
+        
+        localStorage.setItem('carcassonne-session', JSON.stringify(sessionData));
+        console.log('💾 Session sauvegardée:', sessionData);
+        
+        // Si on est l'hôte, envoyer un signal à tous pour rediriger
+        if (isHost) {
+            multiplayer.broadcast({
+                type: 'game-starting',
+                message: 'L\'hôte démarre la partie !'
+            });
+        }
+        
+        // Rediriger vers la page de jeu
+        setTimeout(() => {
+            window.location.href = 'game.html';
+        }, 100);
+    }
+});
 
 updateColorPickerVisibility();
 
