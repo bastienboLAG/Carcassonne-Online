@@ -2,11 +2,12 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Carcassonne Online - Accueil</title>
+    <title>Carcassonne Online</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="home-page">
-    <div class="home-container">
+    <!-- ========== PAGE LOBBY ========== -->
+    <div id="lobby-page" class="home-container">
         <div class="home-left">
             <h1>CARCASSONNE</h1>
             
@@ -143,7 +144,30 @@
                 </details>
             </div>
 
-            <a href="game.html" class="start-button">Démarrer la partie</a>
+            <button id="start-game-btn" class="start-button">Démarrer la partie</button>
+        </div>
+    </div>
+
+    <!-- ========== PAGE DE JEU ========== -->
+    <div id="game-page" class="game-page" style="display: none;">
+        <div id="game-ui">
+            <h2>Carcassonne</h2>
+            
+            <div id="current-tile-container">
+                <h3>Tuile en main</h3>
+                <div id="tile-preview"></div>
+            </div>
+
+            <div id="tile-counter">Tuiles : 0 / 72</div>
+            
+            <button id="end-turn-btn">Terminer mon tour</button>
+            <button id="recenter-btn" class="secondary-btn">🎯 Recentrer</button>
+            
+            <button id="back-to-lobby-btn" style="margin-top: auto; padding: 10px; background: #e74c3c; color: white; border: none; border-radius: 5px; cursor: pointer;">← Retour lobby</button>
+        </div>
+
+        <div id="board-container">
+            <div id="board"></div>
         </div>
     </div>
 
