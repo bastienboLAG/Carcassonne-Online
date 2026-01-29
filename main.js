@@ -59,8 +59,8 @@ async function init() {
         };
 
         document.getElementById('recenter-btn').onclick = () => {
-            container.scrollLeft = 5200 - (container.clientWidth / 2);
-            container.scrollTop = 5200 - (container.clientHeight / 2);
+            container.scrollLeft = 10400 - (container.clientWidth / 2);
+            container.scrollTop = 10400 - (container.clientHeight / 2);
         };
 
         setupNavigation(container, board);
@@ -229,4 +229,5 @@ function setupNavigation(container, board) {
 }
 
 init();
+
 
