@@ -96,7 +96,7 @@ body {
 }
 
 #tile-preview img {
-    width: 208px;
+    width: 104px;
     border: 2px solid gold;
 }
 
@@ -552,3 +552,4 @@ button:disabled {
 #tile-preview img:hover {
     transform: scale(1.05);
 }
+
