@@ -135,7 +135,7 @@ function poserTuile(x, y, tile, isFirst = false) {
         document.querySelectorAll('.slot').forEach(s => s.remove());
         
         // ✅ Afficher le verso immédiatement
-        document.getElementById('tile-preview').innerHTML = '<img src="./assets/Base/C2/verso.png" style="width: 120px; border: 2px solid #666;">';
+        document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
         tuileEnMain = null;
         
         // ✅ Générer les slots autour
@@ -143,7 +143,7 @@ function poserTuile(x, y, tile, isFirst = false) {
     } else {
         tuilePosee = true;
         document.querySelectorAll('.slot').forEach(s => s.remove());
-        document.getElementById('tile-preview').innerHTML = '<img src="./assets/Base/C2/verso.png" style="width: 120px; border: 2px solid #666;">';
+        document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
         tuileEnMain = null;
     }
 }
@@ -229,5 +229,6 @@ function setupNavigation(container, board) {
 }
 
 init();
+
 
 
