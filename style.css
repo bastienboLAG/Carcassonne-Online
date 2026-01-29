@@ -77,14 +77,18 @@ body {
 .tile {
     width: 208px;
     height: 208px;
+    pointer-events: none;
 }
 
 .slot {
     width: 198px;
     height: 198px;
+    border: 1px dashed #444;
     margin: 5px;
+    background-color: rgba(255, 255, 255, 0.02);
+    cursor: pointer;
+    pointer-events: auto;
 }
-
 
 .slot:hover {
     background-color: rgba(255, 255, 255, 0.1);
@@ -93,6 +97,7 @@ body {
 
 #tile-preview img {
     width: 208px;
+    border: 2px solid gold;
 }
 
 button {
@@ -165,7 +170,6 @@ button:disabled {
     margin-bottom: 20px;
 }
 
-/* ✅ NOUVEAU : Section pseudo */
 .pseudo-section {
     margin-bottom: 20px;
 }
@@ -192,7 +196,6 @@ button:disabled {
     border-color: gold;
 }
 
-/* Boutons multijoueur */
 .multiplayer-buttons {
     display: flex;
     flex-direction: column;
@@ -216,7 +219,6 @@ button:disabled {
     transform: translateY(-2px);
 }
 
-/* ✅ NOUVEAU : Affichage du code avec bouton copier */
 .code-display {
     display: flex;
     align-items: center;
@@ -249,7 +251,6 @@ button:disabled {
     background: #229954;
 }
 
-/* ✅ NOUVEAU : Modale */
 .modal {
     display: none;
     position: fixed;
@@ -371,6 +372,18 @@ button:disabled {
     font-size: 24px;
 }
 
+.meeple-img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+}
+
+.player-meeple-img {
+    width: 30px;
+    height: 30px;
+    object-fit: contain;
+}
+
 .color-picker {
     background-color: rgba(0,0,0,0.3);
     padding: 20px;
@@ -407,6 +420,15 @@ button:disabled {
 .color-option.selected {
     border-color: gold;
     background-color: rgba(255,215,0,0.2);
+}
+
+.color-option.disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.color-option.disabled:hover {
+    background-color: rgba(255,255,255,0.05);
 }
 
 .color-option input[type="radio"] {
@@ -514,29 +536,6 @@ button:disabled {
     box-shadow: 0 5px 15px rgba(243, 156, 18, 0.4);
 }
 
-/* ✅ AJOUTS pour les images de meeples */
-.meeple-img {
-    width: 40px;
-    height: 40px;
-    object-fit: contain;
-}
-
-.player-meeple-img {
-    width: 30px;
-    height: 30px;
-    object-fit: contain;
-}
-
-.color-option.disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-}
-
-.color-option.disabled:hover {
-    background-color: rgba(255,255,255,0.05);
-}
-
-/* ✅ Bouton secondaire (recentrer) */
 .secondary-btn {
     background: linear-gradient(135deg, #95a5a6, #7f8c8d);
 }
@@ -545,7 +544,6 @@ button:disabled {
     background: linear-gradient(135deg, #7f8c8d, #5d6d7e);
 }
 
-/* ✅ Tuile cliquable */
 #tile-preview img {
     cursor: pointer;
     transition: transform 0.3s ease;
@@ -554,5 +552,3 @@ button:disabled {
 #tile-preview img:hover {
     transform: scale(1.05);
 }
-
-
