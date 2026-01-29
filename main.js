@@ -32,19 +32,24 @@ async function init() {
         const board = document.getElementById('board');
 
         document.getElementById('tile-preview').addEventListener('click', () => {
-            if (tuileEnMain && !tuilePosee) {
-                const currentImg = document.getElementById('current-tile-img');
-                const newRotation = (tuileEnMain.rotation + 90) % 360;
-                
-                tuileEnMain.rotation = newRotation;
-                currentImg.style.transform = `rotate(${newRotation}deg)`;
-                
-                if (firstTilePlaced) {
-                    rafraichirTousLesSlots();
-                }
-            }
-        });
-
+        if (tuileEnMain && !tuilePosee) {
+        const currentImg = document.getElementById('current-tile-img');
+        
+        // ✅ CORRECTION : Toujours incrémenter, jamais revenir en arrière
+        tuileEnMain.rotation = (tuileEnMain.rotation + 90) % 360;
+        
+        // ✅ Appliquer la rotation en incrémentant (pas en remplaçant)
+        const currentTransform = currentImg.style.transform;
+        const currentDeg = parseInt(currentTransform.match(/rotate\((\d+)deg\)/)?.[1] || '0');
+        const newDeg = currentDeg + 90;
+        
+        currentImg.style.transform = `rotate(${newDeg}deg)`;
+        
+        if (firstTilePlaced) {
+            rafraichirTousLesSlots();
+        }
+    }
+});
         document.getElementById('end-turn-btn').onclick = () => {
             if (!tuilePosee) {
                 alert('Vous devez poser la tuile avant de terminer votre tour !');
@@ -224,3 +229,4 @@ function setupNavigation(container, board) {
 }
 
 init();
+
