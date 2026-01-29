@@ -409,6 +409,8 @@ async function startGame() {
     document.body.classList.remove('home-page');
     document.body.classList.add('game-page');
     
+    console.log('✅ Lobby caché, page de jeu affichée');
+    
     // Initialiser le GameState
     gameState = new GameState();
     players.forEach(player => {
@@ -419,6 +421,7 @@ async function startGame() {
     // Initialiser GameSync
     gameSync = new GameSync(multiplayer, gameState);
     gameSync.init();
+    console.log('🔗 GameSync initialisé');
     
     // Callbacks pour les actions synchronisées
     gameSync.onGameStarted = (deckData, gameStateData) => {
@@ -472,17 +475,20 @@ async function startGame() {
     };
     
     // Créer le slot central
+    console.log('🎯 Appel de creerSlotCentral...');
     creerSlotCentral();
     
     // Setup de l'interface
+    console.log('🔧 Setup des event listeners...');
     setupEventListeners();
+    console.log('🔧 Setup de la navigation...');
     setupNavigation(document.getElementById('board-container'), document.getElementById('board'));
     
     // Si on est l'hôte, charger et envoyer la pioche
     if (isHost) {
         console.log('👑 [HÔTE] Chargement de la pioche...');
         await deck.loadAllTiles();
-        console.log('📦 Deck chargé par l\'hôte');
+        console.log('📦 Deck chargé par l\'hôte:', deck.tiles.length, 'tuiles');
         
         // Envoyer la pioche à tous les joueurs
         gameSync.startGame(deck);
@@ -659,10 +665,16 @@ function setupEventListeners() {
 }
 
 function creerSlotCentral() {
+    console.log('🎯 Création du slot central...');
+    const board = document.getElementById('board');
+    console.log('📋 Board element:', board);
+    
     const slot = document.createElement('div');
     slot.className = "slot slot-central";
     slot.style.gridColumn = 50;
     slot.style.gridRow = 50;
+    slot.style.border = '3px dashed gold'; // Rendre plus visible
+    slot.style.backgroundColor = 'rgba(255, 215, 0, 0.1)'; // Fond doré
     slot.onclick = () => {
         if (!isMyTurn && gameSync) {
             console.log('⚠️ Pas votre tour !');
@@ -670,10 +682,14 @@ function creerSlotCentral() {
         }
         
         if (tuileEnMain && !firstTilePlaced) {
+            console.log('✅ Clic sur slot central - pose de la tuile');
             poserTuile(50, 50, tuileEnMain, true);
+        } else {
+            console.log('⚠️ Impossible de poser:', { tuileEnMain, firstTilePlaced });
         }
     };
-    document.getElementById('board').appendChild(slot);
+    board.appendChild(slot);
+    console.log('✅ Slot central ajouté au board');
 }
 
 function piocherNouvelleTuile() {
