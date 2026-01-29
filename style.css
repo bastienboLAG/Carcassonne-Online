@@ -97,7 +97,9 @@ body {
 
 #tile-preview img {
     width: 104px;
+    height: 104px;
     border: 2px solid gold;
+    object-fit: contain;
 }
 
 button {
@@ -552,4 +554,5 @@ button:disabled {
 #tile-preview img:hover {
     transform: scale(1.05);
 }
+
 
