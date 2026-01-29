@@ -7,7 +7,7 @@ const deck = new Deck();
 let tuileEnMain = null;
 let tuilePosee = false;
 let zoomLevel = 1;
-let firstTilePlaced = false; // ✅ NOUVEAU : Flag pour savoir si la première tuile est posée
+let firstTilePlaced = false;
 
 let isDragging = false;
 let startX = 0;
@@ -22,11 +22,9 @@ async function init() {
         await deck.loadAllTiles();
         console.log('📦 Deck chargé');
 
-        // Créer un slot au centre
         creerSlotCentral();
         console.log('🎯 Slot central créé');
 
-        // Piocher la première tuile
         piocherNouvelleTuile();
         console.log('🃏 Première tuile piochée');
 
@@ -41,7 +39,6 @@ async function init() {
                 tuileEnMain.rotation = newRotation;
                 currentImg.style.transform = `rotate(${newRotation}deg)`;
                 
-                // ✅ CORRECTION : Ne rafraîchir les slots que si la première tuile est déjà posée
                 if (firstTilePlaced) {
                     rafraichirTousLesSlots();
                 }
@@ -72,7 +69,7 @@ async function init() {
 
 function creerSlotCentral() {
     const slot = document.createElement('div');
-    slot.className = "slot slot-central"; // ✅ Classe spéciale pour le slot de départ
+    slot.className = "slot slot-central";
     slot.style.gridColumn = 50;
     slot.style.gridRow = 50;
     slot.onclick = () => {
@@ -103,7 +100,6 @@ function piocherNouvelleTuile() {
     const previewContainer = document.getElementById('tile-preview');
     previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="cursor: pointer; transform: rotate(0deg);" title="Cliquez pour tourner">`;
 
-    // ✅ CORRECTION : Ne rafraîchir les slots que si la première tuile est posée
     if (firstTilePlaced) {
         rafraichirTousLesSlots();
     }
@@ -127,12 +123,19 @@ function poserTuile(x, y, tile, isFirst = false) {
     plateau.addTile(x, y, copy);
 
     if (isFirst) {
-        // ✅ Première tuile posée
+        // ✅ CORRECTION : Première tuile posée
+        console.log('✅ Première tuile posée');
         firstTilePlaced = true;
+        tuilePosee = true; // ✅ Marquer comme posée aussi pour la première
         document.querySelectorAll('.slot').forEach(s => s.remove());
+        
+        // ✅ Afficher le verso immédiatement
+        document.getElementById('tile-preview').innerHTML = '<img src="./assets/Base/C2/verso.png" style="width: 120px; border: 2px solid #666;">';
+        tuileEnMain = null;
+        
+        // ✅ Générer les slots autour
         rafraichirTousLesSlots();
     } else {
-        // Tuiles suivantes
         tuilePosee = true;
         document.querySelectorAll('.slot').forEach(s => s.remove());
         document.getElementById('tile-preview').innerHTML = '<img src="./assets/Base/C2/verso.png" style="width: 120px; border: 2px solid #666;">';
@@ -141,7 +144,6 @@ function poserTuile(x, y, tile, isFirst = false) {
 }
 
 function rafraichirTousLesSlots() {
-    // ✅ CORRECTION : Ne supprimer que les slots normaux, pas le slot central
     if (firstTilePlaced) {
         document.querySelectorAll('.slot:not(.slot-central)').forEach(s => s.remove());
     }
