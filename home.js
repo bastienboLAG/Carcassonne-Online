@@ -1,5 +1,11 @@
 import { Multiplayer } from './modules/Multiplayer.js';
+import { Tile } from './modules/Tile.js';
+import { Board } from './modules/Board.js';
+import { Deck } from './modules/Deck.js';
+import { GameState } from './modules/GameState.js';
+import { GameSync } from './modules/GameSync.js';
 
+// ========== VARIABLES LOBBY ==========
 const multiplayer = new Multiplayer();
 let gameCode = null;
 let playerName = '';
@@ -8,6 +14,23 @@ let players = [];
 let takenColors = [];
 let inLobby = false;
 let isHost = false;
+
+// ========== VARIABLES JEU ==========
+const plateau = new Board();
+const deck = new Deck();
+let gameState = null;
+let gameSync = null;
+let tuileEnMain = null;
+let tuilePosee = false;
+let zoomLevel = 1;
+let firstTilePlaced = false;
+let isMyTurn = false;
+
+let isDragging = false;
+let startX = 0;
+let startY = 0;
+let scrollLeft = 0;
+let scrollTop = 0;
 
 const colorImages = {
     'black': './assets/Meeples/Black/Normal.png',
@@ -20,6 +43,7 @@ const colorImages = {
 
 const allColors = ['black', 'red', 'pink', 'green', 'blue', 'yellow'];
 
+// ========== FONCTIONS LOBBY ==========
 document.getElementById('pseudo-input').addEventListener('input', (e) => {
     playerName = e.target.value.trim();
 });
@@ -63,7 +87,7 @@ function updateColorPickerVisibility() {
 function updateOptionsAccess() {
     const configInputs = document.querySelectorAll('.home-right input');
     const configLabels = document.querySelectorAll('.home-right label');
-    const startButton = document.querySelector('.start-button');
+    const startButton = document.getElementById('start-game-btn');
     
     if (inLobby && !isHost) {
         configInputs.forEach(input => {
@@ -136,20 +160,6 @@ colorOptions.forEach(option => {
                 color: playerColor
             });
         }
-    });
-});
-
-const toggles = document.querySelectorAll('input[type="checkbox"]');
-toggles.forEach(toggle => {
-    toggle.addEventListener('change', () => {
-        console.log(`${toggle.id} : ${toggle.checked}`);
-    });
-});
-
-const radios = document.querySelectorAll('input[type="radio"]');
-radios.forEach(radio => {
-    radio.addEventListener('change', () => {
-        console.log(`${radio.name} : ${radio.value}`);
     });
 });
 
@@ -300,7 +310,6 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
     }
     
     try {
-        // ✅ CORRECTION : Définir le callback COMPLET pour l'invité
         multiplayer.onDataReceived = (data, from) => {
             console.log('📨 [INVITÉ] Reçu:', data);
             
@@ -326,7 +335,6 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
                 updatePlayersList();
             }
             
-            // ✅ AJOUT : Gérer color-change côté invité aussi
             if (data.type === 'color-change') {
                 console.log('🎨 [INVITÉ] Changement de couleur reçu:', data.playerId, '→', data.color);
                 const player = players.find(p => p.id === data.playerId);
@@ -339,25 +347,7 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
             // ✅ NOUVEAU : Écouter le signal de démarrage
             if (data.type === 'game-starting') {
                 console.log('🎮 [INVITÉ] L\'hôte démarre la partie !');
-                
-                // Sauvegarder la session
-                const sessionData = {
-                    multiplayer: {
-                        peerId: multiplayer.playerId,
-                        isHost: isHost,
-                        gameCode: gameCode
-                    },
-                    players: players,
-                    playerName: playerName,
-                    playerColor: playerColor
-                };
-                
-                localStorage.setItem('carcassonne-session', JSON.stringify(sessionData));
-                
-                // Rediriger automatiquement
-                setTimeout(() => {
-                    window.location.href = 'game.html';
-                }, 100);
+                startGameForInvite();
             }
         };
         
@@ -392,40 +382,485 @@ function showJoinError(message) {
 }
 
 // ✅ NOUVEAU : Gérer le clic sur "Démarrer la partie"
-document.querySelector('.start-button').addEventListener('click', (e) => {
-    if (inLobby) {
-        e.preventDefault(); // Empêcher la navigation immédiate
-        
-        // Sauvegarder les données de session dans localStorage
-        const sessionData = {
-            multiplayer: {
-                peerId: multiplayer.playerId,
-                isHost: isHost,
-                gameCode: gameCode
-            },
-            players: players,
-            playerName: playerName,
-            playerColor: playerColor
-        };
-        
-        localStorage.setItem('carcassonne-session', JSON.stringify(sessionData));
-        console.log('💾 Session sauvegardée:', sessionData);
-        
-        // Si on est l'hôte, envoyer un signal à tous pour rediriger
-        if (isHost) {
-            multiplayer.broadcast({
-                type: 'game-starting',
-                message: 'L\'hôte démarre la partie !'
-            });
-        }
-        
-        // Rediriger vers la page de jeu
-        setTimeout(() => {
-            window.location.href = 'game.html';
-        }, 100);
+document.getElementById('start-game-btn').addEventListener('click', async () => {
+    if (!inLobby) return;
+    
+    console.log('🎮 Démarrage de la partie...');
+    
+    // Envoyer le signal aux invités
+    if (isHost) {
+        multiplayer.broadcast({
+            type: 'game-starting',
+            message: 'L\'hôte démarre la partie !'
+        });
     }
+    
+    // Démarrer le jeu
+    await startGame();
 });
 
-updateColorPickerVisibility();
+// ✅ FONCTION POUR DÉMARRER LE JEU
+async function startGame() {
+    console.log('🎮 [HÔTE] Initialisation du jeu...');
+    
+    // Cacher le lobby, afficher le jeu
+    document.getElementById('lobby-page').style.display = 'none';
+    document.getElementById('game-page').style.display = 'flex';
+    document.body.classList.remove('home-page');
+    document.body.classList.add('game-page');
+    
+    // Initialiser le GameState
+    gameState = new GameState();
+    players.forEach(player => {
+        gameState.addPlayer(player.id, player.name, player.color);
+    });
+    console.log('👥 Joueurs ajoutés au GameState:', gameState.players);
+    
+    // Initialiser GameSync
+    gameSync = new GameSync(multiplayer, gameState);
+    gameSync.init();
+    
+    // Callbacks pour les actions synchronisées
+    gameSync.onGameStarted = (deckData, gameStateData) => {
+        console.log('🎮 [INVITÉ] Pioche reçue !');
+        
+        // Restaurer la pioche
+        deck.tiles = deckData.tiles;
+        deck.currentIndex = deckData.currentIndex;
+        deck.totalTiles = deckData.totalTiles;
+        
+        // Restaurer le GameState
+        gameState.deserialize(gameStateData);
+        
+        // Piocher la première tuile
+        piocherNouvelleTuile();
+        mettreAJourCompteur();
+        updateTurnDisplay();
+    };
+    
+    gameSync.onTileRotated = (rotation) => {
+        console.log('🔄 [SYNC] Rotation reçue:', rotation);
+        if (tuileEnMain) {
+            tuileEnMain.rotation = rotation;
+            const currentImg = document.getElementById('current-tile-img');
+            if (currentImg) {
+                currentImg.style.transform = `rotate(${rotation}deg)`;
+            }
+            if (firstTilePlaced) {
+                rafraichirTousLesSlots();
+            }
+        }
+    };
+    
+    gameSync.onTilePlaced = (x, y, tileId, rotation) => {
+        console.log('📍 [SYNC] Placement reçu:', x, y, tileId, rotation);
+        
+        const tileData = deck.tiles.find(t => t.id === tileId);
+        if (tileData) {
+            const tile = new Tile(tileData);
+            tile.rotation = rotation;
+            poserTuileSync(x, y, tile);
+        }
+    };
+    
+    gameSync.onTurnEnded = (nextPlayerIndex, gameStateData) => {
+        console.log('⏭️ [SYNC] Fin de tour reçue');
+        
+        gameState.deserialize(gameStateData);
+        piocherNouvelleTuile();
+        updateTurnDisplay();
+    };
+    
+    // Créer le slot central
+    creerSlotCentral();
+    
+    // Setup de l'interface
+    setupEventListeners();
+    setupNavigation(document.getElementById('board-container'), document.getElementById('board'));
+    
+    // Si on est l'hôte, charger et envoyer la pioche
+    if (isHost) {
+        console.log('👑 [HÔTE] Chargement de la pioche...');
+        await deck.loadAllTiles();
+        console.log('📦 Deck chargé par l\'hôte');
+        
+        // Envoyer la pioche à tous les joueurs
+        gameSync.startGame(deck);
+        
+        // Piocher la première tuile
+        piocherNouvelleTuile();
+        mettreAJourCompteur();
+        updateTurnDisplay();
+    } else {
+        console.log('👤 [INVITÉ] En attente de la pioche...');
+        afficherMessage('En attente de l\'hôte...');
+    }
+    
+    console.log('✅ Initialisation terminée');
+}
 
-console.log('Page d\'accueil chargée');
+async function startGameForInvite() {
+    console.log('🎮 [INVITÉ] Initialisation du jeu...');
+    
+    // Cacher le lobby, afficher le jeu
+    document.getElementById('lobby-page').style.display = 'none';
+    document.getElementById('game-page').style.display = 'flex';
+    document.body.classList.remove('home-page');
+    document.body.classList.add('game-page');
+    
+    // Initialiser le GameState
+    gameState = new GameState();
+    players.forEach(player => {
+        gameState.addPlayer(player.id, player.name, player.color);
+    });
+    
+    // Initialiser GameSync
+    gameSync = new GameSync(multiplayer, gameState);
+    gameSync.init();
+    
+    // Callbacks
+    gameSync.onGameStarted = (deckData, gameStateData) => {
+        console.log('🎮 [INVITÉ] Pioche reçue !');
+        deck.tiles = deckData.tiles;
+        deck.currentIndex = deckData.currentIndex;
+        deck.totalTiles = deckData.totalTiles;
+        gameState.deserialize(gameStateData);
+        piocherNouvelleTuile();
+        mettreAJourCompteur();
+        updateTurnDisplay();
+    };
+    
+    gameSync.onTileRotated = (rotation) => {
+        if (tuileEnMain) {
+            tuileEnMain.rotation = rotation;
+            const currentImg = document.getElementById('current-tile-img');
+            if (currentImg) {
+                currentImg.style.transform = `rotate(${rotation}deg)`;
+            }
+            if (firstTilePlaced) rafraichirTousLesSlots();
+        }
+    };
+    
+    gameSync.onTilePlaced = (x, y, tileId, rotation) => {
+        const tileData = deck.tiles.find(t => t.id === tileId);
+        if (tileData) {
+            const tile = new Tile(tileData);
+            tile.rotation = rotation;
+            poserTuileSync(x, y, tile);
+        }
+    };
+    
+    gameSync.onTurnEnded = (nextPlayerIndex, gameStateData) => {
+        gameState.deserialize(gameStateData);
+        piocherNouvelleTuile();
+        updateTurnDisplay();
+    };
+    
+    creerSlotCentral();
+    setupEventListeners();
+    setupNavigation(document.getElementById('board-container'), document.getElementById('board'));
+    
+    afficherMessage('En attente de l\'hôte...');
+}
+
+// ========== FONCTIONS JEU ==========
+function updateTurnDisplay() {
+    if (!gameState || gameState.players.length === 0) {
+        isMyTurn = true;
+        return;
+    }
+    
+    const currentPlayer = gameState.getCurrentPlayer();
+    isMyTurn = currentPlayer.id === multiplayer.playerId;
+    
+    let turnInfo = document.getElementById('turn-info');
+    if (!turnInfo) {
+        turnInfo = document.createElement('div');
+        turnInfo.id = 'turn-info';
+        turnInfo.style.cssText = 'padding: 15px; background: rgba(0,0,0,0.5); border-radius: 5px; text-align: center; margin: 10px 0;';
+        document.getElementById('game-ui').insertBefore(turnInfo, document.getElementById('current-tile-container'));
+    }
+    
+    const meepleImg = colorImages[currentPlayer.color];
+    
+    if (isMyTurn) {
+        turnInfo.innerHTML = `
+            <div style="color: #2ecc71; font-weight: bold; font-size: 18px;">
+                <img src="${meepleImg}" style="width: 30px; height: 30px; vertical-align: middle;"> 
+                C'est votre tour !
+            </div>
+        `;
+    } else {
+        turnInfo.innerHTML = `
+            <div style="color: #ecf0f1; font-size: 16px;">
+                <img src="${meepleImg}" style="width: 30px; height: 30px; vertical-align: middle;"> 
+                Tour de ${currentPlayer.name}
+            </div>
+        `;
+    }
+}
+
+function afficherMessage(msg) {
+    document.getElementById('tile-preview').innerHTML = `<p style="text-align: center; color: white;">${msg}</p>`;
+}
+
+function setupEventListeners() {
+    document.getElementById('tile-preview').addEventListener('click', () => {
+        if (!isMyTurn && gameSync) {
+            console.log('⚠️ Pas votre tour !');
+            return;
+        }
+        
+        if (tuileEnMain && !tuilePosee) {
+            const currentImg = document.getElementById('current-tile-img');
+            tuileEnMain.rotation = (tuileEnMain.rotation + 90) % 360;
+            const currentTransform = currentImg.style.transform;
+            const currentDeg = parseInt(currentTransform.match(/rotate\((\d+)deg\)/)?.[1] || '0');
+            const newDeg = currentDeg + 90;
+            currentImg.style.transform = `rotate(${newDeg}deg)`;
+            
+            if (gameSync) {
+                gameSync.syncTileRotation(tuileEnMain.rotation);
+            }
+            
+            if (firstTilePlaced) {
+                rafraichirTousLesSlots();
+            }
+        }
+    });
+    
+    document.getElementById('end-turn-btn').onclick = () => {
+        if (!isMyTurn && gameSync) {
+            alert('Ce n\'est pas votre tour !');
+            return;
+        }
+        
+        if (!tuilePosee) {
+            alert('Vous devez poser la tuile avant de terminer votre tour !');
+            return;
+        }
+        
+        if (gameSync) {
+            gameSync.syncTurnEnd();
+        }
+    };
+    
+    document.getElementById('recenter-btn').onclick = () => {
+        const container = document.getElementById('board-container');
+        container.scrollLeft = 10400 - (container.clientWidth / 2);
+        container.scrollTop = 10400 - (container.clientHeight / 2);
+    };
+    
+    document.getElementById('back-to-lobby-btn').onclick = () => {
+        if (confirm('Voulez-vous vraiment quitter la partie ?')) {
+            location.reload();
+        }
+    };
+}
+
+function creerSlotCentral() {
+    const slot = document.createElement('div');
+    slot.className = "slot slot-central";
+    slot.style.gridColumn = 50;
+    slot.style.gridRow = 50;
+    slot.onclick = () => {
+        if (!isMyTurn && gameSync) {
+            console.log('⚠️ Pas votre tour !');
+            return;
+        }
+        
+        if (tuileEnMain && !firstTilePlaced) {
+            poserTuile(50, 50, tuileEnMain, true);
+        }
+    };
+    document.getElementById('board').appendChild(slot);
+}
+
+function piocherNouvelleTuile() {
+    console.log('🎲 Pioche d\'une nouvelle tuile...');
+    const tileData = deck.draw();
+    
+    if (!tileData) {
+        console.log('⚠️ Pioche vide !');
+        alert('Partie terminée ! Plus de tuiles dans la pioche.');
+        document.getElementById('tile-preview').innerHTML = '<p>Fin de partie</p>';
+        document.getElementById('end-turn-btn').disabled = true;
+        return;
+    }
+
+    console.log('🃏 Tuile piochée:', tileData.id);
+    tuileEnMain = new Tile(tileData);
+    tuileEnMain.rotation = 0;
+    tuilePosee = false;
+
+    const previewContainer = document.getElementById('tile-preview');
+    previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="cursor: pointer; transform: rotate(0deg);" title="Cliquez pour tourner">`;
+
+    if (firstTilePlaced) {
+        rafraichirTousLesSlots();
+    }
+    
+    mettreAJourCompteur();
+    if (gameState) {
+        updateTurnDisplay();
+    }
+}
+
+function poserTuile(x, y, tile, isFirst = false) {
+    if (!isFirst && !plateau.canPlaceTile(x, y, tile)) return;
+
+    const boardElement = document.getElementById('board');
+    const img = document.createElement('img');
+    img.src = tile.imagePath;
+    img.className = "tile";
+    img.style.gridColumn = x;
+    img.style.gridRow = y;
+    img.style.transform = `rotate(${tile.rotation}deg)`;
+    boardElement.appendChild(img);
+    
+    const copy = tile.clone();
+    plateau.addTile(x, y, copy);
+
+    if (isFirst) {
+        console.log('✅ Première tuile posée');
+        firstTilePlaced = true;
+        tuilePosee = true;
+        document.querySelectorAll('.slot').forEach(s => s.remove());
+        document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
+        
+        if (gameSync) {
+            gameSync.syncTilePlacement(x, y, tile);
+        }
+        
+        tuileEnMain = null;
+        rafraichirTousLesSlots();
+    } else {
+        tuilePosee = true;
+        document.querySelectorAll('.slot').forEach(s => s.remove());
+        document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
+        
+        if (gameSync) {
+            gameSync.syncTilePlacement(x, y, tile);
+        }
+        
+        tuileEnMain = null;
+    }
+}
+
+function poserTuileSync(x, y, tile) {
+    const boardElement = document.getElementById('board');
+    const img = document.createElement('img');
+    img.src = tile.imagePath;
+    img.className = "tile";
+    img.style.gridColumn = x;
+    img.style.gridRow = y;
+    img.style.transform = `rotate(${tile.rotation}deg)`;
+    boardElement.appendChild(img);
+    
+    const copy = tile.clone();
+    plateau.addTile(x, y, copy);
+
+    if (!firstTilePlaced) {
+        firstTilePlaced = true;
+        tuilePosee = true;
+        document.querySelectorAll('.slot').forEach(s => s.remove());
+        document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
+        tuileEnMain = null;
+        rafraichirTousLesSlots();
+    } else {
+        document.querySelectorAll('.slot').forEach(s => s.remove());
+        if (tuileEnMain) {
+            rafraichirTousLesSlots();
+        }
+    }
+}
+
+function rafraichirTousLesSlots() {
+    if (firstTilePlaced) {
+        document.querySelectorAll('.slot:not(.slot-central)').forEach(s => s.remove());
+    }
+    
+    if (!tuileEnMain) return;
+    if (!isMyTurn && gameSync) return;
+    
+    for (let coord in plateau.placedTiles) {
+        const [x, y] = coord.split(',').map(Number);
+        genererSlotsAutour(x, y);
+    }
+}
+
+function genererSlotsAutour(x, y) {
+    const directions = [{dx:0, dy:-1}, {dx:1, dy:0}, {dx:0, dy:1}, {dx:-1, dy:0}];
+    directions.forEach(dir => {
+        const nx = x + dir.dx, ny = y + dir.dy;
+        if (tuileEnMain && plateau.isFree(nx, ny) && plateau.canPlaceTile(nx, ny, tuileEnMain)) {
+            const slot = document.createElement('div');
+            slot.className = "slot";
+            slot.style.gridColumn = nx;
+            slot.style.gridRow = ny;
+            slot.onclick = () => {
+                if (!isMyTurn && gameSync) {
+                    console.log('⚠️ Pas votre tour !');
+                    return;
+                }
+                poserTuile(nx, ny, tuileEnMain);
+            };
+            document.getElementById('board').appendChild(slot);
+        }
+    });
+}
+
+function mettreAJourCompteur() {
+    const remaining = deck.remaining();
+    const total = deck.total();
+    console.log(`📊 Compteur: ${remaining} / ${total}`);
+    document.getElementById('tile-counter').textContent = `Tuiles : ${remaining} / ${total}`;
+}
+
+function setupNavigation(container, board) {
+    container.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        zoomLevel += e.deltaY > 0 ? -0.1 : 0.1;
+        zoomLevel = Math.max(0.2, Math.min(3, zoomLevel));
+        board.style.transform = `scale(${zoomLevel})`;
+    }, { passive: false });
+
+    container.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('tile') || e.target.classList.contains('slot')) {
+            return;
+        }
+        isDragging = true;
+        container.style.cursor = 'grabbing';
+        startX = e.pageX - container.offsetLeft;
+        startY = e.pageY - container.offsetTop;
+        scrollLeft = container.scrollLeft;
+        scrollTop = container.scrollTop;
+    });
+
+    container.addEventListener('mouseleave', () => {
+        isDragging = false;
+        container.style.cursor = 'grab';
+    });
+
+    container.addEventListener('mouseup', () => {
+        isDragging = false;
+        container.style.cursor = 'grab';
+    });
+
+    container.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        const x = e.pageX - container.offsetLeft;
+        const y = e.pageY - container.offsetTop;
+        const walkX = (x - startX) * 2;
+        const walkY = (y - startY) * 2;
+        container.scrollLeft = scrollLeft - walkX;
+        container.scrollTop = scrollTop - walkY;
+    });
+
+    container.scrollLeft = 10400 - (container.clientWidth / 2);
+    container.scrollTop = 10400 - (container.clientHeight / 2);
+}
+
+updateColorPickerVisibility();
+console.log('Page chargée');
