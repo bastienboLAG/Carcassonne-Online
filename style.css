@@ -9,14 +9,16 @@ html, body {
     overflow: hidden;
 }
 
-body {
-    display: flex;
-    flex-direction: row;
-}
-
 /* ========================================
    STYLES POUR LA PAGE DE JEU
    ======================================== */
+
+#game-page {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: 100vh;
+}
 
 .game-page {
     display: flex;
@@ -132,6 +134,16 @@ button:disabled {
 /* ========================================
    STYLES POUR LA PAGE D'ACCUEIL
    ======================================== */
+
+#lobby-page {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    width: 100%;
+    padding: 20px;
+    overflow-y: auto;
+}
 
 .home-page {
     display: flex;
