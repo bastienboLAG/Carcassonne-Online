@@ -477,7 +477,7 @@ async function startGame() {
     };
     
     gameSync.onTileDrawn = (tileId, rotation, playerId) => {
-        console.log('🎲 [SYNC] Tuile piochée par un autre joueur:', tileId);
+        console.log('🎲 [SYNC] Tuile piochée:', tileId);
         
         // Créer la tuile à partir de l'ID
         const tileData = deck.tiles.find(t => t.id === tileId);
@@ -485,11 +485,11 @@ async function startGame() {
             tuileEnMain = new Tile(tileData);
             tuileEnMain.rotation = rotation;
             
-            // Afficher le verso car ce n'est pas notre tour
+            // ✅ AFFICHER la tuile pour tout le monde
             const previewContainer = document.getElementById('tile-preview');
-            previewContainer.innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
+            previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="transform: rotate(${rotation}deg);">`;
             
-            // Rafraîchir les slots pour voir où le joueur actif peut jouer
+            // Rafraîchir les slots
             if (firstTilePlaced) {
                 rafraichirTousLesSlots();
             }
@@ -588,7 +588,7 @@ async function startGameForInvite() {
     };
     
     gameSync.onTileDrawn = (tileId, rotation, playerId) => {
-        console.log('🎲 [SYNC] Tuile piochée par un autre joueur:', tileId);
+        console.log('🎲 [SYNC] Tuile piochée:', tileId);
         
         const tileData = deck.tiles.find(t => t.id === tileId);
         if (tileData) {
@@ -596,7 +596,7 @@ async function startGameForInvite() {
             tuileEnMain.rotation = rotation;
             
             const previewContainer = document.getElementById('tile-preview');
-            previewContainer.innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
+            previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="transform: rotate(${rotation}deg);">`;
             
             if (firstTilePlaced) {
                 rafraichirTousLesSlots();
@@ -786,18 +786,13 @@ function piocherNouvelleTuile() {
     tuileEnMain.rotation = 0;
     tuilePosee = false;
 
-    // Afficher la tuile seulement si c'est notre tour
+    // ✅ TOUT LE MONDE voit la tuile
     const previewContainer = document.getElementById('tile-preview');
-    if (isMyTurn) {
-        previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="cursor: pointer; transform: rotate(0deg);" title="Cliquez pour tourner">`;
-        
-        // Synchroniser la pioche avec les autres joueurs
-        if (gameSync) {
-            gameSync.syncTileDraw(tileData.id, 0);
-        }
-    } else {
-        // Afficher le verso si ce n'est pas notre tour
-        previewContainer.innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
+    previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="cursor: pointer; transform: rotate(0deg);" title="Cliquez pour tourner">`;
+
+    // ✅ Synchroniser la pioche si c'est notre tour
+    if (isMyTurn && gameSync) {
+        gameSync.syncTileDraw(tileData.id, 0);
     }
 
     if (firstTilePlaced) {
