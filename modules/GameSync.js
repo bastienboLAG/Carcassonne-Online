@@ -13,6 +13,7 @@ export class GameSync {
         this.onTilePlaced = null;
         this.onTurnEnded = null;
         this.onGameStarted = null;
+        this.onTileDrawn = null;
     }
 
     /**
@@ -81,11 +82,27 @@ export class GameSync {
         // Passer au joueur suivant
         this.gameState.nextPlayer();
         
+        // Diffuser aux autres joueurs
         this.multiplayer.broadcast({
             type: 'turn-ended',
             playerId: this.multiplayer.playerId,
             nextPlayerIndex: this.gameState.currentPlayerIndex,
             gameState: this.gameState.serialize()
+        });
+        
+        return true;
+    }
+
+    /**
+     * Synchroniser la pioche d'une nouvelle tuile
+     */
+    syncTileDraw(tileId, rotation) {
+        console.log('🎲 Sync pioche tuile:', tileId);
+        this.multiplayer.broadcast({
+            type: 'tile-drawn',
+            tileId: tileId,
+            rotation: rotation,
+            playerId: this.multiplayer.playerId
         });
     }
 
@@ -122,6 +139,13 @@ export class GameSync {
                 if (this.onTurnEnded && data.playerId !== this.multiplayer.playerId) {
                     console.log('⏭️ [SYNC] Fin de tour reçue');
                     this.onTurnEnded(data.nextPlayerIndex, data.gameState);
+                }
+                break;
+
+            case 'tile-drawn':
+                if (this.onTileDrawn && data.playerId !== this.multiplayer.playerId) {
+                    console.log('🎲 [SYNC] Pioche tuile reçue:', data.tileId);
+                    this.onTileDrawn(data.tileId, data.rotation, data.playerId);
                 }
                 break;
         }
