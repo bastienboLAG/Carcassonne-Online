@@ -825,6 +825,8 @@ function poserTuile(x, y, tile, isFirst = false) {
         firstTilePlaced = true;
         tuilePosee = true;
         document.querySelectorAll('.slot').forEach(s => s.remove());
+        
+        // ✅ Afficher le verso après placement
         document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
         
         if (gameSync) {
@@ -836,6 +838,8 @@ function poserTuile(x, y, tile, isFirst = false) {
     } else {
         tuilePosee = true;
         document.querySelectorAll('.slot').forEach(s => s.remove());
+        
+        // ✅ Afficher le verso après placement
         document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
         
         if (gameSync) {
@@ -867,10 +871,13 @@ function poserTuileSync(x, y, tile) {
         tuileEnMain = null;
         rafraichirTousLesSlots();
     } else {
+        tuilePosee = true;
         document.querySelectorAll('.slot').forEach(s => s.remove());
-        if (tuileEnMain) {
-            rafraichirTousLesSlots();
-        }
+        
+        // ✅ Afficher le verso après placement synchronisé
+        document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
+        
+        tuileEnMain = null;
     }
 }
 
