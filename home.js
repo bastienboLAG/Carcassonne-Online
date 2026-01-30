@@ -476,6 +476,28 @@ async function startGame() {
         updateTurnDisplay();
     };
     
+    gameSync.onTileDrawn = (tileId, rotation, playerId) => {
+        console.log('🎲 [SYNC] Tuile piochée par un autre joueur:', tileId);
+        
+        // Créer la tuile à partir de l'ID
+        const tileData = deck.tiles.find(t => t.id === tileId);
+        if (tileData) {
+            tuileEnMain = new Tile(tileData);
+            tuileEnMain.rotation = rotation;
+            
+            // Afficher le verso car ce n'est pas notre tour
+            const previewContainer = document.getElementById('tile-preview');
+            previewContainer.innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
+            
+            // Rafraîchir les slots pour voir où le joueur actif peut jouer
+            if (firstTilePlaced) {
+                rafraichirTousLesSlots();
+            }
+            
+            mettreAJourCompteur();
+        }
+    };
+    
     // Attendre que le DOM soit prêt
     await new Promise(resolve => setTimeout(resolve, 100));
     
@@ -565,6 +587,25 @@ async function startGameForInvite() {
         updateTurnDisplay();
     };
     
+    gameSync.onTileDrawn = (tileId, rotation, playerId) => {
+        console.log('🎲 [SYNC] Tuile piochée par un autre joueur:', tileId);
+        
+        const tileData = deck.tiles.find(t => t.id === tileId);
+        if (tileData) {
+            tuileEnMain = new Tile(tileData);
+            tuileEnMain.rotation = rotation;
+            
+            const previewContainer = document.getElementById('tile-preview');
+            previewContainer.innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
+            
+            if (firstTilePlaced) {
+                rafraichirTousLesSlots();
+            }
+            
+            mettreAJourCompteur();
+        }
+    };
+    
     // Attendre que le DOM soit prêt
     await new Promise(resolve => setTimeout(resolve, 100));
     
@@ -585,30 +626,47 @@ function updateTurnDisplay() {
     const currentPlayer = gameState.getCurrentPlayer();
     isMyTurn = currentPlayer.id === multiplayer.playerId;
     
-    let turnInfo = document.getElementById('turn-info');
-    if (!turnInfo) {
-        turnInfo = document.createElement('div');
-        turnInfo.id = 'turn-info';
-        turnInfo.style.cssText = 'padding: 15px; background: rgba(0,0,0,0.5); border-radius: 5px; text-align: center; margin: 10px 0;';
-        document.getElementById('game-ui').insertBefore(turnInfo, document.getElementById('current-tile-container'));
+    // Créer ou récupérer le conteneur de la liste des joueurs
+    let playersDisplay = document.getElementById('players-display');
+    if (!playersDisplay) {
+        playersDisplay = document.createElement('div');
+        playersDisplay.id = 'players-display';
+        playersDisplay.style.cssText = 'padding: 10px; background: rgba(0,0,0,0.3); border-radius: 5px; margin: 10px 0; width: 100%;';
+        document.getElementById('game-ui').insertBefore(playersDisplay, document.getElementById('current-tile-container'));
     }
     
-    const meepleImg = colorImages[currentPlayer.color];
+    // Construire la liste HTML
+    let html = '<div style="font-size: 14px;">';
     
-    if (isMyTurn) {
-        turnInfo.innerHTML = `
-            <div style="color: #2ecc71; font-weight: bold; font-size: 18px;">
-                <img src="${meepleImg}" style="width: 30px; height: 30px; vertical-align: middle;"> 
-                C'est votre tour !
+    gameState.players.forEach((player, index) => {
+        const isActive = index === gameState.currentPlayerIndex;
+        const meepleImg = colorImages[player.color];
+        const indicator = isActive ? '▶' : '';
+        const bgColor = isActive ? 'rgba(46, 204, 113, 0.2)' : 'transparent';
+        
+        html += `
+            <div style="display: flex; align-items: center; gap: 8px; padding: 5px; margin: 3px 0; background: ${bgColor}; border-radius: 3px;">
+                <span style="color: #2ecc71; font-weight: bold; width: 15px;">${indicator}</span>
+                <img src="${meepleImg}" style="width: 24px; height: 24px;">
+                <span style="flex: 1; color: ${isActive ? '#2ecc71' : '#ecf0f1'}; font-weight: ${isActive ? 'bold' : 'normal'};">${player.name}</span>
             </div>
         `;
-    } else {
-        turnInfo.innerHTML = `
-            <div style="color: #ecf0f1; font-size: 16px;">
-                <img src="${meepleImg}" style="width: 30px; height: 30px; vertical-align: middle;"> 
-                Tour de ${currentPlayer.name}
-            </div>
-        `;
+    });
+    
+    html += '</div>';
+    playersDisplay.innerHTML = html;
+    
+    // Mettre à jour l'état du bouton "Terminer mon tour"
+    const endTurnBtn = document.getElementById('end-turn-btn');
+    if (endTurnBtn) {
+        endTurnBtn.disabled = !isMyTurn;
+        if (!isMyTurn) {
+            endTurnBtn.style.opacity = '0.5';
+            endTurnBtn.style.cursor = 'not-allowed';
+        } else {
+            endTurnBtn.style.opacity = '1';
+            endTurnBtn.style.cursor = 'pointer';
+        }
     }
 }
 
@@ -652,8 +710,21 @@ function setupEventListeners() {
             return;
         }
         
+        console.log('⏭️ Fin de tour - passage au joueur suivant');
+        
         if (gameSync) {
+            // Synchroniser la fin de tour (qui met à jour gameState.currentPlayerIndex)
             gameSync.syncTurnEnd();
+        } else {
+            // Mode solo : pas de GameState, on pioche direct
+        }
+        
+        // ✅ IMPORTANT : Piocher la nouvelle tuile localement
+        piocherNouvelleTuile();
+        
+        // Mettre à jour l'affichage du tour
+        if (gameState) {
+            updateTurnDisplay();
         }
     };
     
@@ -715,8 +786,19 @@ function piocherNouvelleTuile() {
     tuileEnMain.rotation = 0;
     tuilePosee = false;
 
+    // Afficher la tuile seulement si c'est notre tour
     const previewContainer = document.getElementById('tile-preview');
-    previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="cursor: pointer; transform: rotate(0deg);" title="Cliquez pour tourner">`;
+    if (isMyTurn) {
+        previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="cursor: pointer; transform: rotate(0deg);" title="Cliquez pour tourner">`;
+        
+        // Synchroniser la pioche avec les autres joueurs
+        if (gameSync) {
+            gameSync.syncTileDraw(tileData.id, 0);
+        }
+    } else {
+        // Afficher le verso si ce n'est pas notre tour
+        previewContainer.innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
+    }
 
     if (firstTilePlaced) {
         rafraichirTousLesSlots();
@@ -803,7 +885,7 @@ function rafraichirTousLesSlots() {
     }
     
     if (!tuileEnMain) return;
-    if (!isMyTurn && gameSync) return;
+    // ✅ CHANGEMENT : Afficher les slots même si ce n'est pas notre tour (en lecture seule)
     
     for (let coord in plateau.placedTiles) {
         const [x, y] = coord.split(',').map(Number);
@@ -820,13 +902,18 @@ function genererSlotsAutour(x, y) {
             slot.className = "slot";
             slot.style.gridColumn = nx;
             slot.style.gridRow = ny;
-            slot.onclick = () => {
-                if (!isMyTurn && gameSync) {
-                    console.log('⚠️ Pas votre tour !');
-                    return;
-                }
-                poserTuile(nx, ny, tuileEnMain);
-            };
+            
+            // ✅ Si ce n'est pas notre tour, rendre le slot visible mais non cliquable
+            if (!isMyTurn && gameSync) {
+                slot.style.opacity = '0.3';
+                slot.style.cursor = 'not-allowed';
+                slot.style.pointerEvents = 'none';
+            } else {
+                slot.onclick = () => {
+                    poserTuile(nx, ny, tuileEnMain);
+                };
+            }
+            
             document.getElementById('board').appendChild(slot);
         }
     });
