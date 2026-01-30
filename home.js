@@ -404,12 +404,14 @@ async function startGame() {
     console.log('🎮 [HÔTE] Initialisation du jeu...');
     
     // Cacher le lobby, afficher le jeu
-    document.getElementById('lobby-page').style.display = 'none';
-    document.getElementById('game-page').style.display = 'flex';
-    document.body.classList.remove('home-page');
-    document.body.classList.add('game-page');
+    const lobbyPage = document.getElementById('lobby-page');
+    const gamePage = document.getElementById('game-page');
+    
+    lobbyPage.style.display = 'none';
+    gamePage.style.display = 'flex';
     
     console.log('✅ Lobby caché, page de jeu affichée');
+    console.log('📏 Game page dimensions:', gamePage.offsetWidth, 'x', gamePage.offsetHeight);
     
     // Initialiser le GameState
     gameState = new GameState();
@@ -474,6 +476,9 @@ async function startGame() {
         updateTurnDisplay();
     };
     
+    // Attendre que le DOM soit prêt
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     // Créer le slot central
     console.log('🎯 Appel de creerSlotCentral...');
     creerSlotCentral();
@@ -511,8 +516,6 @@ async function startGameForInvite() {
     // Cacher le lobby, afficher le jeu
     document.getElementById('lobby-page').style.display = 'none';
     document.getElementById('game-page').style.display = 'flex';
-    document.body.classList.remove('home-page');
-    document.body.classList.add('game-page');
     
     // Initialiser le GameState
     gameState = new GameState();
@@ -561,6 +564,9 @@ async function startGameForInvite() {
         piocherNouvelleTuile();
         updateTurnDisplay();
     };
+    
+    // Attendre que le DOM soit prêt
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     creerSlotCentral();
     setupEventListeners();
