@@ -498,10 +498,6 @@ async function startGame() {
         }
     };
     
-    // Créer le slot central
-    console.log('🎯 Appel de creerSlotCentral...');
-    creerSlotCentral();
-    
     // Setup de l'interface
     console.log('🔧 Setup des event listeners...');
     setupEventListeners();
@@ -521,6 +517,10 @@ async function startGame() {
         piocherNouvelleTuile();
         mettreAJourCompteur();
         updateTurnDisplay();
+        
+        // ✅ Créer le slot central APRÈS updateTurnDisplay (pour que isMyTurn soit défini)
+        console.log('🎯 Appel de creerSlotCentral...');
+        creerSlotCentral();
     } else {
         console.log('👤 [INVITÉ] En attente de la pioche...');
         afficherMessage('En attente de l\'hôte...');
@@ -556,6 +556,9 @@ async function startGameForInvite() {
         piocherNouvelleTuile();
         mettreAJourCompteur();
         updateTurnDisplay();
+        
+        // ✅ Créer le slot central APRÈS avoir défini isMyTurn
+        creerSlotCentral();
     };
     
     gameSync.onTileRotated = (rotation) => {
@@ -603,11 +606,12 @@ async function startGameForInvite() {
         }
     };
     
-    creerSlotCentral();
     setupEventListeners();
     setupNavigation(document.getElementById('board-container'), document.getElementById('board'));
     
     afficherMessage('En attente de l\'hôte...');
+    
+    // ✅ Le slot central sera créé quand l'invité recevra la pioche et que isMyTurn sera défini
 }
 
 // ========== FONCTIONS JEU ==========
