@@ -498,9 +498,6 @@ async function startGame() {
         }
     };
     
-    // Attendre que le DOM soit prêt
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
     // Créer le slot central
     console.log('🎯 Appel de creerSlotCentral...');
     creerSlotCentral();
@@ -605,9 +602,6 @@ async function startGameForInvite() {
             mettreAJourCompteur();
         }
     };
-    
-    // Attendre que le DOM soit prêt
-    await new Promise(resolve => setTimeout(resolve, 100));
     
     creerSlotCentral();
     setupEventListeners();
@@ -752,19 +746,23 @@ function creerSlotCentral() {
     slot.style.gridRow = 50;
     slot.style.border = '3px dashed gold'; // Rendre plus visible
     slot.style.backgroundColor = 'rgba(255, 215, 0, 0.1)'; // Fond doré
-    slot.onclick = () => {
-        if (!isMyTurn && gameSync) {
-            console.log('⚠️ Pas votre tour !');
-            return;
-        }
-        
-        if (tuileEnMain && !firstTilePlaced) {
-            console.log('✅ Clic sur slot central - pose de la tuile');
-            poserTuile(50, 50, tuileEnMain, true);
-        } else {
-            console.log('⚠️ Impossible de poser:', { tuileEnMain, firstTilePlaced });
-        }
-    };
+    
+    // ✅ Appliquer le style readonly si ce n'est pas notre tour
+    if (!isMyTurn && gameSync) {
+        slot.classList.add('slot-readonly');
+        slot.style.cursor = 'default';
+        // Pas de onclick
+    } else {
+        slot.onclick = () => {
+            if (tuileEnMain && !firstTilePlaced) {
+                console.log('✅ Clic sur slot central - pose de la tuile');
+                poserTuile(50, 50, tuileEnMain, true);
+            } else {
+                console.log('⚠️ Impossible de poser:', { tuileEnMain, firstTilePlaced });
+            }
+        };
+    }
+    
     board.appendChild(slot);
     console.log('✅ Slot central ajouté au board');
 }
@@ -905,11 +903,10 @@ function genererSlotsAutour(x, y) {
             slot.style.gridColumn = nx;
             slot.style.gridRow = ny;
             
-            // ✅ Si ce n'est pas notre tour : slot visible mais non cliquable
+            // ✅ Si ce n'est pas notre tour : même apparence mais sans onclick et sans hover gold
             if (!isMyTurn && gameSync) {
-                slot.style.opacity = '0.3';
+                slot.classList.add('slot-readonly');
                 slot.style.cursor = 'default';
-                slot.classList.add('slot-readonly'); // Pour désactiver le hover
                 // Pas de onclick pour les non-actifs
             } else {
                 // ✅ Seulement le joueur actif a un onclick
