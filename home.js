@@ -905,12 +905,14 @@ function genererSlotsAutour(x, y) {
             slot.style.gridColumn = nx;
             slot.style.gridRow = ny;
             
-            // ✅ Si ce n'est pas notre tour, rendre le slot visible mais non cliquable
+            // ✅ Si ce n'est pas notre tour : slot visible mais non cliquable
             if (!isMyTurn && gameSync) {
                 slot.style.opacity = '0.3';
-                slot.style.cursor = 'not-allowed';
-                slot.style.pointerEvents = 'none';
+                slot.style.cursor = 'default';
+                slot.classList.add('slot-readonly'); // Pour désactiver le hover
+                // Pas de onclick pour les non-actifs
             } else {
+                // ✅ Seulement le joueur actif a un onclick
                 slot.onclick = () => {
                     poserTuile(nx, ny, tuileEnMain);
                 };
