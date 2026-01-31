@@ -741,17 +741,20 @@ function setupEventListeners() {
         console.log('⏭️ Fin de tour - passage au joueur suivant');
         
         // ✅ Nettoyer les curseurs de meeple
-        document.querySelectorAll('.meeple-cursor').forEach(c => c.remove());
+        document.querySelectorAll('.meeple-cursors-container').forEach(c => c.remove());
         lastPlacedTile = null;
         
         if (gameSync) {
             // Synchroniser la fin de tour (qui met à jour gameState.currentPlayerIndex)
             gameSync.syncTurnEnd();
-        } else {
-            // Mode solo : pas de GameState, on pioche direct
+            
+            // ✅ 6) IMPORTANT : Mettre à jour isMyTurn localement APRÈS avoir changé de tour
+            const currentPlayer = gameState.getCurrentPlayer();
+            isMyTurn = currentPlayer.id === multiplayer.playerId;
+            console.log('🔄 Mise à jour isMyTurn:', isMyTurn, 'Tour de:', currentPlayer.name);
         }
         
-        // ✅ IMPORTANT : Piocher la nouvelle tuile localement
+        // Piocher la nouvelle tuile localement
         piocherNouvelleTuile();
         
         // Mettre à jour l'affichage du tour
@@ -988,8 +991,19 @@ function mettreAJourCompteur() {
 function afficherCurseursMeeple(x, y) {
     console.log('🎯 Affichage des curseurs de meeple sur', x, y);
     
-    // Nettoyer les anciens curseurs
-    document.querySelectorAll('.meeple-cursor').forEach(c => c.remove());
+    // Nettoyer les anciens curseurs et conteneurs
+    document.querySelectorAll('.meeple-cursors-container').forEach(c => c.remove());
+    
+    // Créer un conteneur pour les curseurs sur cette tuile
+    const container = document.createElement('div');
+    container.className = 'meeple-cursors-container';
+    container.style.gridColumn = x;
+    container.style.gridRow = y;
+    container.style.position = 'relative';
+    container.style.width = '208px';
+    container.style.height = '208px';
+    container.style.pointerEvents = 'none';
+    container.style.zIndex = '100';
     
     // Créer 25 curseurs (grille 5x5)
     for (let position = 1; position <= 25; position++) {
@@ -1000,16 +1014,14 @@ function afficherCurseursMeeple(x, y) {
         
         const cursor = document.createElement('div');
         cursor.className = 'meeple-cursor';
-        cursor.style.gridColumn = x;
-        cursor.style.gridRow = y;
         
         // Calculer la position dans la grille 5x5
         const row = Math.floor((position - 1) / 5);
         const col = (position - 1) % 5;
         
-        // Position relative dans la tuile (208x208px)
-        const offsetX = col * 41.6 + 20.8; // 208/5 = 41.6, centré
-        const offsetY = row * 41.6 + 20.8;
+        // ✅ Position correcte : 208/5=41.6, premier point à 20.8px (centre de la case)
+        const offsetX = 20.8 + (col * 41.6);
+        const offsetY = 20.8 + (row * 41.6);
         
         cursor.style.position = 'absolute';
         cursor.style.left = `${offsetX}px`;
@@ -1020,17 +1032,18 @@ function afficherCurseursMeeple(x, y) {
         cursor.style.backgroundColor = 'rgba(255, 215, 0, 0.6)';
         cursor.style.border = '2px solid gold';
         cursor.style.cursor = 'pointer';
-        cursor.style.zIndex = '100';
         cursor.style.pointerEvents = 'auto';
+        cursor.style.transition = 'all 0.2s';
+        cursor.style.transform = 'translate(-50%, -50%)'; // ✅ Centrer le curseur
         
         cursor.onmouseenter = () => {
             cursor.style.backgroundColor = 'rgba(255, 215, 0, 1)';
-            cursor.style.transform = 'scale(1.3)';
+            cursor.style.transform = 'translate(-50%, -50%) scale(1.3)';
         };
         
         cursor.onmouseleave = () => {
             cursor.style.backgroundColor = 'rgba(255, 215, 0, 0.6)';
-            cursor.style.transform = 'scale(1)';
+            cursor.style.transform = 'translate(-50%, -50%) scale(1)';
         };
         
         cursor.onclick = (e) => {
@@ -1038,12 +1051,14 @@ function afficherCurseursMeeple(x, y) {
             afficherSelecteurMeeple(x, y, position, e.clientX, e.clientY);
         };
         
-        document.getElementById('board').appendChild(cursor);
+        container.appendChild(cursor);
     }
+    
+    document.getElementById('board').appendChild(container);
 }
 
 /**
- * Afficher le sélecteur de type de meeple (menu radial)
+ * Afficher le sélecteur de type de meeple (menu compact)
  */
 function afficherSelecteurMeeple(x, y, position, mouseX, mouseY) {
     console.log('📋 Sélecteur de meeple à la position', position);
@@ -1057,45 +1072,38 @@ function afficherSelecteurMeeple(x, y, position, mouseX, mouseY) {
     selector.id = 'meeple-selector';
     selector.style.position = 'fixed';
     selector.style.left = `${mouseX}px`;
-    selector.style.top = `${mouseY}px`;
-    selector.style.transform = 'translate(-50%, -50%)';
+    selector.style.top = `${mouseY - 60}px`; // ✅ 3) 60px au-dessus du curseur
+    selector.style.transform = 'translateX(-50%)'; // ✅ Centré horizontalement
     selector.style.zIndex = '1000';
     selector.style.display = 'flex';
-    selector.style.gap = '10px';
-    selector.style.padding = '15px';
-    selector.style.background = 'rgba(44, 62, 80, 0.95)';
-    selector.style.borderRadius = '10px';
+    selector.style.gap = '5px'; // ✅ 2) Gap réduit
+    selector.style.padding = '8px'; // ✅ 2) Padding réduit
+    selector.style.background = 'rgba(44, 62, 80, 0.5)'; // ✅ 2) 50% de transparence
+    selector.style.borderRadius = '8px';
     selector.style.border = '2px solid gold';
     selector.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
     
-    // Types de meeples disponibles
+    // ✅ 7) 3 fois le même meeple pour visualiser
     const meepleTypes = [
+        { type: 'Normal', image: `./assets/Meeples/${getPlayerColor()}/Normal.png` },
+        { type: 'Normal', image: `./assets/Meeples/${getPlayerColor()}/Normal.png` },
         { type: 'Normal', image: `./assets/Meeples/${getPlayerColor()}/Normal.png` }
-        // Plus tard : Abbé, Grand, etc.
     ];
     
     meepleTypes.forEach(meeple => {
         const option = document.createElement('div');
         option.style.cursor = 'pointer';
-        option.style.padding = '10px';
+        option.style.padding = '5px'; // ✅ 2) Padding réduit
         option.style.borderRadius = '5px';
         option.style.transition = 'background 0.2s';
         
         const img = document.createElement('img');
         img.src = meeple.image;
-        img.style.width = '40px';
-        img.style.height = '40px';
+        img.style.width = '30px'; // ✅ 2) Taille réduite
+        img.style.height = '30px';
         img.style.display = 'block';
         
-        const label = document.createElement('div');
-        label.textContent = meeple.type;
-        label.style.textAlign = 'center';
-        label.style.fontSize = '12px';
-        label.style.marginTop = '5px';
-        label.style.color = 'white';
-        
         option.appendChild(img);
-        option.appendChild(label);
         
         option.onmouseenter = () => {
             option.style.background = 'rgba(255, 215, 0, 0.2)';
@@ -1107,7 +1115,7 @@ function afficherSelecteurMeeple(x, y, position, mouseX, mouseY) {
         
         option.onclick = () => {
             placerMeeple(x, y, position, meeple.type);
-            selector.remove();
+            selector.remove(); // ✅ 4) Fermeture auto
         };
         
         selector.appendChild(option);
@@ -1119,8 +1127,8 @@ function afficherSelecteurMeeple(x, y, position, mouseX, mouseY) {
     cancelBtn.style.position = 'absolute';
     cancelBtn.style.top = '-10px';
     cancelBtn.style.right = '-10px';
-    cancelBtn.style.width = '24px';
-    cancelBtn.style.height = '24px';
+    cancelBtn.style.width = '20px'; // ✅ 2) Plus petit
+    cancelBtn.style.height = '20px';
     cancelBtn.style.borderRadius = '50%';
     cancelBtn.style.background = '#e74c3c';
     cancelBtn.style.color = 'white';
@@ -1128,7 +1136,7 @@ function afficherSelecteurMeeple(x, y, position, mouseX, mouseY) {
     cancelBtn.style.alignItems = 'center';
     cancelBtn.style.justifyContent = 'center';
     cancelBtn.style.cursor = 'pointer';
-    cancelBtn.style.fontSize = '16px';
+    cancelBtn.style.fontSize = '14px';
     cancelBtn.style.fontWeight = 'bold';
     
     cancelBtn.onclick = () => {
