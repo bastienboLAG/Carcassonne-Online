@@ -748,23 +748,22 @@ function creerSlotCentral() {
     slot.className = "slot slot-central";
     slot.style.gridColumn = 50;
     slot.style.gridRow = 50;
-    slot.style.border = '3px dashed gold'; // Rendre plus visible
-    slot.style.backgroundColor = 'rgba(255, 215, 0, 0.1)'; // Fond doré
+    // ✅ ENLEVÉ le style gold inline - le CSS s'en charge
     
     // ✅ Appliquer le style readonly si ce n'est pas notre tour
     if (!isMyTurn && gameSync) {
         slot.classList.add('slot-readonly');
         slot.style.cursor = 'default';
         // Pas de onclick
+        console.log('🔒 Slot central readonly (pas notre tour)');
     } else {
         slot.onclick = () => {
             if (tuileEnMain && !firstTilePlaced) {
                 console.log('✅ Clic sur slot central - pose de la tuile');
                 poserTuile(50, 50, tuileEnMain, true);
-            } else {
-                console.log('⚠️ Impossible de poser:', { tuileEnMain, firstTilePlaced });
             }
         };
+        console.log('✅ Slot central cliquable (notre tour)');
     }
     
     board.appendChild(slot);
