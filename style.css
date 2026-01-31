@@ -97,6 +97,7 @@ html, body {
     border-color: gold;
 }
 
+/* Les slots readonly ont la même apparence mais pas de hover gold */
 .slot-readonly:hover {
     background-color: rgba(255, 255, 255, 0.02);
     border-color: #444;
