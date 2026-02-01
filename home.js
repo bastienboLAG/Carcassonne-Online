@@ -1043,8 +1043,13 @@ function getValidMeeplePositions(x, y) {
     tile.zones.forEach((zone, index) => {
         console.log(`  Zone ${index}:`, zone.type, 'meeplePosition:', zone.meeplePosition);
         
-        if (zone.meeplePosition && Array.isArray(zone.meeplePosition)) {
-            zone.meeplePosition.forEach(pos => {
+        if (zone.meeplePosition !== undefined && zone.meeplePosition !== null) {
+            // ✅ Gérer à la fois nombre et array
+            const positions = Array.isArray(zone.meeplePosition) 
+                ? zone.meeplePosition 
+                : [zone.meeplePosition];
+            
+            positions.forEach(pos => {
                 const rotatedPos = rotatePosition(pos, tile.rotation);
                 console.log(`    Position ${pos} → ${rotatedPos} (rotation ${tile.rotation}°)`);
                 validPositions.push({
