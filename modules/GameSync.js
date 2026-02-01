@@ -13,6 +13,8 @@ export class GameSync {
         this.onTilePlaced = null;
         this.onTurnEnded = null;
         this.onGameStarted = null;
+        this.onTileDrawn = null;
+        this.onMeeplePlaced = null;
     }
 
     /**
@@ -81,11 +83,43 @@ export class GameSync {
         // Passer au joueur suivant
         this.gameState.nextPlayer();
         
+        // Diffuser aux autres joueurs
         this.multiplayer.broadcast({
             type: 'turn-ended',
             playerId: this.multiplayer.playerId,
             nextPlayerIndex: this.gameState.currentPlayerIndex,
             gameState: this.gameState.serialize()
+        });
+        
+        return true;
+    }
+
+    /**
+     * Synchroniser la pioche d'une nouvelle tuile
+     */
+    syncTileDraw(tileId, rotation) {
+        console.log('🎲 Sync pioche tuile:', tileId);
+        this.multiplayer.broadcast({
+            type: 'tile-drawn',
+            tileId: tileId,
+            rotation: rotation,
+            playerId: this.multiplayer.playerId
+        });
+    }
+
+    /**
+     * Synchroniser le placement d'un meeple
+     */
+    syncMeeplePlacement(x, y, position, meepleType, color) {
+        console.log('🎭 Sync placement meeple:', x, y, position, meepleType);
+        this.multiplayer.broadcast({
+            type: 'meeple-placed',
+            x: x,
+            y: y,
+            position: position,
+            meepleType: meepleType,
+            color: color,
+            playerId: this.multiplayer.playerId
         });
     }
 
@@ -122,6 +156,20 @@ export class GameSync {
                 if (this.onTurnEnded && data.playerId !== this.multiplayer.playerId) {
                     console.log('⏭️ [SYNC] Fin de tour reçue');
                     this.onTurnEnded(data.nextPlayerIndex, data.gameState);
+                }
+                break;
+
+            case 'tile-drawn':
+                if (this.onTileDrawn && data.playerId !== this.multiplayer.playerId) {
+                    console.log('🎲 [SYNC] Pioche tuile reçue:', data.tileId);
+                    this.onTileDrawn(data.tileId, data.rotation, data.playerId);
+                }
+                break;
+
+            case 'meeple-placed':
+                if (this.onMeeplePlaced && data.playerId !== this.multiplayer.playerId) {
+                    console.log('🎭 [SYNC] Meeple placé reçu:', data.x, data.y, data.position);
+                    this.onMeeplePlaced(data.x, data.y, data.position, data.meepleType, data.color, data.playerId);
                 }
                 break;
         }
