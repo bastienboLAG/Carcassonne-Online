@@ -1264,8 +1264,8 @@ function placerMeeple(x, y, position, meepleType) {
         gameSync.syncMeeplePlacement(x, y, position, meepleType, playerColor);
     }
     
-    // ✅ 6) Réafficher les curseurs sans celui qui vient d'être utilisé
-    afficherCurseursMeeple(x, y);
+    // ✅ Faire disparaître TOUS les curseurs (un seul meeple par tour)
+    document.querySelectorAll('.meeple-cursors-container').forEach(c => c.remove());
 }
 
 /**
@@ -1303,8 +1303,8 @@ function afficherMeeple(x, y, position, meepleType, color) {
     meeple.style.position = 'absolute';
     meeple.style.left = `${offsetX}px`;
     meeple.style.top = `${offsetY}px`;
-    meeple.style.width = '30px';
-    meeple.style.height = '30px';
+    meeple.style.width = '60px'; // ✅ Doublé de 30px à 60px
+    meeple.style.height = '60px';
     meeple.style.transform = 'translate(-50%, -50%)';
     meeple.style.pointerEvents = 'none';
     
