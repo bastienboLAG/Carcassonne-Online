@@ -833,13 +833,15 @@ function piocherNouvelleTuile() {
         gameSync.syncTileDraw(tileData.id, 0);
     }
 
-    if (firstTilePlaced) {
-        rafraichirTousLesSlots();
-    }
-    
     mettreAJourCompteur();
+    
     if (gameState) {
         updateTurnDisplay();
+    }
+    
+    // ✅ 5) Rafraîchir les slots APRÈS updateTurnDisplay pour que isMyTurn soit à jour
+    if (firstTilePlaced) {
+        rafraichirTousLesSlots();
     }
 }
 
