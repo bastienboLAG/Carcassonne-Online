@@ -1024,15 +1024,29 @@ function rotatePosition(position, rotation) {
  */
 function getValidMeeplePositions(x, y) {
     const tile = plateau.placedTiles[`${x},${y}`];
-    if (!tile || !tile.zones) return [];
+    if (!tile) {
+        console.log('❌ Tuile non trouvée à', x, y);
+        return [];
+    }
+    
+    console.log('🔍 Tuile trouvée:', tile.id, 'rotation:', tile.rotation);
+    console.log('📦 Zones de la tuile:', tile.zones);
+    
+    if (!tile.zones || tile.zones.length === 0) {
+        console.log('❌ Pas de zones sur cette tuile');
+        return [];
+    }
     
     const validPositions = [];
     
     // Pour chaque zone, récupérer ses positions et les faire tourner
-    tile.zones.forEach(zone => {
+    tile.zones.forEach((zone, index) => {
+        console.log(`  Zone ${index}:`, zone.type, 'meeplePosition:', zone.meeplePosition);
+        
         if (zone.meeplePosition && Array.isArray(zone.meeplePosition)) {
             zone.meeplePosition.forEach(pos => {
                 const rotatedPos = rotatePosition(pos, tile.rotation);
+                console.log(`    Position ${pos} → ${rotatedPos} (rotation ${tile.rotation}°)`);
                 validPositions.push({
                     position: rotatedPos,
                     zoneType: zone.type
@@ -1041,6 +1055,7 @@ function getValidMeeplePositions(x, y) {
         }
     });
     
+    console.log('✅ Total positions valides:', validPositions.length);
     return validPositions;
 }
 
