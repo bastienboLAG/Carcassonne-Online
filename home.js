@@ -992,6 +992,59 @@ function mettreAJourCompteur() {
 // ========== MEEPLES ==========
 
 /**
+ * Calculer la position après rotation (grille 5x5)
+ * @param {number} position - Position originale (1-25)
+ * @param {number} rotation - Rotation en degrés (0, 90, 180, 270)
+ * @returns {number} Position après rotation
+ */
+function rotatePosition(position, rotation) {
+    if (rotation === 0) return position;
+    
+    // Convertir position en coordonnées (row, col)
+    const row = Math.floor((position - 1) / 5);
+    const col = (position - 1) % 5;
+    
+    let newRow = row;
+    let newCol = col;
+    
+    // Appliquer les rotations successives
+    const rotations = rotation / 90;
+    for (let i = 0; i < rotations; i++) {
+        const tempRow = newRow;
+        newRow = newCol;
+        newCol = 4 - tempRow;
+    }
+    
+    // Reconvertir en position (1-25)
+    return (newRow * 5) + newCol + 1;
+}
+
+/**
+ * Récupérer les positions de meeple valides pour une tuile avec rotation
+ */
+function getValidMeeplePositions(x, y) {
+    const tile = plateau.placedTiles[`${x},${y}`];
+    if (!tile || !tile.zones) return [];
+    
+    const validPositions = [];
+    
+    // Pour chaque zone, récupérer ses positions et les faire tourner
+    tile.zones.forEach(zone => {
+        if (zone.meeplePosition && Array.isArray(zone.meeplePosition)) {
+            zone.meeplePosition.forEach(pos => {
+                const rotatedPos = rotatePosition(pos, tile.rotation);
+                validPositions.push({
+                    position: rotatedPos,
+                    zoneType: zone.type
+                });
+            });
+        }
+    });
+    
+    return validPositions;
+}
+
+/**
  * Afficher les curseurs de placement de meeple sur une tuile
  */
 function afficherCurseursMeeple(x, y) {
@@ -999,6 +1052,15 @@ function afficherCurseursMeeple(x, y) {
     
     // Nettoyer les anciens curseurs et conteneurs
     document.querySelectorAll('.meeple-cursors-container').forEach(c => c.remove());
+    
+    // ✅ Récupérer les positions valides depuis les zones de la tuile
+    const validPositions = getValidMeeplePositions(x, y);
+    if (validPositions.length === 0) {
+        console.log('⚠️ Aucune position de meeple valide sur cette tuile');
+        return;
+    }
+    
+    console.log('✅ Positions valides:', validPositions);
     
     // Créer un conteneur pour les curseurs sur cette tuile
     const container = document.createElement('div');
@@ -1011,24 +1073,24 @@ function afficherCurseursMeeple(x, y) {
     container.style.pointerEvents = 'none';
     container.style.zIndex = '100';
     
-    // Créer 25 curseurs (grille 5x5)
-    for (let position = 1; position <= 25; position++) {
+    // Créer un curseur pour chaque position valide
+    validPositions.forEach(({position, zoneType}) => {
         const key = `${x},${y},${position}`;
         
-        // ✅ 4) Vérifier si la position est déjà occupée AVANT de créer le curseur
+        // Vérifier si la position est déjà occupée
         if (placedMeeples[key]) {
             console.log('⏭️ Position', position, 'déjà occupée, pas de curseur');
-            continue;
+            return;
         }
         
         const cursor = document.createElement('div');
         cursor.className = 'meeple-cursor';
+        cursor.dataset.zoneType = zoneType; // ✅ Stocker le type de zone
         
         // Calculer la position dans la grille 5x5
         const row = Math.floor((position - 1) / 5);
         const col = (position - 1) % 5;
         
-        // ✅ Position correcte : 208/5=41.6, premier point à 20.8px (centre de la case)
         const offsetX = 20.8 + (col * 41.6);
         const offsetY = 20.8 + (row * 41.6);
         
@@ -1043,7 +1105,7 @@ function afficherCurseursMeeple(x, y) {
         cursor.style.cursor = 'pointer';
         cursor.style.pointerEvents = 'auto';
         cursor.style.transition = 'all 0.2s';
-        cursor.style.transform = 'translate(-50%, -50%)'; // ✅ Centrer le curseur
+        cursor.style.transform = 'translate(-50%, -50%)';
         
         cursor.onmouseenter = () => {
             cursor.style.backgroundColor = 'rgba(255, 215, 0, 1)';
@@ -1057,11 +1119,11 @@ function afficherCurseursMeeple(x, y) {
         
         cursor.onclick = (e) => {
             e.stopPropagation();
-            afficherSelecteurMeeple(x, y, position, e.clientX, e.clientY);
+            afficherSelecteurMeeple(x, y, position, zoneType, e.clientX, e.clientY);
         };
         
         container.appendChild(cursor);
-    }
+    });
     
     document.getElementById('board').appendChild(container);
 }
@@ -1069,8 +1131,8 @@ function afficherCurseursMeeple(x, y) {
 /**
  * Afficher le sélecteur de type de meeple (menu compact)
  */
-function afficherSelecteurMeeple(x, y, position, mouseX, mouseY) {
-    console.log('📋 Sélecteur de meeple à la position', position);
+function afficherSelecteurMeeple(x, y, position, zoneType, mouseX, mouseY) {
+    console.log('📋 Sélecteur de meeple à la position', position, 'type:', zoneType);
     
     // Nettoyer l'ancien sélecteur
     const oldSelector = document.getElementById('meeple-selector');
@@ -1081,28 +1143,41 @@ function afficherSelecteurMeeple(x, y, position, mouseX, mouseY) {
     selector.id = 'meeple-selector';
     selector.style.position = 'fixed';
     selector.style.left = `${mouseX}px`;
-    selector.style.top = `${mouseY - 80}px`; // ✅ 2) 80px au-dessus
+    selector.style.top = `${mouseY - 80}px`;
     selector.style.transform = 'translateX(-50%)';
     selector.style.zIndex = '1000';
     selector.style.display = 'flex';
-    selector.style.gap = '0px'; // ✅ 1) Pas d'espace entre les images
-    selector.style.padding = '2px'; // ✅ 1) Padding minimal
+    selector.style.gap = '0px';
+    selector.style.padding = '2px';
     selector.style.background = 'rgba(44, 62, 80, 0.5)';
     selector.style.borderRadius = '8px';
     selector.style.border = '2px solid gold';
     selector.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
     
-    // 3 fois le même meeple pour visualiser
-    const meepleTypes = [
-        { type: 'Normal', image: `./assets/Meeples/${getPlayerColor()}/Normal.png` },
-        { type: 'Normal', image: `./assets/Meeples/${getPlayerColor()}/Normal.png` },
-        { type: 'Normal', image: `./assets/Meeples/${getPlayerColor()}/Normal.png` }
-    ];
+    // ✅ Proposer les meeples selon le type de zone
+    let meepleTypes = [];
+    
+    if (zoneType === 'field') {
+        // Field → Farmer uniquement
+        meepleTypes = [
+            { type: 'Farmer', image: `./assets/Meeples/${getPlayerColor()}/Farmer.png` }
+        ];
+    } else if (zoneType === 'road' || zoneType === 'city') {
+        // Road ou City → Normal uniquement
+        meepleTypes = [
+            { type: 'Normal', image: `./assets/Meeples/${getPlayerColor()}/Normal.png` }
+        ];
+    } else {
+        // Par défaut (abbey, etc.) → Normal
+        meepleTypes = [
+            { type: 'Normal', image: `./assets/Meeples/${getPlayerColor()}/Normal.png` }
+        ];
+    }
     
     meepleTypes.forEach(meeple => {
         const option = document.createElement('div');
         option.style.cursor = 'pointer';
-        option.style.padding = '2px'; // ✅ 1) Padding réduit
+        option.style.padding = '2px';
         option.style.borderRadius = '5px';
         option.style.transition = 'background 0.2s';
         
@@ -1125,14 +1200,13 @@ function afficherSelecteurMeeple(x, y, position, mouseX, mouseY) {
         option.onclick = (e) => {
             e.stopPropagation();
             placerMeeple(x, y, position, meeple.type);
-            // ✅ 2) Fermeture immédiate
             setTimeout(() => selector.remove(), 0);
         };
         
         selector.appendChild(option);
     });
     
-    // ✅ 1) Fermer quand on clique ailleurs
+    // Fermer quand on clique ailleurs
     setTimeout(() => {
         const closeOnClickOutside = (e) => {
             if (!selector.contains(e.target)) {
