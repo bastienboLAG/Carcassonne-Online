@@ -872,12 +872,17 @@ function poserTuile(x, y, tile, isFirst = false) {
         
         lastPlacedTile = {x, y};
         
+        // ✅ 5) Garder tuileEnMain temporairement pour rafraîchir les slots
+        const tempTile = tuileEnMain;
         tuileEnMain = null;
         rafraichirTousLesSlots();
+        tuileEnMain = tempTile;
         
         if (isMyTurn && gameSync) {
             afficherCurseursMeeple(x, y);
         }
+        
+        tuileEnMain = null;
     } else {
         tuilePosee = true;
         document.querySelectorAll('.slot').forEach(s => s.remove());
@@ -890,10 +895,12 @@ function poserTuile(x, y, tile, isFirst = false) {
         
         lastPlacedTile = {x, y};
         
+        // ✅ 5) Sauvegarder tuileEnMain avant de mettre à null
+        const savedTile = tuileEnMain;
         tuileEnMain = null;
         
-        // ✅ 7) Rafraîchir les slots immédiatement pour les rendre cliquables
-        rafraichirTousLesSlots();
+        // Piocher la prochaine tuile immédiatement pour générer les slots
+        // Non, on attend la fin du tour
         
         if (isMyTurn && gameSync) {
             afficherCurseursMeeple(x, y);
@@ -1006,8 +1013,11 @@ function afficherCurseursMeeple(x, y) {
     for (let position = 1; position <= 25; position++) {
         const key = `${x},${y},${position}`;
         
-        // Vérifier si la position est déjà occupée
-        if (placedMeeples[key]) continue;
+        // ✅ 4) Vérifier si la position est déjà occupée AVANT de créer le curseur
+        if (placedMeeples[key]) {
+            console.log('⏭️ Position', position, 'déjà occupée, pas de curseur');
+            continue;
+        }
         
         const cursor = document.createElement('div');
         cursor.className = 'meeple-cursor';
@@ -1113,7 +1123,8 @@ function afficherSelecteurMeeple(x, y, position, mouseX, mouseY) {
         option.onclick = (e) => {
             e.stopPropagation();
             placerMeeple(x, y, position, meeple.type);
-            selector.remove(); // ✅ 4) Fermeture auto
+            // ✅ 2) Fermeture immédiate
+            setTimeout(() => selector.remove(), 0);
         };
         
         selector.appendChild(option);
@@ -1165,19 +1176,31 @@ function placerMeeple(x, y, position, meepleType) {
  * Afficher un meeple sur le plateau
  */
 function afficherMeeple(x, y, position, meepleType, color) {
+    // ✅ 1) Créer un conteneur sur la tuile, pas directement le meeple
+    let container = document.querySelector(`.meeple-container[data-pos="${x},${y}"]`);
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'meeple-container';
+        container.dataset.pos = `${x},${y}`;
+        container.style.gridColumn = x;
+        container.style.gridRow = y;
+        container.style.position = 'relative';
+        container.style.width = '208px';
+        container.style.height = '208px';
+        container.style.pointerEvents = 'none';
+        container.style.zIndex = '50';
+        document.getElementById('board').appendChild(container);
+    }
+    
     const meeple = document.createElement('img');
     meeple.src = `./assets/Meeples/${color}/${meepleType}.png`;
     meeple.className = 'meeple';
-    
-    // ✅ 3) Utiliser gridColumn/gridRow pour placer sur la bonne tuile
-    meeple.style.gridColumn = x;
-    meeple.style.gridRow = y;
+    meeple.dataset.position = position;
     
     // Calculer la position dans la grille 5x5
     const row = Math.floor((position - 1) / 5);
     const col = (position - 1) % 5;
     
-    // ✅ 3) Même calcul que les curseurs
     const offsetX = 20.8 + (col * 41.6);
     const offsetY = 20.8 + (row * 41.6);
     
@@ -1186,11 +1209,10 @@ function afficherMeeple(x, y, position, meepleType, color) {
     meeple.style.top = `${offsetY}px`;
     meeple.style.width = '30px';
     meeple.style.height = '30px';
-    meeple.style.transform = 'translate(-50%, -50%)'; // ✅ 3) Centrer comme les curseurs
-    meeple.style.zIndex = '50';
+    meeple.style.transform = 'translate(-50%, -50%)';
     meeple.style.pointerEvents = 'none';
     
-    document.getElementById('board').appendChild(meeple);
+    container.appendChild(meeple);
 }
 
 /**
