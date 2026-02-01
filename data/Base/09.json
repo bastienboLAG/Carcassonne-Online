@@ -16,7 +16,7 @@
       "type": "city",
       "edges": ["east"],
       "features": [],
-      "meeplePosition": "11"
+      "meeplePosition": "15"
     },
     {
       "id": 3,
@@ -29,3 +29,4 @@
     }
   ]
 }
+
