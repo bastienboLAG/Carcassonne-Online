@@ -816,8 +816,14 @@ function setupEventListeners() {
                     if (meeple) {
                         console.log(`  Retour meeple de ${meeple.playerId} à ${key}`);
                         
-                        // Retirer visuellement
-                        document.querySelectorAll(`.meeple[data-key="${key}"]`).forEach(el => el.remove());
+                        // ✅ Retirer visuellement - chercher tous les meeples et vérifier data-key
+                        const [x, y, position] = key.split(',');
+                        document.querySelectorAll('.meeple').forEach(el => {
+                            if (el.dataset.key === key) {
+                                console.log('    Meeple visuel retiré');
+                                el.remove();
+                            }
+                        });
                         
                         // Retirer des données
                         delete placedMeeples[key];
