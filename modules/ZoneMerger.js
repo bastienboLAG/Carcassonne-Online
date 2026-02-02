@@ -105,7 +105,9 @@ export class ZoneMerger {
             ];
 
             directions.forEach(({ edge, dx, dy, opposite }) => {
-                if (!edges.includes(edge)) return;
+                // ✅ Gérer les sous-directions (south-right → south)
+                const edgeMatches = edges.some(e => e.split('-')[0] === edge);
+                if (!edgeMatches) return;
 
                 const nx = x + dx;
                 const ny = y + dy;
@@ -172,6 +174,9 @@ export class ZoneMerger {
             for (const edge of edges) {
                 console.log(`    Vérification edge ${edge}...`);
                 
+                // ✅ Extraire la direction principale (north, east, south, west)
+                const mainDirection = edge.split('-')[0]; // "south-right" → "south"
+                
                 const directions = {
                     'north': { dx: 0, dy: -1, opposite: 'south' },
                     'east': { dx: 1, dy: 0, opposite: 'west' },
@@ -179,7 +184,7 @@ export class ZoneMerger {
                     'west': { dx: -1, dy: 0, opposite: 'east' }
                 };
 
-                const dir = directions[edge];
+                const dir = directions[mainDirection];
                 if (!dir) {
                     console.log(`      Direction ${edge} inconnue, skip`);
                     continue;
@@ -248,7 +253,10 @@ export class ZoneMerger {
             for (const edge of edges) {
                 console.log(`    Vérification edge ${edge}...`);
                 
-                const dir = directions[edge];
+                // ✅ Extraire la direction principale (north, east, south, west)
+                const mainDirection = edge.split('-')[0];
+                
+                const dir = directions[mainDirection];
                 if (!dir) {
                     console.log(`      Direction ${edge} inconnue, skip`);
                     continue;
@@ -383,29 +391,42 @@ export class ZoneMerger {
      * Obtenir tous les meeples dans une zone mergée
      */
     getZoneMeeples(mergedZone, placedMeeples) {
+        console.log(`🔍 Recherche meeples dans zone ${mergedZone.type} (${mergedZone.tiles.length} tuiles)`);
+        console.log('   placedMeeples:', Object.keys(placedMeeples));
+        
         const meeples = [];
 
         mergedZone.tiles.forEach(({ x, y, zoneIndex }) => {
             const tile = this.board.placedTiles[`${x},${y}`];
             const zone = tile.zones[zoneIndex];
 
+            console.log(`   Tuile (${x},${y}) zone ${zoneIndex}:`);
+
             const positions = Array.isArray(zone.meeplePosition) 
                 ? zone.meeplePosition 
                 : [zone.meeplePosition];
+            
+            console.log('     positions originales:', positions);
 
             positions.forEach(pos => {
                 const rotatedPos = this._rotatePosition(pos, tile.rotation);
                 const key = `${x},${y},${rotatedPos}`;
+                
+                console.log(`     pos ${pos} → rotatedPos ${rotatedPos} → key "${key}"`);
 
                 if (placedMeeples[key]) {
+                    console.log(`       ✅ Meeple trouvé:`, placedMeeples[key]);
                     meeples.push({
                         ...placedMeeples[key],
                         x, y, position: rotatedPos, key
                     });
+                } else {
+                    console.log(`       ❌ Pas de meeple à cette clé`);
                 }
             });
         });
 
+        console.log(`   Total meeples trouvés: ${meeples.length}`);
         return meeples;
     }
 
