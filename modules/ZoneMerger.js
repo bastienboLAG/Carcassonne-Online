@@ -149,15 +149,29 @@ export class ZoneMerger {
      * Vérifier si une ville est complète (pas de bords ouverts)
      */
     _isCityComplete(group) {
+        console.log('🔍 Vérification fermeture city, groupe de', group.tiles.length, 'tuiles');
+        
         // Pour chaque tuile de la zone, vérifier que tous ses edges ont un voisin avec city
         for (const { x, y, zoneIndex } of group.tiles) {
             const tile = this.board.placedTiles[`${x},${y}`];
             const zone = tile.zones[zoneIndex];
 
-            if (!zone.edges) continue;
+            console.log(`  Tuile (${x},${y}) zone ${zoneIndex}:`, zone.type);
+            console.log('    edges:', zone.edges, 'type:', typeof zone.edges, 'isArray:', Array.isArray(zone.edges));
+
+            if (!zone.edges) {
+                console.log('    Pas d\'edges, on continue');
+                continue;
+            }
+
+            // ✅ Vérifier que edges est bien un array
+            const edges = Array.isArray(zone.edges) ? zone.edges : [zone.edges];
+            console.log('    edges normalisé:', edges);
 
             // Vérifier chaque edge
-            for (const edge of zone.edges) {
+            for (const edge of edges) {
+                console.log(`    Vérification edge ${edge}...`);
+                
                 const directions = {
                     'N': { dx: 0, dy: -1, opposite: 'S' },
                     'E': { dx: 1, dy: 0, opposite: 'W' },
@@ -166,7 +180,10 @@ export class ZoneMerger {
                 };
 
                 const dir = directions[edge];
-                if (!dir) continue;
+                if (!dir) {
+                    console.log(`      Direction ${edge} inconnue, skip`);
+                    continue;
+                }
 
                 const nx = x + dir.dx;
                 const ny = y + dir.dy;
@@ -174,6 +191,7 @@ export class ZoneMerger {
 
                 // ✅ Pas de tuile voisine = edge ouvert = ville incomplète
                 if (!neighborTile) {
+                    console.log(`      ❌ Pas de tuile à (${nx},${ny}) → Ville INCOMPLÈTE`);
                     return false;
                 }
 
@@ -184,12 +202,16 @@ export class ZoneMerger {
 
                 // ✅ Pas de city qui correspond = edge ouvert = ville incomplète
                 if (!hasMatchingCity) {
+                    console.log(`      ❌ Voisin (${nx},${ny}) n'a pas de city sur ${dir.opposite} → Ville INCOMPLÈTE`);
                     return false;
                 }
+                
+                console.log(`      ✅ Voisin (${nx},${ny}) a une city sur ${dir.opposite}`);
             }
         }
 
         // ✅ Tous les edges sont fermés
+        console.log('  ✅ Tous les edges fermés → Ville COMPLÈTE');
         return true;
     }
 
@@ -197,12 +219,24 @@ export class ZoneMerger {
      * Vérifier si une route est complète (pas d'extrémités ouvertes)
      */
     _isRoadComplete(group) {
+        console.log('🔍 Vérification fermeture road, groupe de', group.tiles.length, 'tuiles');
+        
         // Pour chaque tuile de la zone, vérifier que tous ses edges ont un voisin avec road
         for (const { x, y, zoneIndex } of group.tiles) {
             const tile = this.board.placedTiles[`${x},${y}`];
             const zone = tile.zones[zoneIndex];
 
-            if (!zone.edges) continue;
+            console.log(`  Tuile (${x},${y}) zone ${zoneIndex}:`, zone.type);
+            console.log('    edges:', zone.edges, 'type:', typeof zone.edges, 'isArray:', Array.isArray(zone.edges));
+
+            if (!zone.edges) {
+                console.log('    Pas d\'edges, on continue');
+                continue;
+            }
+
+            // ✅ Vérifier que edges est bien un array
+            const edges = Array.isArray(zone.edges) ? zone.edges : [zone.edges];
+            console.log('    edges normalisé:', edges);
 
             const directions = {
                 'N': { dx: 0, dy: -1, opposite: 'S' },
@@ -211,9 +245,14 @@ export class ZoneMerger {
                 'W': { dx: -1, dy: 0, opposite: 'E' }
             };
 
-            for (const edge of zone.edges) {
+            for (const edge of edges) {
+                console.log(`    Vérification edge ${edge}...`);
+                
                 const dir = directions[edge];
-                if (!dir) continue;
+                if (!dir) {
+                    console.log(`      Direction ${edge} inconnue, skip`);
+                    continue;
+                }
 
                 const nx = x + dir.dx;
                 const ny = y + dir.dy;
@@ -221,6 +260,7 @@ export class ZoneMerger {
 
                 // ✅ Pas de tuile voisine = extrémité ouverte = route incomplète
                 if (!neighborTile) {
+                    console.log(`      ❌ Pas de tuile à (${nx},${ny}) → Route INCOMPLÈTE`);
                     return false;
                 }
 
@@ -231,12 +271,16 @@ export class ZoneMerger {
 
                 // ✅ Pas de road qui correspond = extrémité ouverte = route incomplète
                 if (!hasMatchingRoad) {
+                    console.log(`      ❌ Voisin (${nx},${ny}) n'a pas de road sur ${dir.opposite} → Route INCOMPLÈTE`);
                     return false;
                 }
+                
+                console.log(`      ✅ Voisin (${nx},${ny}) a une road sur ${dir.opposite}`);
             }
         }
 
         // ✅ Tous les edges sont fermés
+        console.log('  ✅ Tous les edges fermés → Route COMPLÈTE');
         return true;
     }
 
@@ -267,8 +311,13 @@ export class ZoneMerger {
      * Trouver la zone mergée qui contient une position de meeple spécifique
      */
     findMergedZoneForPosition(x, y, position) {
+        console.log(`🔍 Recherche zone mergée pour position ${position} sur tuile (${x},${y})`);
+        
         const tile = this.board.placedTiles[`${x},${y}`];
-        if (!tile) return null;
+        if (!tile) {
+            console.log('  ❌ Tuile non trouvée');
+            return null;
+        }
 
         // Trouver quelle zone locale contient cette position
         let targetZoneIndex = null;
@@ -280,17 +329,31 @@ export class ZoneMerger {
             // Appliquer la rotation inverse pour trouver la position originale
             const originalPos = this._reverseRotatePosition(position, tile.rotation);
             
+            console.log(`  Zone ${index} (${zone.type}): positions=${positions}, originalPos cherché=${originalPos}`);
+            
             if (positions.includes(originalPos)) {
                 targetZoneIndex = index;
+                console.log(`    ✅ Trouvé dans zone ${index}`);
             }
         });
 
-        if (targetZoneIndex === null) return null;
+        if (targetZoneIndex === null) {
+            console.log('  ❌ Position non trouvée dans aucune zone');
+            return null;
+        }
 
         // Trouver le groupe mergé qui contient cette zone
-        return this.mergedZones.find(group => 
+        const mergedZone = this.mergedZones.find(group => 
             group.tiles.some(t => t.x === x && t.y === y && t.zoneIndex === targetZoneIndex)
         );
+        
+        if (mergedZone) {
+            console.log(`  ✅ Zone mergée trouvée: type=${mergedZone.type}, ${mergedZone.tiles.length} tuiles`);
+        } else {
+            console.log('  ❌ Aucune zone mergée correspondante');
+        }
+        
+        return mergedZone;
     }
 
     /**
