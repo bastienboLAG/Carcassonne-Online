@@ -15,6 +15,7 @@ export class GameSync {
         this.onGameStarted = null;
         this.onTileDrawn = null;
         this.onMeeplePlaced = null;
+        this.onScoreUpdate = null;
     }
 
     /**
@@ -124,6 +125,19 @@ export class GameSync {
     }
 
     /**
+     * Synchroniser la mise à jour des scores
+     */
+    syncScoreUpdate(scoringResults, meeplesToReturn) {
+        console.log('💰 Sync score update:', scoringResults);
+        this.multiplayer.broadcast({
+            type: 'score-update',
+            scoringResults: scoringResults,
+            meeplesToReturn: meeplesToReturn,
+            playerId: this.multiplayer.playerId
+        });
+    }
+
+    /**
      * Gérer les messages reçus
      * @private
      */
@@ -170,6 +184,13 @@ export class GameSync {
                 if (this.onMeeplePlaced && data.playerId !== this.multiplayer.playerId) {
                     console.log('🎭 [SYNC] Meeple placé reçu:', data.x, data.y, data.position);
                     this.onMeeplePlaced(data.x, data.y, data.position, data.meepleType, data.color, data.playerId);
+                }
+                break;
+
+            case 'score-update':
+                if (this.onScoreUpdate && data.playerId !== this.multiplayer.playerId) {
+                    console.log('💰 [SYNC] Mise à jour des scores reçue');
+                    this.onScoreUpdate(data.scoringResults, data.meeplesToReturn);
                 }
                 break;
         }
