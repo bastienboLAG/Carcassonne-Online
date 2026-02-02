@@ -149,18 +149,15 @@ export class ZoneMerger {
      * Vérifier si une ville est complète (pas de bords ouverts)
      */
     _isCityComplete(group) {
-        const openEdges = new Set();
-
-        group.tiles.forEach(({ x, y, zoneIndex }) => {
+        // Pour chaque tuile de la zone, vérifier que tous ses edges ont un voisin avec city
+        for (const { x, y, zoneIndex } of group.tiles) {
             const tile = this.board.placedTiles[`${x},${y}`];
             const zone = tile.zones[zoneIndex];
 
-            if (!zone.edges) return;
+            if (!zone.edges) continue;
 
-            zone.edges.forEach(edge => {
-                const edgeKey = `${x},${y},${edge}`;
-
-                // Vérifier s'il y a une tuile adjacente avec une city qui touche
+            // Vérifier chaque edge
+            for (const edge of zone.edges) {
                 const directions = {
                     'N': { dx: 0, dy: -1, opposite: 'S' },
                     'E': { dx: 1, dy: 0, opposite: 'W' },
@@ -169,42 +166,43 @@ export class ZoneMerger {
                 };
 
                 const dir = directions[edge];
-                if (!dir) return;
+                if (!dir) continue;
 
                 const nx = x + dir.dx;
                 const ny = y + dir.dy;
                 const neighborTile = this.board.placedTiles[`${nx},${ny}`];
 
+                // ✅ Pas de tuile voisine = edge ouvert = ville incomplète
                 if (!neighborTile) {
-                    openEdges.add(edgeKey);
-                    return;
+                    return false;
                 }
 
-                // Vérifier si le voisin a une city sur le bord opposé
+                // ✅ Vérifier si le voisin a une city sur le bord opposé
                 const hasMatchingCity = neighborTile.zones.some(nz => 
                     nz.type === 'city' && nz.edges && nz.edges.includes(dir.opposite)
                 );
 
+                // ✅ Pas de city qui correspond = edge ouvert = ville incomplète
                 if (!hasMatchingCity) {
-                    openEdges.add(edgeKey);
+                    return false;
                 }
-            });
-        });
+            }
+        }
 
-        return openEdges.size === 0;
+        // ✅ Tous les edges sont fermés
+        return true;
     }
 
     /**
-     * Vérifier si une route est complète (2 extrémités fermées)
+     * Vérifier si une route est complète (pas d'extrémités ouvertes)
      */
     _isRoadComplete(group) {
-        let endpoints = 0;
-
-        group.tiles.forEach(({ x, y, zoneIndex }) => {
+        // Pour chaque tuile de la zone, vérifier que tous ses edges ont un voisin avec road
+        for (const { x, y, zoneIndex } of group.tiles) {
             const tile = this.board.placedTiles[`${x},${y}`];
             const zone = tile.zones[zoneIndex];
 
-            if (!zone.edges) return;
+            if (!zone.edges) continue;
 
             const directions = {
                 'N': { dx: 0, dy: -1, opposite: 'S' },
@@ -213,32 +211,33 @@ export class ZoneMerger {
                 'W': { dx: -1, dy: 0, opposite: 'E' }
             };
 
-            zone.edges.forEach(edge => {
+            for (const edge of zone.edges) {
                 const dir = directions[edge];
-                if (!dir) return;
+                if (!dir) continue;
 
                 const nx = x + dir.dx;
                 const ny = y + dir.dy;
                 const neighborTile = this.board.placedTiles[`${nx},${ny}`];
 
+                // ✅ Pas de tuile voisine = extrémité ouverte = route incomplète
                 if (!neighborTile) {
-                    endpoints++;
-                    return;
+                    return false;
                 }
 
-                // Vérifier si le voisin a une road sur le bord opposé
+                // ✅ Vérifier si le voisin a une road sur le bord opposé
                 const hasMatchingRoad = neighborTile.zones.some(nz => 
                     nz.type === 'road' && nz.edges && nz.edges.includes(dir.opposite)
                 );
 
+                // ✅ Pas de road qui correspond = extrémité ouverte = route incomplète
                 if (!hasMatchingRoad) {
-                    endpoints++;
+                    return false;
                 }
-            });
-        });
+            }
+        }
 
-        // Une route est complète si elle n'a pas d'extrémités ouvertes
-        return endpoints === 0;
+        // ✅ Tous les edges sont fermés
+        return true;
     }
 
     /**
