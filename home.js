@@ -4,6 +4,8 @@ import { Board } from './modules/Board.js';
 import { Deck } from './modules/Deck.js';
 import { GameState } from './modules/GameState.js';
 import { GameSync } from './modules/GameSync.js';
+import { ZoneMerger } from './modules/ZoneMerger.js';
+import { Scoring } from './modules/Scoring.js';
 
 // ========== VARIABLES LOBBY ==========
 const multiplayer = new Multiplayer();
@@ -20,6 +22,8 @@ const plateau = new Board();
 const deck = new Deck();
 let gameState = null;
 let gameSync = null;
+let zoneMerger = null;
+let scoring = null;
 let tuileEnMain = null;
 let tuilePosee = false;
 let zoomLevel = 1;
@@ -429,6 +433,11 @@ async function startGame() {
     gameSync.init();
     console.log('🔗 GameSync initialisé');
     
+    // ✅ Initialiser ZoneMerger et Scoring
+    zoneMerger = new ZoneMerger(plateau);
+    scoring = new Scoring(zoneMerger);
+    console.log('🔗 ZoneMerger et Scoring initialisés');
+    
     // Callbacks pour les actions synchronisées
     gameSync.onGameStarted = (deckData, gameStateData) => {
         console.log('🎮 [INVITÉ] Pioche reçue !');
@@ -515,6 +524,28 @@ async function startGame() {
         afficherMeeple(x, y, position, meepleType, color);
     };
     
+    gameSync.onScoreUpdate = (scoringResults, meeplesToReturn) => {
+        console.log('💰 [SYNC] Mise à jour des scores reçue');
+        
+        // Appliquer les scores
+        scoringResults.forEach(({ playerId, points, reason }) => {
+            const player = gameState.players.find(p => p.id === playerId);
+            if (player) {
+                player.score += points;
+                console.log(`  ${player.name} +${points} pts (${reason})`);
+            }
+        });
+        
+        // Retirer les meeples
+        meeplesToReturn.forEach(key => {
+            document.querySelectorAll(`.meeple[data-key="${key}"]`).forEach(el => el.remove());
+            delete placedMeeples[key];
+        });
+        
+        // Mettre à jour l'affichage
+        updateTurnDisplay();
+    };
+    
     // Setup de l'interface
     console.log('🔧 Setup des event listeners...');
     setupEventListeners();
@@ -562,6 +593,10 @@ async function startGameForInvite() {
     // Initialiser GameSync
     gameSync = new GameSync(multiplayer, gameState);
     gameSync.init();
+    
+    // ✅ Initialiser ZoneMerger et Scoring
+    zoneMerger = new ZoneMerger(plateau);
+    scoring = new Scoring(zoneMerger);
     
     // Callbacks
     gameSync.onGameStarted = (deckData, gameStateData) => {
@@ -636,6 +671,25 @@ async function startGameForInvite() {
         afficherMeeple(x, y, position, meepleType, color);
     };
     
+    gameSync.onScoreUpdate = (scoringResults, meeplesToReturn) => {
+        console.log('💰 [SYNC] Mise à jour des scores reçue');
+        
+        scoringResults.forEach(({ playerId, points, reason }) => {
+            const player = gameState.players.find(p => p.id === playerId);
+            if (player) {
+                player.score += points;
+                console.log(`  ${player.name} +${points} pts (${reason})`);
+            }
+        });
+        
+        meeplesToReturn.forEach(key => {
+            document.querySelectorAll(`.meeple[data-key="${key}"]`).forEach(el => el.remove());
+            delete placedMeeples[key];
+        });
+        
+        updateTurnDisplay();
+    };
+    
     setupEventListeners();
     setupNavigation(document.getElementById('board-container'), document.getElementById('board'));
     
@@ -676,7 +730,7 @@ function updateTurnDisplay() {
             <div style="display: flex; align-items: center; gap: 8px; padding: 5px; margin: 3px 0; background: ${bgColor}; border-radius: 3px;">
                 <span style="color: #2ecc71; font-weight: bold; width: 15px;">${indicator}</span>
                 <img src="${meepleImg}" style="width: 24px; height: 24px;">
-                <span style="flex: 1; color: ${isActive ? '#2ecc71' : '#ecf0f1'}; font-weight: ${isActive ? 'bold' : 'normal'};">${player.name}</span>
+                <span style="flex: 1; color: ${isActive ? '#2ecc71' : '#ecf0f1'}; font-weight: ${isActive ? 'bold' : 'normal'};">${player.name} (${player.score || 0} pts)</span>
             </div>
         `;
     });
@@ -739,6 +793,46 @@ function setupEventListeners() {
         }
         
         console.log('⏭️ Fin de tour - passage au joueur suivant');
+        
+        // ✅ Calculer les scores des zones fermées
+        if (scoring && zoneMerger) {
+            const { scoringResults, meeplesToReturn } = scoring.scoreClosedZones(placedMeeples);
+            
+            if (scoringResults.length > 0) {
+                console.log('💰 Scores calculés:', scoringResults);
+                
+                // Appliquer les scores localement
+                scoringResults.forEach(({ playerId, points, reason }) => {
+                    const player = gameState.players.find(p => p.id === playerId);
+                    if (player) {
+                        player.score += points;
+                        console.log(`  ${player.name} +${points} pts (${reason})`);
+                    }
+                });
+                
+                // Retirer les meeples des zones fermées
+                meeplesToReturn.forEach(key => {
+                    const meeple = placedMeeples[key];
+                    if (meeple) {
+                        console.log(`  Retour meeple de ${meeple.playerId} à ${key}`);
+                        
+                        // Retirer visuellement
+                        document.querySelectorAll(`.meeple[data-key="${key}"]`).forEach(el => el.remove());
+                        
+                        // Retirer des données
+                        delete placedMeeples[key];
+                    }
+                });
+                
+                // Synchroniser les scores
+                if (gameSync) {
+                    gameSync.syncScoreUpdate(scoringResults, meeplesToReturn);
+                }
+                
+                // Mettre à jour l'affichage
+                updateTurnDisplay();
+            }
+        }
         
         // ✅ Nettoyer les curseurs de meeple
         document.querySelectorAll('.meeple-cursors-container').forEach(c => c.remove());
@@ -874,11 +968,17 @@ function poserTuile(x, y, tile, isFirst = false) {
         
         lastPlacedTile = {x, y};
         
-        // ✅ 5) Garder tuileEnMain temporairement pour rafraîchir les slots
+        // ✅ Garder tuileEnMain temporairement pour rafraîchir les slots
         const tempTile = tuileEnMain;
         tuileEnMain = null;
         rafraichirTousLesSlots();
         tuileEnMain = tempTile;
+        
+        // ✅ Merger les zones après placement
+        if (zoneMerger) {
+            zoneMerger.mergeZones();
+            console.log('🔄 Zones mergées après placement première tuile');
+        }
         
         if (isMyTurn && gameSync) {
             afficherCurseursMeeple(x, y);
@@ -897,12 +997,15 @@ function poserTuile(x, y, tile, isFirst = false) {
         
         lastPlacedTile = {x, y};
         
-        // ✅ 5) Sauvegarder tuileEnMain avant de mettre à null
+        // ✅ Sauvegarder tuileEnMain avant de mettre à null
         const savedTile = tuileEnMain;
         tuileEnMain = null;
         
-        // Piocher la prochaine tuile immédiatement pour générer les slots
-        // Non, on attend la fin du tour
+        // ✅ Merger les zones après placement
+        if (zoneMerger) {
+            zoneMerger.mergeZones();
+            console.log('🔄 Zones mergées après placement tuile');
+        }
         
         if (isMyTurn && gameSync) {
             afficherCurseursMeeple(x, y);
@@ -1103,6 +1206,18 @@ function afficherCurseursMeeple(x, y) {
             return;
         }
         
+        // ✅ Vérifier si la zone mergée contient déjà un meeple
+        if (zoneMerger) {
+            const mergedZone = zoneMerger.findMergedZoneForPosition(x, y, position);
+            if (mergedZone) {
+                const meeplesInZone = zoneMerger.getZoneMeeples(mergedZone, placedMeeples);
+                if (meeplesInZone.length > 0) {
+                    console.log('⏭️ Position', position, 'dans une zone avec meeple(s), pas de curseur');
+                    return;
+                }
+            }
+        }
+        
         const cursor = document.createElement('div');
         cursor.className = 'meeple-cursor';
         cursor.dataset.zoneType = zoneType; // ✅ Stocker le type de zone
@@ -1291,6 +1406,7 @@ function afficherMeeple(x, y, position, meepleType, color) {
     const meeple = document.createElement('img');
     meeple.src = `./assets/Meeples/${color}/${meepleType}.png`;
     meeple.className = 'meeple';
+    meeple.dataset.key = `${x},${y},${position}`; // ✅ Pour pouvoir retirer le meeple
     meeple.dataset.position = position;
     
     // Calculer la position dans la grille 5x5
