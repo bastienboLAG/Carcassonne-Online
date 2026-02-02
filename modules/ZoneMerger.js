@@ -98,10 +98,10 @@ export class ZoneMerger {
             // Explorer les tuiles adjacentes
             const edges = zone.edges || [];
             const directions = [
-                { edge: 'N', dx: 0, dy: -1, opposite: 'S' },
-                { edge: 'E', dx: 1, dy: 0, opposite: 'W' },
-                { edge: 'S', dx: 0, dy: 1, opposite: 'N' },
-                { edge: 'W', dx: -1, dy: 0, opposite: 'E' }
+                { edge: 'north', dx: 0, dy: -1, opposite: 'south' },
+                { edge: 'east', dx: 1, dy: 0, opposite: 'west' },
+                { edge: 'south', dx: 0, dy: 1, opposite: 'north' },
+                { edge: 'west', dx: -1, dy: 0, opposite: 'east' }
             ];
 
             directions.forEach(({ edge, dx, dy, opposite }) => {
@@ -173,10 +173,10 @@ export class ZoneMerger {
                 console.log(`    Vérification edge ${edge}...`);
                 
                 const directions = {
-                    'N': { dx: 0, dy: -1, opposite: 'S' },
-                    'E': { dx: 1, dy: 0, opposite: 'W' },
-                    'S': { dx: 0, dy: 1, opposite: 'N' },
-                    'W': { dx: -1, dy: 0, opposite: 'E' }
+                    'north': { dx: 0, dy: -1, opposite: 'south' },
+                    'east': { dx: 1, dy: 0, opposite: 'west' },
+                    'south': { dx: 0, dy: 1, opposite: 'north' },
+                    'west': { dx: -1, dy: 0, opposite: 'east' }
                 };
 
                 const dir = directions[edge];
@@ -239,10 +239,10 @@ export class ZoneMerger {
             console.log('    edges normalisé:', edges);
 
             const directions = {
-                'N': { dx: 0, dy: -1, opposite: 'S' },
-                'E': { dx: 1, dy: 0, opposite: 'W' },
-                'S': { dx: 0, dy: 1, opposite: 'N' },
-                'W': { dx: -1, dy: 0, opposite: 'E' }
+                'north': { dx: 0, dy: -1, opposite: 'south' },
+                'east': { dx: 1, dy: 0, opposite: 'west' },
+                'south': { dx: 0, dy: 1, opposite: 'north' },
+                'west': { dx: -1, dy: 0, opposite: 'east' }
             };
 
             for (const edge of edges) {
