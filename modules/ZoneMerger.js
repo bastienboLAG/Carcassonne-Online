@@ -78,8 +78,11 @@ export class ZoneMerger {
             group.tiles.push({ x, y, zoneIndex });
 
             // Compter les blasons (shields)
-            if (zone.features && zone.features.includes('shield')) {
-                group.shields++;
+            if (zone.features) {
+                const features = Array.isArray(zone.features) ? zone.features : [zone.features];
+                if (features.includes('shield')) {
+                    group.shields++;
+                }
             }
 
             // Explorer les zones connectées sur la même tuile
