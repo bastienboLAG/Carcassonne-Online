@@ -160,10 +160,10 @@ export class ZoneMerger {
                 const hasOppositeEdge = neighborEdges.some(e => e.split('-')[0] === dir.opposite);
 
                 if (hasOppositeEdge) {
-                    const neighborKey = `${nx},${ny},${neighborZoneIndex}`;
-                    const zoneId = this.tileToZone.get(neighborKey);
-                    if (zoneId) {
-                        adjacentZoneIds.add(zoneId);
+                    // ✅ Chercher dans le registry au lieu de tileToZone
+                    const adjacentZone = this.registry.findZoneContaining(nx, ny, neighborZoneIndex);
+                    if (adjacentZone) {
+                        adjacentZoneIds.add(adjacentZone.id);
                     }
                 }
             });
