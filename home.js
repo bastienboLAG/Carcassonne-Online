@@ -982,8 +982,7 @@ function poserTuile(x, y, tile, isFirst = false) {
         
         // ✅ Merger les zones après placement
         if (zoneMerger) {
-            zoneMerger.mergeZones();
-            console.log('🔄 Zones mergées après placement première tuile');
+            zoneMerger.updateZonesForNewTile(x, y);
         }
         
         if (isMyTurn && gameSync) {
@@ -1009,8 +1008,7 @@ function poserTuile(x, y, tile, isFirst = false) {
         
         // ✅ Merger les zones après placement
         if (zoneMerger) {
-            zoneMerger.mergeZones();
-            console.log('🔄 Zones mergées après placement tuile');
+            zoneMerger.updateZonesForNewTile(x, y);
         }
         
         if (isMyTurn && gameSync) {
