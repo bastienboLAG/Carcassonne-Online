@@ -1029,6 +1029,11 @@ function poserTuileSync(x, y, tile) {
     
     const copy = tile.clone();
     plateau.addTile(x, y, copy);
+    
+    // ✅ Merger les zones pour les tuiles synchronisées
+    if (zoneMerger) {
+        zoneMerger.updateZonesForNewTile(x, y);
+    }
 
     if (!firstTilePlaced) {
         firstTilePlaced = true;
