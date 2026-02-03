@@ -334,15 +334,18 @@ export class ZoneMerger {
                 ? zone.meeplePosition 
                 : [zone.meeplePosition];
             
-            // Appliquer la rotation inverse pour trouver la position originale
-            const originalPos = this._reverseRotatePosition(position, tile.rotation);
-            
-            console.log(`  Zone ${index} (${zone.type}): positions=${positions}, originalPos cherché=${originalPos}`);
-            
-            if (positions.includes(originalPos)) {
-                targetZoneIndex = index;
-                console.log(`    ✅ Trouvé dans zone ${index}`);
-            }
+            // ✅ FIX: Appliquer la rotation AVANT de comparer (pas l'inverse)
+            // La position reçue est déjà la position affichée (après rotation)
+            // Il faut vérifier si cette position correspond à une zone APRÈS rotation
+            positions.forEach(originalPos => {
+                const rotatedPos = this._rotatePosition(originalPos, tile.rotation);
+                console.log(`  Zone ${index} (${zone.type}): pos originale=${originalPos}, après rotation=${rotatedPos}, cherché=${position}`);
+                
+                if (rotatedPos === position) {
+                    targetZoneIndex = index;
+                    console.log(`    ✅ Match trouvé dans zone ${index}`);
+                }
+            });
         });
 
         if (targetZoneIndex === null) {
