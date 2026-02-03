@@ -17,8 +17,11 @@ export class Scoring {
         const scoringResults = [];
         const meeplesToReturn = [];
 
+        // ✅ Récupérer toutes les zones du registry
+        const allZones = this.zoneMerger.getAllZones();
+        
         // Parcourir toutes les zones mergées
-        this.zoneMerger.mergedZones.forEach(mergedZone => {
+        allZones.forEach(mergedZone => {
             if (!mergedZone.isComplete) return;
 
             console.log(`✅ Zone ${mergedZone.type} fermée détectée`);
@@ -113,9 +116,10 @@ export class Scoring {
         console.log('🏁 Calcul des scores finaux...');
         
         const finalScores = [];
+        const allZones = this.zoneMerger.getAllZones();
 
         // 1. Villes incomplètes : 1 pt/tuile + 1 pt/blason
-        this.zoneMerger.mergedZones.forEach(mergedZone => {
+        allZones.forEach(mergedZone => {
             if (mergedZone.type !== 'city' || mergedZone.isComplete) return;
 
             const meeples = this.zoneMerger.getZoneMeeples(mergedZone, placedMeeples);
@@ -134,7 +138,7 @@ export class Scoring {
         });
 
         // 2. Routes incomplètes : 1 pt/tuile
-        this.zoneMerger.mergedZones.forEach(mergedZone => {
+        allZones.forEach(mergedZone => {
             if (mergedZone.type !== 'road' || mergedZone.isComplete) return;
 
             const meeples = this.zoneMerger.getZoneMeeples(mergedZone, placedMeeples);
@@ -153,7 +157,7 @@ export class Scoring {
         });
 
         // 3. Abbayes incomplètes : 1 pt + 1 pt/tuile adjacente
-        this.zoneMerger.mergedZones.forEach(mergedZone => {
+        allZones.forEach(mergedZone => {
             if (mergedZone.type !== 'abbey' || mergedZone.isComplete) return;
 
             const meeples = this.zoneMerger.getZoneMeeples(mergedZone, placedMeeples);
@@ -173,9 +177,9 @@ export class Scoring {
         });
 
         // 4. Champs (farmers) : 3 pts par ville complète adjacente
-        const closedCities = this.zoneMerger.mergedZones.filter(z => z.type === 'city' && z.isComplete);
+        const closedCities = this.zoneMerger.getClosedCities();
         
-        this.zoneMerger.mergedZones.forEach(mergedZone => {
+        allZones.forEach(mergedZone => {
             if (mergedZone.type !== 'field') return;
 
             const meeples = this.zoneMerger.getZoneMeeples(mergedZone, placedMeeples);
