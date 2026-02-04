@@ -131,6 +131,9 @@ export class ZoneMerger {
         
         if (!zone.edges) return [];
 
+        const tile = this.board.placedTiles[`${x},${y}`];
+        const rotation = tile ? tile.rotation : 0;
+
         const edges = Array.isArray(zone.edges) ? zone.edges : [zone.edges];
         
         const directions = [
@@ -142,7 +145,11 @@ export class ZoneMerger {
 
         edges.forEach(edge => {
             const mainDirection = edge.split('-')[0];
-            const dir = directions.find(d => d.edge === mainDirection);
+            
+            // ✅ Appliquer la rotation au edge
+            const rotatedEdge = this._rotateEdge(mainDirection, rotation);
+            
+            const dir = directions.find(d => d.edge === rotatedEdge);
             if (!dir) return;
 
             const nx = x + dir.dx;
@@ -157,7 +164,13 @@ export class ZoneMerger {
                 if (!neighborZone.edges) return;
 
                 const neighborEdges = Array.isArray(neighborZone.edges) ? neighborZone.edges : [neighborZone.edges];
-                const hasOppositeEdge = neighborEdges.some(e => e.split('-')[0] === dir.opposite);
+                
+                // ✅ Appliquer la rotation aux edges du voisin
+                const rotatedNeighborEdges = neighborEdges.map(e => 
+                    this._rotateEdge(e.split('-')[0], neighborTile.rotation)
+                );
+                
+                const hasOppositeEdge = rotatedNeighborEdges.includes(dir.opposite);
 
                 if (hasOppositeEdge) {
                     // ✅ Chercher dans le registry au lieu de tileToZone
@@ -170,6 +183,22 @@ export class ZoneMerger {
         });
 
         return Array.from(adjacentZoneIds);
+    }
+
+    /**
+     * Appliquer rotation à un edge
+     * @private
+     */
+    _rotateEdge(edge, rotation) {
+        if (rotation === 0) return edge;
+        
+        const edges = ['north', 'east', 'south', 'west'];
+        const index = edges.indexOf(edge);
+        if (index === -1) return edge;
+        
+        const rotations = rotation / 90;
+        const newIndex = (index + rotations) % 4;
+        return edges[newIndex];
     }
 
     /**
@@ -229,6 +258,9 @@ export class ZoneMerger {
             for (const edge of edges) {
                 const mainDirection = edge.split('-')[0];
                 
+                // ✅ Appliquer la rotation
+                const rotatedEdge = this._rotateEdge(mainDirection, tile.rotation);
+                
                 const directions = {
                     'north': { dx: 0, dy: -1, opposite: 'south' },
                     'east': { dx: 1, dy: 0, opposite: 'west' },
@@ -236,7 +268,7 @@ export class ZoneMerger {
                     'west': { dx: -1, dy: 0, opposite: 'east' }
                 };
 
-                const dir = directions[mainDirection];
+                const dir = directions[rotatedEdge];
                 if (!dir) continue;
 
                 const nx = x + dir.dx;
@@ -248,7 +280,8 @@ export class ZoneMerger {
                 const hasMatchingCity = neighborTile.zones.some(nz => {
                     if (nz.type !== 'city' || !nz.edges) return false;
                     const nEdges = Array.isArray(nz.edges) ? nz.edges : [nz.edges];
-                    return nEdges.some(e => e.split('-')[0] === dir.opposite);
+                    const rotatedNEdges = nEdges.map(e => this._rotateEdge(e.split('-')[0], neighborTile.rotation));
+                    return rotatedNEdges.includes(dir.opposite);
                 });
 
                 if (!hasMatchingCity) return false;
@@ -280,7 +313,10 @@ export class ZoneMerger {
 
             for (const edge of edges) {
                 const mainDirection = edge.split('-')[0];
-                const dir = directions[mainDirection];
+                
+                // ✅ Appliquer la rotation
+                const rotatedEdge = this._rotateEdge(mainDirection, tile.rotation);
+                const dir = directions[rotatedEdge];
                 if (!dir) continue;
 
                 const nx = x + dir.dx;
@@ -292,7 +328,8 @@ export class ZoneMerger {
                 const hasMatchingRoad = neighborTile.zones.some(nz => {
                     if (nz.type !== 'road' || !nz.edges) return false;
                     const nEdges = Array.isArray(nz.edges) ? nz.edges : [nz.edges];
-                    return nEdges.some(e => e.split('-')[0] === dir.opposite);
+                    const rotatedNEdges = nEdges.map(e => this._rotateEdge(e.split('-')[0], neighborTile.rotation));
+                    return rotatedNEdges.includes(dir.opposite);
                 });
 
                 if (!hasMatchingRoad) return false;
