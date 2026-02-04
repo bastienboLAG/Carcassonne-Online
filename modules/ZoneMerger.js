@@ -154,16 +154,16 @@ export class ZoneMerger {
         ];
 
         edges.forEach(edge => {
-            const mainDirection = edge.split('-')[0];
+            // ✅ Ne PAS simplifier, garder l'edge complet avec suffixes
+            const rotatedEdge = this._rotateEdge(edge, rotation);
             
-            // ✅ Appliquer la rotation au edge
-            const rotatedEdge = this._rotateEdge(mainDirection, rotation);
+            console.log(`        Edge "${edge}" → après rotation → "${rotatedEdge}"`);
             
-            console.log(`        Edge "${edge}" → direction principale "${mainDirection}" → après rotation "${rotatedEdge}"`);
-            
-            const dir = directions.find(d => d.edge === rotatedEdge);
+            // Extraire la direction principale pour trouver le voisin
+            const mainDirection = rotatedEdge.split('-')[0];
+            const dir = directions.find(d => d.edge === mainDirection);
             if (!dir) {
-                console.log(`          ⚠️ Direction non trouvée`);
+                console.log(`          ⚠️ Direction principale "${mainDirection}" non trouvée`);
                 return;
             }
 
@@ -187,17 +187,19 @@ export class ZoneMerger {
                 
                 console.log(`            Zone ${neighborZoneIndex} du voisin: edges originaux =`, neighborZone.edges);
                 
-                // ✅ Appliquer la rotation aux edges du voisin
+                // ✅ Appliquer la rotation aux edges du voisin (garder suffixes)
                 const rotatedNeighborEdges = neighborEdges.map(e => {
-                    const main = e.split('-')[0];
-                    const rotated = this._rotateEdge(main, neighborTile.rotation);
-                    console.log(`              "${e}" → "${main}" → rotation ${neighborTile.rotation}° → "${rotated}"`);
+                    const rotated = this._rotateEdge(e, neighborTile.rotation);
+                    console.log(`              "${e}" → rotation ${neighborTile.rotation}° → "${rotated}"`);
                     return rotated;
                 });
                 
-                const hasOppositeEdge = rotatedNeighborEdges.includes(dir.opposite);
+                // ✅ Calculer l'opposé de l'edge complet
+                const oppositeEdge = this._getOppositeEdge(rotatedEdge);
                 
-                console.log(`            Cherche "${dir.opposite}" dans`, rotatedNeighborEdges, '→', hasOppositeEdge ? '✅' : '❌');
+                const hasOppositeEdge = rotatedNeighborEdges.includes(oppositeEdge);
+                
+                console.log(`            Cherche "${oppositeEdge}" dans`, rotatedNeighborEdges, '→', hasOppositeEdge ? '✅' : '❌');
 
                 if (hasOppositeEdge) {
                     // ✅ Chercher dans le registry au lieu de tileToZone
@@ -215,23 +217,85 @@ export class ZoneMerger {
     }
 
     /**
-     * Appliquer rotation à un edge
+     * Appliquer rotation à un edge (avec suffixes -top/-bottom/-left/-right)
      * @private
      */
     _rotateEdge(edge, rotation) {
         if (rotation === 0) return edge;
         
-        const edges = ['north', 'east', 'south', 'west'];
-        const index = edges.indexOf(edge);
-        if (index === -1) return edge;
+        const rotationTable = {
+            90: {
+                'north': 'east',
+                'north-left': 'east-top',
+                'north-right': 'east-bottom',
+                'east': 'south',
+                'east-top': 'south-right',
+                'east-bottom': 'south-left',
+                'south': 'west',
+                'south-left': 'west-top',
+                'south-right': 'west-bottom',
+                'west': 'north',
+                'west-top': 'north-right',
+                'west-bottom': 'north-left'
+            },
+            180: {
+                'north': 'south',
+                'north-left': 'south-right',
+                'north-right': 'south-left',
+                'east': 'west',
+                'east-top': 'west-bottom',
+                'east-bottom': 'west-top',
+                'south': 'north',
+                'south-left': 'north-right',
+                'south-right': 'north-left',
+                'west': 'east',
+                'west-top': 'east-bottom',
+                'west-bottom': 'east-top'
+            },
+            270: {
+                'north': 'west',
+                'north-left': 'west-bottom',
+                'north-right': 'west-top',
+                'east': 'north',
+                'east-top': 'north-left',
+                'east-bottom': 'north-right',
+                'south': 'east',
+                'south-left': 'east-bottom',
+                'south-right': 'east-top',
+                'west': 'south',
+                'west-top': 'south-left',
+                'west-bottom': 'south-right'
+            }
+        };
         
-        const rotations = rotation / 90;
-        const newIndex = (index + rotations) % 4;
-        return edges[newIndex];
+        return rotationTable[rotation]?.[edge] || edge;
     }
 
     /**
-     * Ajouter les blasons d'une zone à une zone mergée
+     * Obtenir l'edge opposé (avec suffixes inversés)
+     * @private
+     */
+    _getOppositeEdge(edge) {
+        const opposites = {
+            'north': 'south',
+            'north-left': 'south-left',
+            'north-right': 'south-right',
+            'east': 'west',
+            'east-top': 'west-top',
+            'east-bottom': 'west-bottom',
+            'south': 'north',
+            'south-left': 'north-left',
+            'south-right': 'north-right',
+            'west': 'east',
+            'west-top': 'east-top',
+            'west-bottom': 'east-bottom'
+        };
+        
+        return opposites[edge] || edge;
+    }
+
+    /**
+     * Ajouter les blasons et adjacentCities d'une zone à une zone mergée
      * @private
      */
     _addShields(mergedZone, localZone) {
@@ -239,6 +303,15 @@ export class ZoneMerger {
             const features = Array.isArray(localZone.features) ? localZone.features : [localZone.features];
             if (features.includes('shield')) {
                 mergedZone.shields++;
+            }
+            
+            // ✅ Ajouter adjacentCities si présent
+            if (typeof localZone.features === 'object' && localZone.features.adjacentCities) {
+                const cities = Array.isArray(localZone.features.adjacentCities) 
+                    ? localZone.features.adjacentCities 
+                    : [localZone.features.adjacentCities];
+                
+                mergedZone.adjacentCities = [...new Set([...mergedZone.adjacentCities, ...cities])];
             }
         }
     }
@@ -285,19 +358,20 @@ export class ZoneMerger {
             const edges = Array.isArray(zone.edges) ? zone.edges : [zone.edges];
 
             for (const edge of edges) {
-                const mainDirection = edge.split('-')[0];
+                // ✅ Garder l'edge complet
+                const rotatedEdge = this._rotateEdge(edge, tile.rotation);
                 
-                // ✅ Appliquer la rotation
-                const rotatedEdge = this._rotateEdge(mainDirection, tile.rotation);
+                // Extraire direction principale pour trouver le voisin
+                const mainDirection = rotatedEdge.split('-')[0];
                 
                 const directions = {
-                    'north': { dx: 0, dy: -1, opposite: 'south' },
-                    'east': { dx: 1, dy: 0, opposite: 'west' },
-                    'south': { dx: 0, dy: 1, opposite: 'north' },
-                    'west': { dx: -1, dy: 0, opposite: 'east' }
+                    'north': { dx: 0, dy: -1 },
+                    'east': { dx: 1, dy: 0 },
+                    'south': { dx: 0, dy: 1 },
+                    'west': { dx: -1, dy: 0 }
                 };
 
-                const dir = directions[rotatedEdge];
+                const dir = directions[mainDirection];
                 if (!dir) continue;
 
                 const nx = x + dir.dx;
@@ -306,11 +380,14 @@ export class ZoneMerger {
 
                 if (!neighborTile) return false;
 
+                // ✅ Calculer l'opposé de l'edge complet
+                const oppositeEdge = this._getOppositeEdge(rotatedEdge);
+
                 const hasMatchingCity = neighborTile.zones.some(nz => {
                     if (nz.type !== 'city' || !nz.edges) return false;
                     const nEdges = Array.isArray(nz.edges) ? nz.edges : [nz.edges];
-                    const rotatedNEdges = nEdges.map(e => this._rotateEdge(e.split('-')[0], neighborTile.rotation));
-                    return rotatedNEdges.includes(dir.opposite);
+                    const rotatedNEdges = nEdges.map(e => this._rotateEdge(e, neighborTile.rotation));
+                    return rotatedNEdges.includes(oppositeEdge);
                 });
 
                 if (!hasMatchingCity) return false;
@@ -341,11 +418,20 @@ export class ZoneMerger {
             };
 
             for (const edge of edges) {
-                const mainDirection = edge.split('-')[0];
+                // ✅ Garder l'edge complet
+                const rotatedEdge = this._rotateEdge(edge, tile.rotation);
                 
-                // ✅ Appliquer la rotation
-                const rotatedEdge = this._rotateEdge(mainDirection, tile.rotation);
-                const dir = directions[rotatedEdge];
+                // Extraire direction principale pour trouver le voisin
+                const mainDirection = rotatedEdge.split('-')[0];
+                
+                const directions = {
+                    'north': { dx: 0, dy: -1 },
+                    'east': { dx: 1, dy: 0 },
+                    'south': { dx: 0, dy: 1 },
+                    'west': { dx: -1, dy: 0 }
+                };
+                
+                const dir = directions[mainDirection];
                 if (!dir) continue;
 
                 const nx = x + dir.dx;
@@ -354,11 +440,14 @@ export class ZoneMerger {
 
                 if (!neighborTile) return false;
 
+                // ✅ Calculer l'opposé de l'edge complet
+                const oppositeEdge = this._getOppositeEdge(rotatedEdge);
+
                 const hasMatchingRoad = neighborTile.zones.some(nz => {
                     if (nz.type !== 'road' || !nz.edges) return false;
                     const nEdges = Array.isArray(nz.edges) ? nz.edges : [nz.edges];
-                    const rotatedNEdges = nEdges.map(e => this._rotateEdge(e.split('-')[0], neighborTile.rotation));
-                    return rotatedNEdges.includes(dir.opposite);
+                    const rotatedNEdges = nEdges.map(e => this._rotateEdge(e, neighborTile.rotation));
+                    return rotatedNEdges.includes(oppositeEdge);
                 });
 
                 if (!hasMatchingRoad) return false;
