@@ -5,8 +5,12 @@ export class Deck {
         this.totalTiles = 0;
     }
 
-    async loadAllTiles() {
-        const tileIds = Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, '0'));
+    async loadAllTiles(testMode = false) {
+        // ✅ Deck de test avec seulement 15 tuiles
+        const tileIds = testMode 
+            ? ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15']
+            : Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, '0'));
+        
         const allTileData = [];
 
         for (const id of tileIds) {
@@ -24,7 +28,8 @@ export class Deck {
 
         // Créer la pioche avec toutes les tuiles
         for (const data of allTileData) {
-            const quantity = data.quantity;
+            // ✅ En mode test, prendre seulement 1 exemplaire de chaque tuile
+            const quantity = testMode ? 1 : data.quantity;
             
             for (let i = 0; i < quantity; i++) {
                 this.tiles.push({
