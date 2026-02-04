@@ -144,6 +144,8 @@ export class ZoneMerger {
 
         const edges = Array.isArray(zone.edges) ? zone.edges : [zone.edges];
         
+        console.log(`      🔎 Recherche voisins pour zone ${zoneIndex}, edges originaux:`, zone.edges);
+        
         const directions = [
             { edge: 'north', dx: 0, dy: -1, opposite: 'south' },
             { edge: 'east', dx: 1, dy: 0, opposite: 'west' },
@@ -157,14 +159,24 @@ export class ZoneMerger {
             // ✅ Appliquer la rotation au edge
             const rotatedEdge = this._rotateEdge(mainDirection, rotation);
             
+            console.log(`        Edge "${edge}" → direction principale "${mainDirection}" → après rotation "${rotatedEdge}"`);
+            
             const dir = directions.find(d => d.edge === rotatedEdge);
-            if (!dir) return;
+            if (!dir) {
+                console.log(`          ⚠️ Direction non trouvée`);
+                return;
+            }
 
             const nx = x + dir.dx;
             const ny = y + dir.dy;
             const neighborTile = this.board.placedTiles[`${nx},${ny}`];
 
-            if (!neighborTile) return;
+            if (!neighborTile) {
+                console.log(`          Pas de voisin à (${nx},${ny})`);
+                return;
+            }
+
+            console.log(`          Voisin trouvé à (${nx},${ny}), rotation ${neighborTile.rotation}°`);
 
             // Trouver les zones du voisin qui touchent le bord opposé et ont le même type
             neighborTile.zones.forEach((neighborZone, neighborZoneIndex) => {
@@ -173,23 +185,32 @@ export class ZoneMerger {
 
                 const neighborEdges = Array.isArray(neighborZone.edges) ? neighborZone.edges : [neighborZone.edges];
                 
+                console.log(`            Zone ${neighborZoneIndex} du voisin: edges originaux =`, neighborZone.edges);
+                
                 // ✅ Appliquer la rotation aux edges du voisin
-                const rotatedNeighborEdges = neighborEdges.map(e => 
-                    this._rotateEdge(e.split('-')[0], neighborTile.rotation)
-                );
+                const rotatedNeighborEdges = neighborEdges.map(e => {
+                    const main = e.split('-')[0];
+                    const rotated = this._rotateEdge(main, neighborTile.rotation);
+                    console.log(`              "${e}" → "${main}" → rotation ${neighborTile.rotation}° → "${rotated}"`);
+                    return rotated;
+                });
                 
                 const hasOppositeEdge = rotatedNeighborEdges.includes(dir.opposite);
+                
+                console.log(`            Cherche "${dir.opposite}" dans`, rotatedNeighborEdges, '→', hasOppositeEdge ? '✅' : '❌');
 
                 if (hasOppositeEdge) {
                     // ✅ Chercher dans le registry au lieu de tileToZone
                     const adjacentZone = this.registry.findZoneContaining(nx, ny, neighborZoneIndex);
                     if (adjacentZone) {
+                        console.log(`            → Zone mergée ${adjacentZone.id} trouvée !`);
                         adjacentZoneIds.add(adjacentZone.id);
                     }
                 }
             });
         });
 
+        console.log(`      → Total zones adjacentes: ${adjacentZoneIds.size}`);
         return Array.from(adjacentZoneIds);
     }
 
