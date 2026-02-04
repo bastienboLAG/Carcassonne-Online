@@ -565,11 +565,14 @@ button:disabled {
 }
 
 .secondary-btn {
-    background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+    background: white;
+    color: #333;
+    border: 2px solid #ddd;
 }
 
 .secondary-btn:hover {
-    background: linear-gradient(135deg, #7f8c8d, #5d6d7e);
+    background: #f0f0f0;
+    border-color: #ccc;
 }
 
 #tile-preview img {
