@@ -19,7 +19,8 @@ export class ZoneRegistry {
             type: type,
             tiles: [],           // [{x, y, zoneIndex}]
             isComplete: false,
-            shields: 0
+            shields: 0,
+            adjacentCities: []   // Pour les fields (scoring farmers)
         };
         this.zones.set(id, zone);
         console.log(`📝 Nouvelle zone créée: ${id} (${type})`);
@@ -63,6 +64,11 @@ export class ZoneRegistry {
         // Fusionner zone2 dans zone1
         zone1.tiles.push(...zone2.tiles);
         zone1.shields += zone2.shields;
+        
+        // ✅ Fusionner adjacentCities (éviter les doublons)
+        if (zone2.adjacentCities && zone2.adjacentCities.length > 0) {
+            zone1.adjacentCities = [...new Set([...zone1.adjacentCities, ...zone2.adjacentCities])];
+        }
 
         // Supprimer zone2
         this.deleteZone(zoneId2);
