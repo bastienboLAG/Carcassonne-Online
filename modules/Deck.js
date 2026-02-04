@@ -23,8 +23,12 @@ export class Deck {
             }
         }
 
-        // ✅ CORRECTION : Calculer le total AVANT de créer la pioche
-        this.totalTiles = allTileData.reduce((sum, data) => sum + data.quantity, 0);
+        // ✅ CORRECTION : Calculer le total en tenant compte du mode test
+        if (testMode) {
+            this.totalTiles = allTileData.length; // 1 de chaque = nombre de tuiles différentes
+        } else {
+            this.totalTiles = allTileData.reduce((sum, data) => sum + data.quantity, 0);
+        }
 
         // Créer la pioche avec toutes les tuiles
         for (const data of allTileData) {
