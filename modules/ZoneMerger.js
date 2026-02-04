@@ -83,6 +83,14 @@ export class ZoneMerger {
             for (let i = 1; i < adjacentZones.length; i++) {
                 const zoneToMerge = this.registry.getZone(adjacentZones[i]);
                 
+                // ✅ CORRECTION : Ne pas fusionner si c'est une zone de la MÊME tuile
+                // qui a déjà été traitée (et qui n'est pas dans connectedTo)
+                const isSameTileZone = zoneToMerge.tiles.some(t => t.x === x && t.y === y);
+                if (isSameTileZone) {
+                    console.log(`    ⚠️ Skip fusion ${adjacentZones[i]} (même tuile, pas connectée)`);
+                    continue;
+                }
+                
                 // Mettre à jour tileToZone pour toutes les tuiles de la zone fusionnée
                 zoneToMerge.tiles.forEach(t => {
                     const tKey = `${t.x},${t.y},${t.zoneIndex}`;
