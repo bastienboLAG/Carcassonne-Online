@@ -555,7 +555,7 @@ async function startGame() {
     // Si on est l'hôte, charger et envoyer la pioche
     if (isHost) {
         console.log('👑 [HÔTE] Chargement de la pioche...');
-        await deck.loadAllTiles();
+        await deck.loadAllTiles(true); // ✅ true = mode test (15 tuiles)
         console.log('📦 Deck chargé par l\'hôte:', deck.tiles.length, 'tuiles');
         
         // Envoyer la pioche à tous les joueurs
@@ -749,6 +749,13 @@ function updateTurnDisplay() {
             endTurnBtn.style.opacity = '1';
             endTurnBtn.style.cursor = 'pointer';
         }
+        
+        // ✅ Changer le texte si c'est la dernière tuile
+        if (deck.currentIndex >= deck.totalTiles - 1) {
+            endTurnBtn.textContent = 'Calculer le score final';
+        } else {
+            endTurnBtn.textContent = 'Terminer mon tour';
+        }
     }
 }
 
@@ -852,6 +859,41 @@ function setupEventListeners() {
             const currentPlayer = gameState.getCurrentPlayer();
             isMyTurn = currentPlayer.id === multiplayer.playerId;
             console.log('🔄 Mise à jour isMyTurn:', isMyTurn, 'Tour de:', currentPlayer.name);
+        }
+        
+        // ✅ Vérifier si c'est la fin de partie
+        if (deck.currentIndex >= deck.totalTiles - 1) {
+            console.log('🏁 FIN DE PARTIE - Calcul des scores finaux');
+            
+            if (scoring && zoneMerger) {
+                const finalScores = scoring.calculateFinalScores(placedMeeples, gameState);
+                
+                console.log('💰 Scores finaux:', finalScores);
+                
+                // Appliquer les scores finaux
+                finalScores.forEach(({ playerId, points, reason }) => {
+                    const player = gameState.players.find(p => p.id === playerId);
+                    if (player) {
+                        player.score += points;
+                        console.log(`  ${player.name} +${points} pts (${reason})`);
+                    }
+                });
+                
+                // Mettre à jour l'affichage
+                updateTurnDisplay();
+                
+                // Afficher le gagnant
+                const winner = gameState.players.reduce((a, b) => a.score > b.score ? a : b);
+                setTimeout(() => {
+                    alert(`🏆 Partie terminée !
+${winner.name} gagne avec ${winner.score} points !
+
+Scores finaux :
+${gameState.players.map(p => `${p.name}: ${p.score} pts`).join('\n')}`);
+                }, 500);
+            }
+            
+            return; // Ne pas piocher de nouvelle tuile
         }
         
         // Piocher la nouvelle tuile localement
