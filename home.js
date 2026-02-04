@@ -555,7 +555,7 @@ async function startGame() {
     // Si on est l'hôte, charger et envoyer la pioche
     if (isHost) {
         console.log('👑 [HÔTE] Chargement de la pioche...');
-        await deck.loadAllTiles(true); // ✅ true = mode test (15 tuiles)
+        await deck.loadAllTiles(document.getElementById('use-test-deck')?.checked || false);
         console.log('📦 Deck chargé par l\'hôte:', deck.tiles.length, 'tuiles');
         
         // Envoyer la pioche à tous les joueurs
@@ -750,8 +750,8 @@ function updateTurnDisplay() {
             endTurnBtn.style.cursor = 'pointer';
         }
         
-        // ✅ Changer le texte si c'est la dernière tuile
-        if (deck.currentIndex >= deck.totalTiles - 1) {
+        // ✅ Changer le texte si le deck est vide
+        if (deck.currentIndex >= deck.totalTiles) {
             endTurnBtn.textContent = 'Calculer le score final';
         } else {
             endTurnBtn.textContent = 'Terminer mon tour';
@@ -861,8 +861,8 @@ function setupEventListeners() {
             console.log('🔄 Mise à jour isMyTurn:', isMyTurn, 'Tour de:', currentPlayer.name);
         }
         
-        // ✅ Vérifier si c'est la fin de partie
-        if (deck.currentIndex >= deck.totalTiles - 1) {
+        // ✅ Vérifier si c'est la fin de partie (deck vide)
+        if (deck.currentIndex >= deck.totalTiles) {
             console.log('🏁 FIN DE PARTIE - Calcul des scores finaux');
             
             if (scoring && zoneMerger) {
