@@ -227,29 +227,42 @@ export class Scoring {
      * Compter les villes complètes adjacentes à un champ
      */
     _countAdjacentClosedCities(fieldZone, closedCities) {
-        const adjacentCities = new Set();
-
-        fieldZone.tiles.forEach(({ x, y, zoneIndex }) => {
-            const tile = this.zoneMerger.board.placedTiles[`${x},${y}`];
-            const zone = tile.zones[zoneIndex];
-
-            // Vérifier les zones connectées sur la même tuile
-            if (zone.connectedTo) {
-                zone.connectedTo.forEach(connectedIndex => {
-                    const connectedZone = tile.zones[connectedIndex];
-                    
-                    if (connectedZone.type === 'city') {
-                        // Trouver si cette city fait partie d'une ville fermée
-                        closedCities.forEach((closedCity, cityIndex) => {
-                            if (closedCity.tiles.some(t => t.x === x && t.y === y && t.zoneIndex === connectedIndex)) {
-                                adjacentCities.add(cityIndex);
-                            }
-                        });
-                    }
+        console.log('🔍 Comptage villes adjacentes pour field:', fieldZone.id);
+        console.log('  adjacentCities dans la zone:', fieldZone.adjacentCities);
+        console.log('  Villes fermées disponibles:', closedCities.length);
+        
+        // ✅ Utiliser adjacentCities qui a été sauvegardé lors du merge
+        if (!fieldZone.adjacentCities || fieldZone.adjacentCities.length === 0) {
+            console.log('  ❌ Pas de villes adjacentes');
+            return 0;
+        }
+        
+        let count = 0;
+        
+        // Pour chaque ville adjacente référencée
+        fieldZone.adjacentCities.forEach(cityId => {
+            console.log(`  Vérification city ID ${cityId}...`);
+            
+            // Vérifier si une ville fermée contient cette city
+            const isComplete = closedCities.some(closedCity => {
+                // Chercher dans les tuiles de la ville fermée
+                return closedCity.tiles.some(({ x, y, zoneIndex }) => {
+                    const tile = this.zoneMerger.board.placedTiles[`${x},${y}`];
+                    const zone = tile.zones[zoneIndex];
+                    // Vérifier si la zone a l'ID correspondant
+                    return zone.id === cityId;
                 });
+            });
+            
+            if (isComplete) {
+                console.log(`    ✅ Ville ${cityId} est fermée`);
+                count++;
+            } else {
+                console.log(`    ❌ Ville ${cityId} n'est pas fermée`);
             }
         });
-
-        return adjacentCities.size;
+        
+        console.log(`  → Total villes fermées adjacentes: ${count}`);
+        return count;
     }
 }
