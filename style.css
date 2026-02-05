@@ -87,7 +87,7 @@ html, body {
     height: 198px;
     border: 1px dashed #444;
     margin: 5px;
-    background-color: rgba(255, 255, 255, 0.02);
+    background-color: rgba(255, 255, 255, 0.05);
     cursor: pointer;
     pointer-events: auto;
 }
@@ -99,7 +99,7 @@ html, body {
 
 /* Les slots readonly ont la même apparence mais pas de hover gold */
 .slot-readonly:hover {
-    background-color: rgba(255, 255, 255, 0.02);
+    background-color: rgba(255, 255, 255, 0.05);
     border-color: #444;
 }
 
@@ -606,6 +606,7 @@ button:disabled {
     background: #f1c40f;
     color: #000;
     font-weight: bold;
+    width: 100%;
 }
 
 .undo-btn:hover {
@@ -618,6 +619,7 @@ button:disabled {
     color: white;
     padding: 10px 15px;
     font-size: 13px;
+    width: 100%;
 }
 
 .info-btn:hover {
