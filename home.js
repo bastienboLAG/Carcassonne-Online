@@ -753,8 +753,10 @@ function updateTurnDisplay() {
         // ✅ Changer le texte si le deck est vide
         if (deck.currentIndex >= deck.totalTiles) {
             endTurnBtn.textContent = 'Calculer le score final';
+            endTurnBtn.classList.add('final-score-btn');
         } else {
             endTurnBtn.textContent = 'Terminer mon tour';
+            endTurnBtn.classList.remove('final-score-btn');
         }
     }
 }
