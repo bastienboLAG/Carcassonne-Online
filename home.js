@@ -538,6 +538,11 @@ async function startGame() {
         
         // Retirer les meeples
         meeplesToReturn.forEach(key => {
+            const meeple = placedMeeples[key];
+            if (meeple) {
+                // ✅ Incrémenter le nombre de meeples disponibles
+                incrementPlayerMeeples(meeple.playerId);
+            }
             document.querySelectorAll(`.meeple[data-key="${key}"]`).forEach(el => el.remove());
             delete placedMeeples[key];
         });
@@ -683,6 +688,11 @@ async function startGameForInvite() {
         });
         
         meeplesToReturn.forEach(key => {
+            const meeple = placedMeeples[key];
+            if (meeple) {
+                // ✅ Incrémenter le nombre de meeples disponibles
+                incrementPlayerMeeples(meeple.playerId);
+            }
             document.querySelectorAll(`.meeple[data-key="${key}"]`).forEach(el => el.remove());
             delete placedMeeples[key];
         });
@@ -749,6 +759,10 @@ function updateTurnDisplay() {
             endTurnBtn.style.opacity = '1';
             endTurnBtn.style.cursor = 'pointer';
         }
+    
+    // ✅ Mettre à jour le tableau de scores
+    updateScorePanel();
+
         
         // ✅ Changer le texte si le deck est vide
         if (deck.currentIndex >= deck.totalTiles) {
@@ -824,6 +838,9 @@ function setupEventListeners() {
                     const meeple = placedMeeples[key];
                     if (meeple) {
                         console.log(`  Retour meeple de ${meeple.playerId} à ${key}`);
+                        // ✅ Incrémenter le nombre de meeples disponibles
+                        incrementPlayerMeeples(meeple.playerId);
+
                         
                         // ✅ Retirer visuellement - chercher tous les meeples et vérifier data-key
                         const [x, y, position] = key.split(',');
@@ -1413,6 +1430,13 @@ function afficherSelecteurMeeple(x, y, position, zoneType, mouseX, mouseY) {
  */
 function placerMeeple(x, y, position, meepleType) {
     const key = `${x},${y},${position}`;
+    // ✅ Vérifier si le joueur a des meeples disponibles
+    if (!hasAvailableMeeples(multiplayer.playerId)) {
+        alert('❌ Vous n'avez plus de meeples disponibles !');
+        document.querySelectorAll('.meeple-cursors-container').forEach(c => c.remove());
+        return;
+    }
+
     const playerColor = getPlayerColor();
     
     console.log('🎭 Placement meeple:', meepleType, 'à', x, y, 'position', position);
@@ -1424,6 +1448,10 @@ function placerMeeple(x, y, position, meepleType) {
         playerId: multiplayer.playerId
     };
     
+    
+    // ✅ Décrémenter le nombre de meeples disponibles
+    decrementPlayerMeeples(multiplayer.playerId);
+
     // Afficher le meeple
     afficherMeeple(x, y, position, meepleType, playerColor);
     
@@ -1538,3 +1566,151 @@ function setupNavigation(container, board) {
 
 updateColorPickerVisibility();
 console.log('Page chargée');
+
+// ========================================
+// GESTION DU TABLEAU DE SCORES
+// ========================================
+
+/**
+ * Mettre à jour l'affichage du tableau de scores
+ */
+function updateScorePanel() {
+    const playersScoresDiv = document.getElementById('players-scores');
+    if (!playersScoresDiv || !gameState) return;
+    
+    playersScoresDiv.innerHTML = '';
+    
+    const currentPlayer = gameState.getCurrentPlayer();
+    
+    gameState.players.forEach(player => {
+        const isCurrentPlayer = currentPlayer && player.id === currentPlayer.id;
+        
+        const card = document.createElement('div');
+        card.className = 'player-score-card';
+        if (isCurrentPlayer) {
+            card.classList.add('active');
+        }
+        
+        // Header avec nom et score
+        const header = document.createElement('div');
+        header.className = 'player-score-header';
+        
+        if (isCurrentPlayer) {
+            const indicator = document.createElement('span');
+            indicator.className = 'turn-indicator';
+            indicator.textContent = '▶';
+            header.appendChild(indicator);
+        }
+        
+        const name = document.createElement('span');
+        name.className = 'player-score-name';
+        name.textContent = player.name;
+        header.appendChild(name);
+        
+        const points = document.createElement('span');
+        points.className = 'player-score-points';
+        points.textContent = `${player.score} point${player.score > 1 ? 's' : ''}`;
+        header.appendChild(points);
+        
+        card.appendChild(header);
+        
+        // Affichage des meeples disponibles
+        const meeplesDisplay = document.createElement('div');
+        meeplesDisplay.className = 'player-meeples-display';
+        
+        const colorCapitalized = player.color.charAt(0).toUpperCase() + player.color.slice(1);
+        
+        for (let i = 0; i < 7; i++) {
+            const meeple = document.createElement('img');
+            meeple.src = `./assets/Meeples/${colorCapitalized}/Normal.png`;
+            meeple.alt = 'Meeple';
+            
+            if (i >= player.meeples) {
+                meeple.classList.add('unavailable');
+            }
+            
+            meeplesDisplay.appendChild(meeple);
+        }
+        
+        card.appendChild(meeplesDisplay);
+        playersScoresDiv.appendChild(card);
+    });
+}
+
+/**
+ * Décrémenter le nombre de meeples d'un joueur
+ */
+function decrementPlayerMeeples(playerId) {
+    const player = gameState.players.find(p => p.id === playerId);
+    if (player && player.meeples > 0) {
+        player.meeples--;
+        console.log(`🎭 ${player.name} a maintenant ${player.meeples} meeples disponibles`);
+        updateScorePanel();
+        
+        // Synchroniser
+        if (gameSync) {
+            gameSync.multiplayer.broadcast({
+                type: 'meeple-count-update',
+                playerId: playerId,
+                meeples: player.meeples
+            });
+        }
+    }
+}
+
+/**
+ * Incrémenter le nombre de meeples d'un joueur
+ */
+function incrementPlayerMeeples(playerId) {
+    const player = gameState.players.find(p => p.id === playerId);
+    if (player && player.meeples < 7) {
+        player.meeples++;
+        console.log(`🎭 ${player.name} récupère un meeple (${player.meeples}/7)`);
+        updateScorePanel();
+        
+        // Synchroniser
+        if (gameSync) {
+            gameSync.multiplayer.broadcast({
+                type: 'meeple-count-update',
+                playerId: playerId,
+                meeples: player.meeples
+            });
+        }
+    }
+}
+
+/**
+ * Vérifier si le joueur a des meeples disponibles
+ */
+function hasAvailableMeeples(playerId) {
+    const player = gameState.players.find(p => p.id === playerId);
+    return player && player.meeples > 0;
+}
+
+// ========================================
+// ÉVÉNEMENTS DES NOUVEAUX BOUTONS
+// ========================================
+
+// Bouton "Annuler le coup !" (à implémenter plus tard)
+document.getElementById('undo-btn').addEventListener('click', () => {
+    console.log('⏮️ Annulation du coup (fonctionnalité à implémenter)');
+    alert('Fonctionnalité à venir : Annuler le dernier coup joué');
+});
+
+// Bouton "Tuiles restantes dans la pioche ?"
+document.getElementById('remaining-tiles-btn').addEventListener('click', () => {
+    if (!deck) {
+        alert('Aucune partie en cours');
+        return;
+    }
+    
+    const remaining = deck.remaining();
+    const total = deck.total();
+    alert(`🎴 Tuiles restantes : ${remaining} / ${total}`);
+});
+
+// Bouton "Règles de cette partie ?"
+document.getElementById('rules-btn').addEventListener('click', () => {
+    console.log('📜 Affichage des règles (fonctionnalité à implémenter)');
+    alert('Fonctionnalité à venir : Afficher les règles actives pour cette partie');
+});
