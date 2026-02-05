@@ -734,7 +734,6 @@ function updateTurnDisplay() {
     updateScorePanel();
 }
 
-}
 
 function afficherMessage(msg) {
     document.getElementById('tile-preview').innerHTML = `<p style="text-align: center; color: white;">${msg}</p>`;
@@ -1674,3 +1673,4 @@ document.getElementById('rules-btn').addEventListener('click', () => {
     console.log('📜 Affichage des règles (fonctionnalité à implémenter)');
     alert('Fonctionnalité à venir : Afficher les règles actives pour cette partie');
 });
+
