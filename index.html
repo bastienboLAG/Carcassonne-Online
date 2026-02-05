@@ -80,9 +80,6 @@
                 <h3>Départ</h3>
                 <div class="radio-group">
                     <label><input type="radio" name="start" value="unique" checked> Tuile unique</label>
-                    <label><input type="radio" name="start" value="river1"> Rivière I</label>
-                    <label><input type="radio" name="start" value="river2"> Rivière II</label>
-                    <label><input type="radio" name="start" value="carcassonne"> Carcassonne</label>
                 </div>
             </div>
 
@@ -90,21 +87,11 @@
                 <h3>Visuel</h3>
                 <div class="radio-group">
                     <label><input type="radio" name="visual" value="c2" checked> Visuel C2</label>
-                    <label><input type="radio" name="visual" value="c3"> Visuel C3</label>
                 </div>
-                <p class="config-note">+ chaque ext indépendamment</p>
             </div>
 
             <div class="config-section">
                 <h3>Options</h3>
-                <label class="toggle-option">
-                    <input type="checkbox" id="placement-assist" checked>
-                    <span>Assistance au placement</span>
-                </label>
-                <label class="toggle-option">
-                    <input type="checkbox" id="list-remaining">
-                    <span>Lister les tuiles restantes</span>
-                </label>
                 <label class="toggle-option">
                     <input type="checkbox" id="use-test-deck">
                     <span>Deck de test (15 tuiles)</span>
@@ -114,32 +101,10 @@
             <div class="config-section extensions-section">
                 <h3>Extensions</h3>
                 <details open>
-                    <summary><strong>Base - Les champs</strong></summary>
-                </details>
-                <details>
-                    <summary><strong>Extension 0:</strong></summary>
+                    <summary><strong>Base</strong></summary>
                     <label class="toggle-option">
-                        <input type="checkbox" id="ext0-abbe">
-                        <span>L'abbé</span>
-                    </label>
-                    <label class="toggle-option">
-                        <input type="checkbox" id="ext0-jardin">
-                        <span>Le jardin</span>
-                    </label>
-                </details>
-                <details>
-                    <summary><strong>Extension 1: Auberges & Cathédrales</strong></summary>
-                    <label class="toggle-option">
-                        <input type="checkbox" id="ext1-meeple">
-                        <span>Grand Meeple</span>
-                    </label>
-                    <label class="toggle-option">
-                        <input type="checkbox" id="ext1-cathedrale">
-                        <span>Cathédrale</span>
-                    </label>
-                    <label class="toggle-option">
-                        <input type="checkbox" id="ext1-auberge">
-                        <span>Auberge</span>
+                        <input type="checkbox" id="base-fields" checked disabled>
+                        <span>Les champs</span>
                     </label>
                 </details>
             </div>
@@ -160,19 +125,19 @@
 
             <div id="tile-counter">Tuiles : 0 / 72</div>
             
-            <button id="end-turn-btn">Terminer mon tour</button>
             <button id="undo-btn" class="undo-btn">Annuler le coup !</button>
+            <button id="end-turn-btn">Terminer mon tour</button>
             <button id="recenter-btn" class="secondary-btn">🎯 Recentrer</button>
-            
             <button id="remaining-tiles-btn" class="info-btn">Tuiles restantes dans la pioche ?</button>
             <button id="rules-btn" class="info-btn">Règles de cette partie ?</button>
+            
             <button id="back-to-lobby-btn" style="margin-top: auto; padding: 10px; background: #e74c3c; color: white; border: none; border-radius: 5px; cursor: pointer;">← Retour lobby</button>
         </div>
 
         <div id="board-container">
             <div id="board"></div>
         </div>
-        
+
         <div id="score-panel">
             <h2>Tableau de score</h2>
             <div id="players-scores"></div>
