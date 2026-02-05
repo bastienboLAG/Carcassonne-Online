@@ -51,7 +51,7 @@ html, body {
     font-size: 16px;
     font-weight: bold;
     padding: 10px;
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.2);
     border-radius: 5px;
     width: 100%;
     text-align: center;
@@ -87,19 +87,19 @@ html, body {
     height: 198px;
     border: 1px dashed #444;
     margin: 5px;
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: rgba(255, 255, 255, 0.12);
     cursor: pointer;
     pointer-events: auto;
 }
 
 .slot:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.2);
     border-color: gold;
 }
 
 /* Les slots readonly ont la même apparence mais pas de hover gold */
 .slot-readonly:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: rgba(255, 255, 255, 0.12);
     border-color: #444;
 }
 
@@ -606,11 +606,15 @@ button:disabled {
     background: #f1c40f;
     color: #000;
     font-weight: bold;
-    width: 100%;
 }
 
 .undo-btn:hover {
     background: #f39c12;
+}
+
+/* Bouton end-turn et final-score doivent être de la même taille */
+#end-turn-btn, #undo-btn, #recenter-btn {
+    width: 100%;
 }
 
 /* Boutons d'info - Gris foncé */
