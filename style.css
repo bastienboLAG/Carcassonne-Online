@@ -137,6 +137,15 @@ button:disabled {
     cursor: not-allowed;
 }
 
+.final-score-btn {
+    background: #e74c3c !important;
+    color: white !important;
+}
+
+.final-score-btn:hover {
+    background: #c0392b !important;
+}
+
 /* ========================================
    STYLES POUR LA PAGE D'ACCUEIL
    ======================================== */
