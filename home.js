@@ -1432,7 +1432,7 @@ function placerMeeple(x, y, position, meepleType) {
     const key = `${x},${y},${position}`;
     // ✅ Vérifier si le joueur a des meeples disponibles
     if (!hasAvailableMeeples(multiplayer.playerId)) {
-        alert('❌ Vous n'avez plus de meeples disponibles !');
+        alert(`❌ Vous n'avez plus de meeples disponibles !`);
         document.querySelectorAll('.meeple-cursors-container').forEach(c => c.remove());
         return;
     }
@@ -1714,3 +1714,4 @@ document.getElementById('rules-btn').addEventListener('click', () => {
     console.log('📜 Affichage des règles (fonctionnalité à implémenter)');
     alert('Fonctionnalité à venir : Afficher les règles actives pour cette partie');
 });
+
