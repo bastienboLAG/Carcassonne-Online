@@ -606,16 +606,23 @@ button:disabled {
     background: #f1c40f;
     color: #000;
     font-weight: bold;
+    width: 80%;
+    width: 80%;
+    width: 80%;
+    width: 80%;
+
+/* Bouton end-turn et recenter à 80% aussi */
+#end-turn-btn, #recenter-btn {
+    width: 80%;
+}
 }
 
 .undo-btn:hover {
-    background: #f39c12;
 }
 
-/* Bouton end-turn et final-score doivent être de la même taille */
-#end-turn-btn, #undo-btn, #recenter-btn {
-    width: 100%;
-}
+/* Bouton end-turn et recenter à 80% aussi */
+
+/* Terminer mon tour et Recentrer à 80% aussi */
 
 /* Boutons d'info - Gris foncé */
 .info-btn {
@@ -713,4 +720,9 @@ button:disabled {
 .player-meeples-display img.unavailable {
     opacity: 0.2;
     filter: grayscale(100%);
+}
+
+/* Les 3 boutons principaux ont la même largeur */
+#end-turn-btn, #undo-btn, #recenter-btn {
+    width: 80%;
 }
