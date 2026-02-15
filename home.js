@@ -7,27 +7,134 @@ import { GameSync } from './modules/GameSync.js';
 import { ZoneMerger } from './modules/ZoneMerger.js';
 import { Scoring } from './modules/Scoring.js';
 
+import { EventBus } from './modules/core/EventBus.js';
+import { RuleRegistry } from './modules/core/RuleRegistry.js';
+import { BaseRules } from './modules/rules/BaseRules.js';
+import { TurnManager } from './modules/game/TurnManager.js';
+import { TilePlacement } from './modules/game/TilePlacement.js';
+import { MeeplePlacement } from './modules/game/MeeplePlacement.js';
+import { ScorePanelUI } from './modules/ScorePanelUI.js';
+import { SlotsUI } from './modules/SlotsUI.js';
+import { TilePreviewUI } from './modules/TilePreviewUI.js';
+import { MeepleCursorsUI } from './modules/MeepleCursorsUI.js';
+import { MeepleSelectorUI } from './modules/MeepleSelectorUI.js';
+import { MeepleDisplayUI } from './modules/MeepleDisplayUI.js';
+import { LobbyUI } from './modules/ui/LobbyUI.js';
+import { ModalUI } from './modules/ui/ModalUI.js';
 // ========== VARIABLES LOBBY ==========
 const multiplayer = new Multiplayer();
+const lobbyUI = new LobbyUI(multiplayer);
+const modalUI = new ModalUI();
 let gameCode = null;
 let playerName = '';
 let playerColor = 'blue';
-let players = [];
+let players = []; // Synchronisé avec lobbyUI.getPlayers()
 let takenColors = [];
 let inLobby = false;
 let isHost = false;
+let eventListenersInstalled = false; // Éviter double listeners
+
+// Configuration de la partie (règles et options)
+let gameConfig = {
+    playFields: true,
+    showRemainingTiles: true
+};
 
 // ========== VARIABLES JEU ==========
 const plateau = new Board();
 const deck = new Deck();
 let gameState = null;
+
+// ========== EVENTBUS ==========
+const eventBus = new EventBus();
+const ruleRegistry = new RuleRegistry(eventBus);
+let turnManager = null;
+let meeplePlacement = null;
+let tilePlacement = null;
+eventBus.setDebug(true); // Debug activé pour voir les événements
+eventBus.on('tile-drawn', (data) => {
+    if (data.tileData) {
+        tuileEnMain = new Tile(data.tileData);
+        tuileEnMain.rotation = data.tileData.rotation || 0;
+        tuilePosee = false;
+        
+        // Afficher la tuile dans la preview
+        if (tilePreviewUI) {
+            tilePreviewUI.showTile(tuileEnMain);
+        }
+        
+        // Synchroniser si c'est notre tour et pas depuis le réseau
+        if (!data.fromNetwork && turnManager && turnManager.getIsMyTurn() && gameSync) {
+            gameSync.syncTileDraw(data.tileData.id, tuileEnMain.rotation);
+        }
+    }
+});
+eventBus.on('turn-changed', (data) => {
+    isMyTurn = data.isMyTurn;
+    console.log('🔄 Sync isMyTurn global:', isMyTurn);
+    // Mettre à jour l'affichage du bouton
+    updateTurnDisplay();
+});
+
+// ✅ Écouter turn-ended pour synchroniser TOUS les joueurs (pas juste le nouveau joueur actif)
+eventBus.on('turn-ended', (data) => {
+    console.log('⏭️ Turn ended - recalcul isMyTurn et refresh slots pour tous');
+    // Recalculer isMyTurn pour ce joueur
+    if (gameState && multiplayer) {
+        const currentPlayer = gameState.getCurrentPlayer();
+        const newIsMyTurn = currentPlayer && currentPlayer.id === multiplayer.playerId;
+        
+        console.log('   currentPlayer:', currentPlayer?.name, 'newIsMyTurn:', newIsMyTurn);
+        
+        // TOUJOURS émettre turn-changed pour rafraîchir les slots
+        // Même si isMyTurn ne change pas, les slots doivent être recréés avec la nouvelle tuile
+        console.log('   → Émission turn-changed pour rafraîchir slots');
+        eventBus.emit('turn-changed', {
+            isMyTurn: newIsMyTurn,
+            currentPlayer: currentPlayer
+        });
+    }
+});
+
+
+// Écouter meeple-placed pour afficher et synchroniser
+eventBus.on('meeple-placed', (data) => {
+    // Afficher le meeple
+    if (meepleDisplayUI) {
+        meepleDisplayUI.showMeeple(data.x, data.y, data.position, data.meepleType, data.playerColor);
+    }
+    
+    // Synchroniser si ce n'est pas déjà synchronisé
+    if (!data.skipSync && gameSync) {
+        gameSync.syncMeeplePlacement(data.x, data.y, data.position, data.meepleType, data.playerColor);
+    }
+});
+
+// Écouter meeple-count-updated pour synchroniser
+eventBus.on('meeple-count-updated', (data) => {
+    if (gameSync && data.playerId === multiplayer.playerId) {
+        gameSync.multiplayer.broadcast({
+            type: 'meeple-count-update',
+            playerId: data.playerId,
+            meeples: data.meeples
+        });
+    }
+});
+
 let gameSync = null;
+let originalLobbyHandler = null; // Handler de joinGame pour les messages lobby
 let zoneMerger = null;
 let scoring = null;
 let tuileEnMain = null;
 let tuilePosee = false;
 let zoomLevel = 1;
 let firstTilePlaced = false;
+let scorePanelUI = null;
+let slotsUI = null;
+let tilePreviewUI = null;
+let meepleCursorsUI = null;
+let meepleSelectorUI = null;
+let meepleDisplayUI = null;
 let isMyTurn = false;
 
 // ✅ NOUVEAU : Variables pour les meeples
@@ -159,7 +266,7 @@ colorOptions.forEach(option => {
             const me = players.find(p => p.id === multiplayer.playerId);
             if (me) {
                 me.color = playerColor;
-                updatePlayersList();
+                lobbyUI.updatePlayersList();
             }
             
             multiplayer.broadcast({
@@ -171,35 +278,6 @@ colorOptions.forEach(option => {
     });
 });
 
-function updatePlayersList() {
-    const playersList = document.getElementById('players-list');
-    playersList.innerHTML = '';
-    
-    takenColors = players.map(p => p.color);
-    updateAvailableColors();
-    
-    if (players.length === 0) {
-        playersList.innerHTML = '<div class="player-slot empty"><span class="player-name">En attente de joueurs...</span></div>';
-        return;
-    }
-    
-    players.forEach((player) => {
-        const slot = document.createElement('div');
-        slot.className = 'player-slot';
-        slot.innerHTML = `
-            <span class="player-name">${player.name}${player.isHost ? ' 👑' : ''}</span>
-            <img src="${colorImages[player.color]}" class="player-meeple-img" alt="${player.color}">
-        `;
-        playersList.appendChild(slot);
-    });
-    
-    for (let i = players.length; i < 6; i++) {
-        const slot = document.createElement('div');
-        slot.className = 'player-slot empty';
-        slot.innerHTML = '<span class="player-name">En attente...</span>';
-        playersList.appendChild(slot);
-    }
-}
 
 document.getElementById('create-game-btn').addEventListener('click', async () => {
     if (!playerName) {
@@ -223,9 +301,27 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
             color: playerColor,
             isHost: true
         });
-        updatePlayersList();
+        lobbyUI.setPlayers(players);
+        lobbyUI.setIsHost(true);
         
         console.log('🎮 Partie créée ! Code:', gameCode);
+        
+        // Listeners pour synchroniser les checkboxes d'options
+        document.getElementById('base-fields').addEventListener('change', (e) => {
+            multiplayer.broadcast({
+                type: 'option-change',
+                option: 'base-fields',
+                value: e.target.checked
+            });
+        });
+        
+        document.getElementById('list-remaining').addEventListener('change', (e) => {
+            multiplayer.broadcast({
+                type: 'option-change',
+                option: 'list-remaining',
+                value: e.target.checked
+            });
+        });
         
         multiplayer.onPlayerJoined = (playerId) => {
             console.log('👤 Nouveau joueur connecté (ID):', playerId);
@@ -237,6 +333,10 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
             if (data.type === 'player-info') {
                 const existingPlayer = players.find(p => p.id === from);
                 if (!existingPlayer) {
+                    // Mettre à jour takenColors depuis lobbyUI
+                    lobbyUI.setPlayers(players);
+                    const takenColors = players.map(p => p.color);
+                    
                     let assignedColor = data.color;
                     if (takenColors.includes(data.color)) {
                         assignedColor = getAvailableColor();
@@ -248,7 +348,7 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
                         color: assignedColor,
                         isHost: false
                     });
-                    updatePlayersList();
+                    lobbyUI.setPlayers(players);
                 }
                 
                 multiplayer.broadcast({
@@ -265,7 +365,7 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
                     
                     if (!colorTaken) {
                         player.color = data.color;
-                        updatePlayersList();
+                        lobbyUI.updatePlayersList();
                         
                         multiplayer.broadcast({
                             type: 'players-update',
@@ -273,6 +373,12 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
                         });
                     }
                 }
+            }
+            
+            if (data.type === 'player-order-update') {
+                console.log('🔄 Ordre des joueurs mis à jour');
+                players = data.players;
+                lobbyUI.setPlayers(players);
             }
         };
         
@@ -318,7 +424,8 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
     }
     
     try {
-        multiplayer.onDataReceived = (data, from) => {
+        // Créer et sauvegarder le handler lobby (AVANT que GameSync le modifie)
+        const lobbyHandler = (data, from) => {
             console.log('📨 [INVITÉ] Reçu:', data);
             
             if (data.type === 'welcome') {
@@ -328,6 +435,7 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
             if (data.type === 'players-update') {
                 console.log('👥 Mise à jour liste joueurs:', data.players);
                 players = data.players;
+                lobbyUI.setPlayers(players);
                 
                 const me = players.find(p => p.id === multiplayer.playerId);
                 if (me && me.color !== playerColor) {
@@ -339,8 +447,6 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
                         colorOption.querySelector('input').checked = true;
                     }
                 }
-                
-                updatePlayersList();
             }
             
             if (data.type === 'color-change') {
@@ -348,16 +454,52 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
                 const player = players.find(p => p.id === data.playerId);
                 if (player) {
                     player.color = data.color;
-                    updatePlayersList();
+                    lobbyUI.updatePlayersList();
+                }
+            }
+            
+            if (data.type === 'player-order-update') {
+                console.log('🔄 [INVITÉ] Ordre des joueurs mis à jour');
+                players = data.players;
+                lobbyUI.setPlayers(players);
+            }
+            
+            if (data.type === 'return-to-lobby') {
+                console.log('🔙 [INVITÉ] Retour au lobby demandé');
+                returnToLobby();
+            }
+            
+            if (data.type === 'option-change') {
+                console.log('⚙️ [INVITÉ] Option changée:', data.option, '=', data.value);
+                const checkbox = document.getElementById(data.option);
+                if (checkbox) {
+                    checkbox.checked = data.value;
                 }
             }
             
             // ✅ NOUVEAU : Écouter le signal de démarrage
             if (data.type === 'game-starting') {
                 console.log('🎮 [INVITÉ] L\'hôte démarre la partie !');
+                
+                // Recevoir la configuration
+                if (data.config) {
+                    gameConfig = data.config;
+                    console.log('⚙️ [INVITÉ] Configuration reçue:', gameConfig);
+                }
+                
                 startGameForInvite();
             }
+            
+            // ✅ Écouter le retour au lobby
+            if (data.type === 'return-to-lobby') {
+                console.log('🔙 [INVITÉ] Retour au lobby demandé par l\'hôte');
+                returnToLobby();
+            }
         };
+        
+        // Sauvegarder globalement ET assigner
+        originalLobbyHandler = lobbyHandler;
+        multiplayer.onDataReceived = lobbyHandler;
         
         await multiplayer.joinGame(code);
         document.getElementById('join-modal').style.display = 'none';
@@ -395,11 +537,23 @@ document.getElementById('start-game-btn').addEventListener('click', async () => 
     
     console.log('🎮 Démarrage de la partie...');
     
-    // Envoyer le signal aux invités
+    // Lire les options du lobby
+    gameConfig = {
+        playFields: document.getElementById('base-fields').checked,
+        showRemainingTiles: document.getElementById('list-remaining').checked,
+        testDeck: document.getElementById('use-test-deck').checked,
+        extensions: {
+            base: true // Toujours activé pour l'instant
+        }
+    };
+    console.log('⚙️ Configuration:', gameConfig);
+    
+    // Envoyer le signal aux invités avec la config
     if (isHost) {
         multiplayer.broadcast({
             type: 'game-starting',
-            message: 'L\'hôte démarre la partie !'
+            message: 'L\'hôte démarre la partie !',
+            config: gameConfig
         });
     }
     
@@ -407,7 +561,53 @@ document.getElementById('start-game-btn').addEventListener('click', async () => 
     await startGame();
 });
 
-// ✅ FONCTION POUR DÉMARRER LE JEU
+// ✅ FONCTION COMMUNE D'INITIALISATION DES MODULES
+function initializeGameModules() {
+    console.log('🔧 Initialisation des modules de jeu...');
+    
+    // ScorePanelUI
+    scorePanelUI = new ScorePanelUI(eventBus, gameState);
+    
+    // SlotsUI (UNE SEULE INSTANCE)
+    slotsUI = new SlotsUI(plateau, gameSync, eventBus, () => tuileEnMain);
+    slotsUI.init();
+    slotsUI.setSlotClickHandler(poserTuile);
+    slotsUI.isMyTurn = isMyTurn;
+    slotsUI.firstTilePlaced = firstTilePlaced;
+    
+    // TilePreviewUI
+    tilePreviewUI = new TilePreviewUI(eventBus);
+    tilePreviewUI.init();
+    
+    // ZoneMerger et Scoring
+    zoneMerger = new ZoneMerger(plateau);
+    scoring = new Scoring(zoneMerger);
+    console.log('🔗 ZoneMerger et Scoring initialisés');
+    
+    // TilePlacement
+    tilePlacement = new TilePlacement(eventBus, plateau, zoneMerger);
+    console.log('📐 TilePlacement initialisé');
+    
+    // MeeplePlacement
+    meeplePlacement = new MeeplePlacement(eventBus, gameState, zoneMerger);
+    meeplePlacement.setPlacedMeeples(placedMeeples);
+    console.log('🎭 MeeplePlacement initialisé');
+    
+    // MeepleCursorsUI
+    meepleCursorsUI = new MeepleCursorsUI(multiplayer, zoneMerger, plateau, gameConfig);
+    meepleCursorsUI.init();
+    
+    // MeepleSelectorUI
+    meepleSelectorUI = new MeepleSelectorUI(multiplayer, gameState, gameConfig);
+    
+    // MeepleDisplayUI
+    meepleDisplayUI = new MeepleDisplayUI();
+    meepleDisplayUI.init();
+    
+    console.log('✅ Tous les modules initialisés');
+}
+
+// ✅ FONCTION POUR DÉMARRER LE JEU (HÔTE)
 async function startGame() {
     console.log('🎮 [HÔTE] Initialisation du jeu...');
     
@@ -424,19 +624,22 @@ async function startGame() {
     // Initialiser le GameState
     gameState = new GameState();
     players.forEach(player => {
-        gameState.addPlayer(player.id, player.name, player.color);
+        gameState.addPlayer(player.id, player.name, player.color, player.isHost);
     });
     console.log('👥 Joueurs ajoutés au GameState:', gameState.players);
     
-    // Initialiser GameSync
-    gameSync = new GameSync(multiplayer, gameState);
+    // Initialiser GameSync (hôte n'a pas de lobby handler à préserver)
+    gameSync = new GameSync(multiplayer, gameState, null);
     gameSync.init();
     console.log('🔗 GameSync initialisé');
     
-    // ✅ Initialiser ZoneMerger et Scoring
-    zoneMerger = new ZoneMerger(plateau);
-    scoring = new Scoring(zoneMerger);
-    console.log('🔗 ZoneMerger et Scoring initialisés');
+    // Initialiser TurnManager
+    turnManager = new TurnManager(eventBus, gameState, deck, multiplayer);
+    turnManager.init(); // Initialiser le tour
+    console.log('🔄 TurnManager initialisé');
+    
+    // Initialiser tous les modules (fonction commune)
+    initializeGameModules();
     
     // Callbacks pour les actions synchronisées
     gameSync.onGameStarted = (deckData, gameStateData) => {
@@ -451,8 +654,8 @@ async function startGame() {
         gameState.deserialize(gameStateData);
         
         // Piocher la première tuile
-        piocherNouvelleTuile();
-        mettreAJourCompteur();
+        turnManager.drawTile();
+        eventBus.emit('deck-updated', { remaining: deck.remaining(), total: deck.total() });
         updateTurnDisplay();
     };
     
@@ -464,9 +667,8 @@ async function startGame() {
             if (currentImg) {
                 currentImg.style.transform = `rotate(${rotation}deg)`;
             }
-            if (firstTilePlaced) {
-                rafraichirTousLesSlots();
-            }
+            // Émettre tile-rotated pour que SlotsUI rafraîchisse
+            eventBus.emit('tile-rotated', { rotation });
         }
     };
     
@@ -482,35 +684,12 @@ async function startGame() {
     };
     
     gameSync.onTurnEnded = (nextPlayerIndex, gameStateData) => {
-        console.log('⏭️ [SYNC] Fin de tour reçue');
-        
-        gameState.deserialize(gameStateData);
-        piocherNouvelleTuile();
-        updateTurnDisplay();
+        turnManager.receiveTurnEnded(nextPlayerIndex, gameStateData);
     };
     
-    gameSync.onTileDrawn = (tileId, rotation, playerId) => {
-        console.log('🎲 [SYNC] Tuile piochée:', tileId);
-        
-        // Créer la tuile à partir de l'ID
-        const tileData = deck.tiles.find(t => t.id === tileId);
-        if (tileData) {
-            tuileEnMain = new Tile(tileData);
-            tuileEnMain.rotation = rotation;
-            
-            // ✅ AFFICHER la tuile pour tout le monde
-            const previewContainer = document.getElementById('tile-preview');
-            previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="transform: rotate(${rotation}deg);">`;
-            
-            // Rafraîchir les slots
-            if (firstTilePlaced) {
-                rafraichirTousLesSlots();
-            }
-            
-            mettreAJourCompteur();
-        }
+    gameSync.onTileDrawn = (tileId, rotation) => {
+        turnManager.receiveTileDrawn(tileId, rotation);
     };
-    
     gameSync.onMeeplePlaced = (x, y, position, meepleType, color, playerId) => {
         console.log('🎭 [SYNC] Meeple placé par un autre joueur');
         
@@ -521,7 +700,17 @@ async function startGame() {
             playerId: playerId
         };
         
-        afficherMeeple(x, y, position, meepleType, color);
+        
+        meepleDisplayUI.showMeeple(x, y, position, meepleType, color);
+    };
+    
+    gameSync.onMeepleCountUpdate = (playerId, meeples) => {
+        console.log('🎭 [SYNC] Mise à jour compteur reçue:', playerId, meeples);
+        const player = gameState.players.find(p => p.id === playerId);
+        if (player) {
+            player.meeples = meeples;
+            eventBus.emit('meeple-count-updated', { playerId, meeples });
+        }
     };
     
     gameSync.onScoreUpdate = (scoringResults, meeplesToReturn) => {
@@ -562,42 +751,64 @@ async function startGame() {
         gameSync.startGame(deck);
         
         // Piocher la première tuile
-        piocherNouvelleTuile();
-        mettreAJourCompteur();
+        turnManager.drawTile();
+        eventBus.emit('deck-updated', { remaining: deck.remaining(), total: deck.total() });
         updateTurnDisplay();
         
         // ✅ Créer le slot central APRÈS updateTurnDisplay (pour que isMyTurn soit défini)
         console.log('🎯 Appel de creerSlotCentral...');
-        creerSlotCentral();
+        slotsUI.createCentralSlot();
     } else {
         console.log('👤 [INVITÉ] En attente de la pioche...');
         afficherMessage('En attente de l\'hôte...');
     }
     
     console.log('✅ Initialisation terminée');
+    
+    // Afficher bouton retour lobby (hôte uniquement)
+    document.getElementById('back-to-lobby-btn').style.display = 'block';
+    
+    // Enregistrer et activer les règles de base avec la configuration
+    ruleRegistry.register('base', BaseRules, gameConfig);
+    ruleRegistry.enable('base');
+    console.log('📋 Règles actives:', ruleRegistry.getActiveRules());
+    
+    // Gérer le bouton tuiles restantes selon la config
+    const remainingTilesBtn = document.getElementById('remaining-tiles-btn');
+    if (gameConfig.showRemainingTiles) {
+        remainingTilesBtn.style.display = 'block';
+    } else {
+        remainingTilesBtn.style.display = 'none';
+    }
 }
 
 async function startGameForInvite() {
     console.log('🎮 [INVITÉ] Initialisation du jeu...');
     
     // Cacher le lobby, afficher le jeu
-    document.getElementById('lobby-page').style.display = 'none';
-    document.getElementById('game-page').style.display = 'flex';
+    // Masquer le lobby, afficher le jeu
+    lobbyUI.hide();
     
     // Initialiser le GameState
     gameState = new GameState();
     players.forEach(player => {
-        gameState.addPlayer(player.id, player.name, player.color);
+        gameState.addPlayer(player.id, player.name, player.color, player.isHost);
     });
     
-    // Initialiser GameSync
-    gameSync = new GameSync(multiplayer, gameState);
+    // Initialiser GameSync avec handler lobby original pour préserver game-starting
+    gameSync = new GameSync(multiplayer, gameState, originalLobbyHandler);
     gameSync.init();
+    console.log('🔗 GameSync initialisé');
     
-    // ✅ Initialiser ZoneMerger et Scoring
-    zoneMerger = new ZoneMerger(plateau);
-    scoring = new Scoring(zoneMerger);
+    // Initialiser TurnManager
+    turnManager = new TurnManager(eventBus, gameState, deck, multiplayer);
+    turnManager.init(); // Initialiser le tour
+    console.log('🔄 TurnManager initialisé');
     
+    // Initialiser tous les modules (fonction commune)
+    initializeGameModules();
+    
+    // Callbacks pour GameSync (identiques à l'hôte)
     // Callbacks
     gameSync.onGameStarted = (deckData, gameStateData) => {
         console.log('🎮 [INVITÉ] Pioche reçue !');
@@ -605,12 +816,12 @@ async function startGameForInvite() {
         deck.currentIndex = deckData.currentIndex;
         deck.totalTiles = deckData.totalTiles;
         gameState.deserialize(gameStateData);
-        piocherNouvelleTuile();
-        mettreAJourCompteur();
+        turnManager.drawTile();
+        eventBus.emit('deck-updated', { remaining: deck.remaining(), total: deck.total() });
         updateTurnDisplay();
         
         // ✅ Créer le slot central APRÈS avoir défini isMyTurn
-        creerSlotCentral();
+        slotsUI.createCentralSlot();
     };
     
     gameSync.onTileRotated = (rotation) => {
@@ -620,7 +831,8 @@ async function startGameForInvite() {
             if (currentImg) {
                 currentImg.style.transform = `rotate(${rotation}deg)`;
             }
-            if (firstTilePlaced) rafraichirTousLesSlots();
+            // Émettre tile-rotated pour que SlotsUI rafraîchisse
+            eventBus.emit('tile-rotated', { rotation });
         }
     };
     
@@ -634,30 +846,21 @@ async function startGameForInvite() {
     };
     
     gameSync.onTurnEnded = (nextPlayerIndex, gameStateData) => {
-        gameState.deserialize(gameStateData);
-        piocherNouvelleTuile();
-        updateTurnDisplay();
+        turnManager.receiveTurnEnded(nextPlayerIndex, gameStateData);
     };
     
-    gameSync.onTileDrawn = (tileId, rotation, playerId) => {
-        console.log('🎲 [SYNC] Tuile piochée:', tileId);
-        
-        const tileData = deck.tiles.find(t => t.id === tileId);
-        if (tileData) {
-            tuileEnMain = new Tile(tileData);
-            tuileEnMain.rotation = rotation;
-            
-            const previewContainer = document.getElementById('tile-preview');
-            previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="transform: rotate(${rotation}deg);">`;
-            
-            if (firstTilePlaced) {
-                rafraichirTousLesSlots();
-            }
-            
-            mettreAJourCompteur();
+    gameSync.onTileDrawn = (tileId, rotation) => {
+        turnManager.receiveTileDrawn(tileId, rotation);
+    
+    gameSync.onMeepleCountUpdate = (playerId, meeples) => {
+        console.log('🎭 [SYNC] Mise à jour compteur reçue:', playerId, meeples);
+        const player = gameState.players.find(p => p.id === playerId);
+        if (player) {
+            player.meeples = meeples;
+            eventBus.emit('meeple-count-updated', { playerId, meeples });
         }
     };
-    
+    };
     gameSync.onMeeplePlaced = (x, y, position, meepleType, color, playerId) => {
         console.log('🎭 [SYNC] Meeple placé par un autre joueur');
         
@@ -668,7 +871,16 @@ async function startGameForInvite() {
             playerId: playerId
         };
         
-        afficherMeeple(x, y, position, meepleType, color);
+        meepleDisplayUI.showMeeple(x, y, position, meepleType, color);
+    };
+    
+    gameSync.onMeepleCountUpdate = (playerId, meeples) => {
+        console.log('🎭 [SYNC] Mise à jour compteur reçue:', playerId, meeples);
+        const player = gameState.players.find(p => p.id === playerId);
+        if (player) {
+            player.meeples = meeples;
+            eventBus.emit('meeple-count-updated', { playerId, meeples });
+        }
     };
     
     gameSync.onScoreUpdate = (scoringResults, meeplesToReturn) => {
@@ -689,6 +901,19 @@ async function startGameForInvite() {
         
         updateTurnDisplay();
     };
+    
+    // Enregistrer et activer les règles de base avec la configuration
+    ruleRegistry.register('base', BaseRules, gameConfig);
+    ruleRegistry.enable('base');
+    console.log('📋 [INVITÉ] Règles actives:', ruleRegistry.getActiveRules());
+    
+    // Gérer le bouton tuiles restantes selon la config
+    const remainingTilesBtn = document.getElementById('remaining-tiles-btn');
+    if (gameConfig.showRemainingTiles) {
+        remainingTilesBtn.style.display = 'block';
+    } else {
+        remainingTilesBtn.style.display = 'none';
+    }
     
     setupEventListeners();
     setupNavigation(document.getElementById('board-container'), document.getElementById('board'));
@@ -731,7 +956,7 @@ function updateTurnDisplay() {
     }
     
     // ✅ Mettre à jour le tableau de scores
-    updateScorePanel();
+    eventBus.emit('score-updated');
 }
 
 
@@ -740,6 +965,12 @@ function afficherMessage(msg) {
 }
 
 function setupEventListeners() {
+    // N'installer les listeners qu'une seule fois
+    if (eventListenersInstalled) {
+        console.log('⚠️ Event listeners déjà installés, skip');
+        return;
+    }
+    
     document.getElementById('tile-preview').addEventListener('click', () => {
         if (!isMyTurn && gameSync) {
             console.log('⚠️ Pas votre tour !');
@@ -758,8 +989,10 @@ function setupEventListeners() {
                 gameSync.syncTileRotation(tuileEnMain.rotation);
             }
             
+            // Émettre événement pour rafraîchir les slots
+            eventBus.emit('tile-rotated', { rotation: tuileEnMain.rotation });
+            
             if (firstTilePlaced) {
-                rafraichirTousLesSlots();
             }
         }
     });
@@ -838,6 +1071,12 @@ function setupEventListeners() {
             const currentPlayer = gameState.getCurrentPlayer();
             isMyTurn = currentPlayer.id === multiplayer.playerId;
             console.log('🔄 Mise à jour isMyTurn:', isMyTurn, 'Tour de:', currentPlayer.name);
+            
+            // ✅ Émettre turn-changed pour rafraîchir les slots (joueur devient inactif)
+            eventBus.emit('turn-changed', {
+                isMyTurn: isMyTurn,
+                currentPlayer: currentPlayer
+            });
         }
         
         // ✅ Vérifier si c'est la fin de partie (deck vide)
@@ -876,7 +1115,7 @@ ${gameState.players.map(p => `${p.name}: ${p.score} pts`).join('\n')}`);
         }
         
         // Piocher la nouvelle tuile localement
-        piocherNouvelleTuile();
+        turnManager.drawTile();
         
         // Mettre à jour l'affichage du tour
         if (gameState) {
@@ -891,41 +1130,108 @@ ${gameState.players.map(p => `${p.name}: ${p.score} pts`).join('\n')}`);
     };
     
     document.getElementById('back-to-lobby-btn').onclick = () => {
-        if (confirm('Voulez-vous vraiment quitter la partie ?')) {
-            location.reload();
+        if (confirm('Retourner au lobby ? (La partie sera terminée mais les joueurs resteront connectés)')) {
+            returnToLobby();
         }
     };
+    
+    eventListenersInstalled = true;
+    console.log('✅ Event listeners installés');
 }
 
-function creerSlotCentral() {
-    console.log('🎯 Création du slot central...');
-    const board = document.getElementById('board');
-    console.log('📋 Board element:', board);
+/**
+ * Retourner au lobby sans déconnecter les joueurs
+ */
+function returnToLobby() {
+    console.log('🔙 Retour au lobby...');
     
-    const slot = document.createElement('div');
-    slot.className = "slot slot-central";
-    slot.style.gridColumn = 50;
-    slot.style.gridRow = 50;
-    // ✅ ENLEVÉ le style gold inline - le CSS s'en charge
-    
-    // ✅ Appliquer le style readonly si ce n'est pas notre tour
-    if (!isMyTurn && gameSync) {
-        slot.classList.add('slot-readonly');
-        slot.style.cursor = 'default';
-        // Pas de onclick
-        console.log('🔒 Slot central readonly (pas notre tour)');
-    } else {
-        slot.onclick = () => {
-            if (tuileEnMain && !firstTilePlaced) {
-                console.log('✅ Clic sur slot central - pose de la tuile');
-                poserTuile(50, 50, tuileEnMain, true);
-            }
-        };
-        console.log('✅ Slot central cliquable (notre tour)');
+    // Notifier les autres joueurs AVANT de faire les changements locaux
+    if (isHost && multiplayer && multiplayer.peer && multiplayer.peer.open) {
+        console.log('📡 Envoi broadcast return-to-lobby');
+        multiplayer.broadcast({
+            type: 'return-to-lobby'
+        });
     }
     
-    board.appendChild(slot);
-    console.log('✅ Slot central ajouté au board');
+    // Masquer le bouton retour lobby
+    document.getElementById('back-to-lobby-btn').style.display = 'none';
+    
+    // ✅ CLEANUP COMPLET DES MODULES via leurs méthodes destroy()
+    console.log('🧹 Nettoyage des modules...');
+    
+    // Détruire les modules UI
+    if (tilePreviewUI) {
+        tilePreviewUI.destroy();
+        tilePreviewUI = null;
+    }
+    if (slotsUI) {
+        slotsUI.destroy();
+        slotsUI = null;
+    }
+    if (meepleCursorsUI) {
+        meepleCursorsUI.destroy();
+        meepleCursorsUI = null;
+    }
+    if (meepleSelectorUI) {
+        meepleSelectorUI.destroy();
+        meepleSelectorUI = null;
+    }
+    if (meepleDisplayUI) {
+        meepleDisplayUI.destroy();
+        meepleDisplayUI = null;
+    }
+    if (scorePanelUI) {
+        scorePanelUI.destroy();
+        scorePanelUI = null;
+    }
+    
+    // Réinitialiser les modules de jeu
+    gameSync = null;
+    zoneMerger = null;
+    scoring = null;
+    tilePlacement = null;
+    meeplePlacement = null;
+    turnManager = null;
+    
+    // Désactiver les règles
+    if (ruleRegistry) {
+        ruleRegistry.disable('base');
+    }
+    
+    // Réinitialiser le deck (IMPORTANT pour éviter l'addition)
+    if (deck) {
+        deck.tiles = [];
+        deck.currentIndex = 0;
+        deck.totalTiles = 0;
+    }
+    
+    // Réinitialiser le plateau (IMPORTANT pour éviter tuiles fantômes)
+    if (plateau) {
+        plateau.reset();
+    }
+    
+    // Réinitialiser l'état du jeu
+    gameState = null;
+    tuileEnMain = null;
+    tuilePosee = false;
+    firstTilePlaced = false;
+    zoomLevel = 1;
+    placedMeeples = {};
+    lastPlacedTile = null;
+    isMyTurn = false;
+    
+    // Nettoyer le plateau (board vidé par les destroy() mais on s'assure)
+    document.getElementById('board').innerHTML = '';
+    
+    // Afficher le lobby (via LobbyUI)
+    lobbyUI.show();
+    lobbyUI.reset();
+    lobbyUI.setPlayers(players);
+    
+    // Réafficher les boutons du lobby
+    updateLobbyUI();
+    
+    console.log('✅ Retour au lobby terminé');
 }
 
 function piocherNouvelleTuile() {
@@ -947,14 +1253,14 @@ function piocherNouvelleTuile() {
 
     // ✅ TOUT LE MONDE voit la tuile
     const previewContainer = document.getElementById('tile-preview');
-    previewContainer.innerHTML = `<img id="current-tile-img" src="${tuileEnMain.imagePath}" style="cursor: pointer; transform: rotate(0deg);" title="Cliquez pour tourner">`;
-
+    // Émettre événement tile-drawn
+    eventBus.emit('tile-drawn', { tile: tuileEnMain });
     // ✅ Synchroniser la pioche si c'est notre tour
     if (isMyTurn && gameSync) {
         gameSync.syncTileDraw(tileData.id, 0);
     }
 
-    mettreAJourCompteur();
+    eventBus.emit('deck-updated', { remaining: deck.remaining(), total: deck.total() });
     
     if (gameState) {
         updateTurnDisplay();
@@ -962,157 +1268,54 @@ function piocherNouvelleTuile() {
     
     // ✅ 5) Rafraîchir les slots APRÈS updateTurnDisplay pour que isMyTurn soit à jour
     if (firstTilePlaced) {
-        rafraichirTousLesSlots();
     }
 }
 
 function poserTuile(x, y, tile, isFirst = false) {
-    if (!isFirst && !plateau.canPlaceTile(x, y, tile)) return;
-
-    const boardElement = document.getElementById('board');
-    const img = document.createElement('img');
-    img.src = tile.imagePath;
-    img.className = "tile";
-    img.style.gridColumn = x;
-    img.style.gridRow = y;
-    img.style.transform = `rotate(${tile.rotation}deg)`;
-    boardElement.appendChild(img);
+    console.log('🎯 poserTuile appelé:', { x, y, tile, isFirst, tuileEnMain });
     
-    const copy = tile.clone();
-    plateau.addTile(x, y, copy);
-
-    if (isFirst) {
-        console.log('✅ Première tuile posée');
-        firstTilePlaced = true;
-        tuilePosee = true;
-        document.querySelectorAll('.slot').forEach(s => s.remove());
-        
-        document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
-        
-        if (gameSync) {
-            gameSync.syncTilePlacement(x, y, tile);
-        }
-        
-        lastPlacedTile = {x, y};
-        
-        // ✅ Garder tuileEnMain temporairement pour rafraîchir les slots
-        const tempTile = tuileEnMain;
-        tuileEnMain = null;
-        rafraichirTousLesSlots();
-        tuileEnMain = tempTile;
-        
-        // ✅ Merger les zones après placement
-        if (zoneMerger) {
-            zoneMerger.updateZonesForNewTile(x, y);
-        }
-        
-        if (isMyTurn && gameSync) {
-            afficherCurseursMeeple(x, y);
-        }
-        
-        tuileEnMain = null;
-    } else {
-        tuilePosee = true;
-        document.querySelectorAll('.slot').forEach(s => s.remove());
-        
-        document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
-        
-        if (gameSync) {
-            gameSync.syncTilePlacement(x, y, tile);
-        }
-        
-        lastPlacedTile = {x, y};
-        
-        // ✅ Sauvegarder tuileEnMain avant de mettre à null
-        const savedTile = tuileEnMain;
-        tuileEnMain = null;
-        
-        // ✅ Merger les zones après placement
-        if (zoneMerger) {
-            zoneMerger.updateZonesForNewTile(x, y);
-        }
-        
-        if (isMyTurn && gameSync) {
-            afficherCurseursMeeple(x, y);
-        }
+    // Utiliser TilePlacement
+    const success = tilePlacement.placeTile(x, y, tile, { isFirst });
+    
+    if (!success) {
+        return;
     }
+    
+    // Mise à jour de l'état global
+    tuilePosee = true;
+    firstTilePlaced = true;
+    lastPlacedTile = { x, y };
+    
+    // Supprimer les slots
+    document.querySelectorAll('.slot').forEach(s => s.remove());
+    
+    // Afficher le verso
+    document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
+    
+    // Synchroniser
+    if (gameSync) {
+        gameSync.syncTilePlacement(x, y, tile);
+    }
+    
+    // Afficher curseurs meeples si notre tour
+    if (isMyTurn && gameSync) {
+        meepleCursorsUI.showCursors(x, y, gameState, placedMeeples, afficherSelecteurMeeple);
+    }
+    
+    tuileEnMain = null;
 }
-
 function poserTuileSync(x, y, tile) {
-    const boardElement = document.getElementById('board');
-    const img = document.createElement('img');
-    img.src = tile.imagePath;
-    img.className = "tile";
-    img.style.gridColumn = x;
-    img.style.gridRow = y;
-    img.style.transform = `rotate(${tile.rotation}deg)`;
-    boardElement.appendChild(img);
+    console.log('🔄 poserTuileSync appelé:', { x, y, tile });
     
-    const copy = tile.clone();
-    plateau.addTile(x, y, copy);
+    // Utiliser TilePlacement (skipSync pour éviter de re-synchroniser)
+    const isFirst = !firstTilePlaced;
+    tilePlacement.placeTile(x, y, tile, { isFirst, skipSync: true });
     
-    // ✅ Merger les zones pour les tuiles synchronisées
-    if (zoneMerger) {
-        zoneMerger.updateZonesForNewTile(x, y);
-    }
-
+    // Mise à jour état global
     if (!firstTilePlaced) {
         firstTilePlaced = true;
-        tuilePosee = true;
-        document.querySelectorAll('.slot').forEach(s => s.remove());
-        document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
-        tuileEnMain = null;
-        rafraichirTousLesSlots();
-    } else {
-        tuilePosee = true;
-        document.querySelectorAll('.slot').forEach(s => s.remove());
-        
-        // ✅ Afficher le verso après placement synchronisé
-        document.getElementById('tile-preview').innerHTML = '<img src="./assets/verso.png" style="width: 120px; border: 2px solid #666;">';
-        
-        tuileEnMain = null;
     }
-}
-
-function rafraichirTousLesSlots() {
-    if (firstTilePlaced) {
-        document.querySelectorAll('.slot:not(.slot-central)').forEach(s => s.remove());
-    }
-    
-    if (!tuileEnMain) return;
-    // ✅ CHANGEMENT : Afficher les slots même si ce n'est pas notre tour (en lecture seule)
-    
-    for (let coord in plateau.placedTiles) {
-        const [x, y] = coord.split(',').map(Number);
-        genererSlotsAutour(x, y);
-    }
-}
-
-function genererSlotsAutour(x, y) {
-    const directions = [{dx:0, dy:-1}, {dx:1, dy:0}, {dx:0, dy:1}, {dx:-1, dy:0}];
-    directions.forEach(dir => {
-        const nx = x + dir.dx, ny = y + dir.dy;
-        if (tuileEnMain && plateau.isFree(nx, ny) && plateau.canPlaceTile(nx, ny, tuileEnMain)) {
-            const slot = document.createElement('div');
-            slot.className = "slot";
-            slot.style.gridColumn = nx;
-            slot.style.gridRow = ny;
-            
-            // ✅ Si ce n'est pas notre tour : même apparence mais sans onclick et sans hover gold
-            if (!isMyTurn && gameSync) {
-                slot.classList.add('slot-readonly');
-                slot.style.cursor = 'default';
-                // Pas de onclick pour les non-actifs
-            } else {
-                // ✅ Seulement le joueur actif a un onclick
-                slot.onclick = () => {
-                    poserTuile(nx, ny, tuileEnMain);
-                };
-            }
-            
-            document.getElementById('board').appendChild(slot);
-        }
-    });
+    tuilePosee = true; // Important: empêcher double placement
 }
 
 function mettreAJourCompteur() {
@@ -1155,326 +1358,48 @@ function rotatePosition(position, rotation) {
 /**
  * Récupérer les positions de meeple valides pour une tuile avec rotation
  */
-function getValidMeeplePositions(x, y) {
-    const tile = plateau.placedTiles[`${x},${y}`];
-    if (!tile) {
-        console.log('❌ Tuile non trouvée à', x, y);
-        return [];
-    }
-    
-    console.log('🔍 Tuile trouvée:', tile.id, 'rotation:', tile.rotation);
-    console.log('📦 Zones de la tuile:', tile.zones);
-    
-    if (!tile.zones || tile.zones.length === 0) {
-        console.log('❌ Pas de zones sur cette tuile');
-        return [];
-    }
-    
-    const validPositions = [];
-    
-    // Pour chaque zone, récupérer ses positions et les faire tourner
-    tile.zones.forEach((zone, index) => {
-        console.log(`  Zone ${index}:`, zone.type, 'meeplePosition:', zone.meeplePosition);
-        
-        if (zone.meeplePosition !== undefined && zone.meeplePosition !== null) {
-            // ✅ Gérer à la fois nombre et array
-            const positions = Array.isArray(zone.meeplePosition) 
-                ? zone.meeplePosition 
-                : [zone.meeplePosition];
-            
-            positions.forEach(pos => {
-                const rotatedPos = rotatePosition(pos, tile.rotation);
-                console.log(`    Position ${pos} → ${rotatedPos} (rotation ${tile.rotation}°)`);
-                validPositions.push({
-                    position: rotatedPos,
-                    zoneType: zone.type
-                });
-            });
-        }
-    });
-    
-    console.log('✅ Total positions valides:', validPositions.length);
-    return validPositions;
-}
 
 /**
  * Afficher les curseurs de placement de meeple sur une tuile
  */
-function afficherCurseursMeeple(x, y) {
-    console.log('🎯 Affichage des curseurs de meeple sur', x, y);
-    // ✅ Vérifier si le joueur a des meeples disponibles
-    if (!hasAvailableMeeples(multiplayer.playerId)) {
-        console.log('❌ Pas de meeples disponibles, pas d\'affichage de curseurs');
-        return;
-    }
-
-    
-    // Nettoyer les anciens curseurs et conteneurs
-    document.querySelectorAll('.meeple-cursors-container').forEach(c => c.remove());
-    
-    // ✅ Récupérer les positions valides depuis les zones de la tuile
-    const validPositions = getValidMeeplePositions(x, y);
-    if (validPositions.length === 0) {
-        console.log('⚠️ Aucune position de meeple valide sur cette tuile');
-        return;
-    }
-    
-    console.log('✅ Positions valides:', validPositions);
-    
-    // Créer un conteneur pour les curseurs sur cette tuile
-    const container = document.createElement('div');
-    container.className = 'meeple-cursors-container';
-    container.style.gridColumn = x;
-    container.style.gridRow = y;
-    container.style.position = 'relative';
-    container.style.width = '208px';
-    container.style.height = '208px';
-    container.style.pointerEvents = 'none';
-    container.style.zIndex = '100';
-    
-    // Créer un curseur pour chaque position valide
-    validPositions.forEach(({position, zoneType}) => {
-        const key = `${x},${y},${position}`;
-        
-        // Vérifier si la position est déjà occupée
-        if (placedMeeples[key]) {
-            console.log('⏭️ Position', position, 'déjà occupée, pas de curseur');
-            return;
-        }
-        
-        // ✅ Vérifier si la zone mergée contient déjà un meeple
-        if (zoneMerger) {
-            const mergedZone = zoneMerger.findMergedZoneForPosition(x, y, position);
-            if (mergedZone) {
-                const meeplesInZone = zoneMerger.getZoneMeeples(mergedZone, placedMeeples);
-                if (meeplesInZone.length > 0) {
-                    console.log('⏭️ Position', position, 'dans une zone avec meeple(s), pas de curseur');
-                    return;
-                }
-            }
-        }
-        
-        const cursor = document.createElement('div');
-        cursor.className = 'meeple-cursor';
-        cursor.dataset.zoneType = zoneType; // ✅ Stocker le type de zone
-        
-        // Calculer la position dans la grille 5x5
-        const row = Math.floor((position - 1) / 5);
-        const col = (position - 1) % 5;
-        
-        const offsetX = 20.8 + (col * 41.6);
-        const offsetY = 20.8 + (row * 41.6);
-        
-        cursor.style.position = 'absolute';
-        cursor.style.left = `${offsetX}px`;
-        cursor.style.top = `${offsetY}px`;
-        cursor.style.width = '12px';
-        cursor.style.height = '12px';
-        cursor.style.borderRadius = '50%';
-        cursor.style.backgroundColor = 'rgba(255, 215, 0, 0.6)';
-        cursor.style.border = '2px solid gold';
-        cursor.style.cursor = 'pointer';
-        cursor.style.pointerEvents = 'auto';
-        cursor.style.transition = 'all 0.2s';
-        cursor.style.transform = 'translate(-50%, -50%)';
-        
-        cursor.onmouseenter = () => {
-            cursor.style.backgroundColor = 'rgba(255, 215, 0, 1)';
-            cursor.style.transform = 'translate(-50%, -50%) scale(1.3)';
-        };
-        
-        cursor.onmouseleave = () => {
-            cursor.style.backgroundColor = 'rgba(255, 215, 0, 0.6)';
-            cursor.style.transform = 'translate(-50%, -50%) scale(1)';
-        };
-        
-        cursor.onclick = (e) => {
-            e.stopPropagation();
-            afficherSelecteurMeeple(x, y, position, zoneType, e.clientX, e.clientY);
-        };
-        
-        container.appendChild(cursor);
-    });
-    
-    document.getElementById('board').appendChild(container);
-}
 
 /**
  * Afficher le sélecteur de type de meeple (menu compact)
  */
-function afficherSelecteurMeeple(x, y, position, zoneType, mouseX, mouseY) {
-    console.log('📋 Sélecteur de meeple à la position', position, 'type:', zoneType);
-    
-    // Nettoyer l'ancien sélecteur
-    const oldSelector = document.getElementById('meeple-selector');
-    if (oldSelector) oldSelector.remove();
-    
-    // Créer le sélecteur
-    const selector = document.createElement('div');
-    selector.id = 'meeple-selector';
-    selector.style.position = 'fixed';
-    selector.style.left = `${mouseX}px`;
-    selector.style.top = `${mouseY - 80}px`;
-    selector.style.transform = 'translateX(-50%)';
-    selector.style.zIndex = '1000';
-    selector.style.display = 'flex';
-    selector.style.gap = '0px';
-    selector.style.padding = '2px';
-    selector.style.background = 'rgba(44, 62, 80, 0.5)';
-    selector.style.borderRadius = '8px';
-    selector.style.border = '2px solid gold';
-    selector.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
-    
-    // ✅ Proposer les meeples selon le type de zone
-    let meepleTypes = [];
-    
-    if (zoneType === 'field') {
-        // Field → Farmer uniquement
-        meepleTypes = [
-            { type: 'Farmer', image: `./assets/Meeples/${getPlayerColor()}/Farmer.png` }
-        ];
-    } else if (zoneType === 'road' || zoneType === 'city') {
-        // Road ou City → Normal uniquement
-        meepleTypes = [
-            { type: 'Normal', image: `./assets/Meeples/${getPlayerColor()}/Normal.png` }
-        ];
-    } else {
-        // Par défaut (abbey, etc.) → Normal
-        meepleTypes = [
-            { type: 'Normal', image: `./assets/Meeples/${getPlayerColor()}/Normal.png` }
-        ];
-    }
-    
-    meepleTypes.forEach(meeple => {
-        const option = document.createElement('div');
-        option.style.cursor = 'pointer';
-        option.style.padding = '2px';
-        option.style.borderRadius = '5px';
-        option.style.transition = 'background 0.2s';
-        
-        const img = document.createElement('img');
-        img.src = meeple.image;
-        img.style.width = '30px';
-        img.style.height = '30px';
-        img.style.display = 'block';
-        
-        option.appendChild(img);
-        
-        option.onmouseenter = () => {
-            option.style.background = 'rgba(255, 215, 0, 0.2)';
-        };
-        
-        option.onmouseleave = () => {
-            option.style.background = 'transparent';
-        };
-        
-        option.onclick = (e) => {
-            e.stopPropagation();
-            placerMeeple(x, y, position, meeple.type);
-            setTimeout(() => selector.remove(), 0);
-        };
-        
-        selector.appendChild(option);
-    });
-    
-    // Fermer quand on clique ailleurs
-    setTimeout(() => {
-        const closeOnClickOutside = (e) => {
-            if (!selector.contains(e.target)) {
-                selector.remove();
-                document.removeEventListener('click', closeOnClickOutside);
-            }
-        };
-        document.addEventListener('click', closeOnClickOutside);
-    }, 10);
-    
-    document.body.appendChild(selector);
-}
 
 /**
  * Placer un meeple
  */
-function placerMeeple(x, y, position, meepleType) {
-    const key = `${x},${y},${position}`;
-    const playerColor = getPlayerColor();
-    
-    console.log('🎭 Placement meeple:', meepleType, 'à', x, y, 'position', position);
-    
-    // Sauvegarder
-    placedMeeples[key] = {
-        type: meepleType,
-        color: playerColor,
-        playerId: multiplayer.playerId
-    };
-    
-    
-    // ✅ Décrémenter le nombre de meeples disponibles
-    decrementPlayerMeeples(multiplayer.playerId);
+/**
+ * Wrapper pour afficherSelecteurMeeple - appelle meepleSelectorUI
+ */
+function afficherSelecteurMeeple(x, y, position, zoneType, mouseX, mouseY) {
+    meepleSelectorUI.show(x, y, position, zoneType, mouseX, mouseY, placerMeeple);
+}
 
-    // Afficher le meeple
-    afficherMeeple(x, y, position, meepleType, playerColor);
+function placerMeeple(x, y, position, meepleType) {
+    if (!gameState || !multiplayer) return;
     
-    // Synchroniser
-    if (gameSync) {
-        gameSync.syncMeeplePlacement(x, y, position, meepleType, playerColor);
+    console.log('🎭 placerMeeple appelé:', { x, y, position, meepleType });
+    
+    // Utiliser MeeplePlacement
+    const success = meeplePlacement.placeMeeple(x, y, position, meepleType, multiplayer.playerId);
+    
+    if (!success) {
+        return;
     }
     
-    // ✅ Faire disparaître TOUS les curseurs (un seul meeple par tour)
+    // Faire disparaître tous les curseurs (un seul meeple par tour)
     document.querySelectorAll('.meeple-cursors-container').forEach(c => c.remove());
 }
 
 /**
  * Afficher un meeple sur le plateau
  */
-function afficherMeeple(x, y, position, meepleType, color) {
-    // ✅ 1) Créer un conteneur sur la tuile, pas directement le meeple
-    let container = document.querySelector(`.meeple-container[data-pos="${x},${y}"]`);
-    if (!container) {
-        container = document.createElement('div');
-        container.className = 'meeple-container';
-        container.dataset.pos = `${x},${y}`;
-        container.style.gridColumn = x;
-        container.style.gridRow = y;
-        container.style.position = 'relative';
-        container.style.width = '208px';
-        container.style.height = '208px';
-        container.style.pointerEvents = 'none';
-        container.style.zIndex = '50';
-        document.getElementById('board').appendChild(container);
-    }
-    
-    const meeple = document.createElement('img');
-    meeple.src = `./assets/Meeples/${color}/${meepleType}.png`;
-    meeple.className = 'meeple';
-    meeple.dataset.key = `${x},${y},${position}`; // ✅ Pour pouvoir retirer le meeple
-    meeple.dataset.position = position;
-    
-    // Calculer la position dans la grille 5x5
-    const row = Math.floor((position - 1) / 5);
-    const col = (position - 1) % 5;
-    
-    const offsetX = 20.8 + (col * 41.6);
-    const offsetY = 20.8 + (row * 41.6);
-    
-    meeple.style.position = 'absolute';
-    meeple.style.left = `${offsetX}px`;
-    meeple.style.top = `${offsetY}px`;
-    meeple.style.width = '60px'; // ✅ Doublé de 30px à 60px
-    meeple.style.height = '60px';
-    meeple.style.transform = 'translate(-50%, -50%)';
-    meeple.style.pointerEvents = 'none';
-    
-    container.appendChild(meeple);
-}
 
 /**
  * Récupérer la couleur du joueur actuel
  */
-function getPlayerColor() {
-    if (!gameState || !multiplayer) return 'Blue';
-    const player = gameState.players.find(p => p.id === multiplayer.playerId);
-    return player ? player.color.charAt(0).toUpperCase() + player.color.slice(1) : 'Blue';
-}
 
 // ==========
 
@@ -1524,6 +1449,10 @@ function setupNavigation(container, board) {
 }
 
 updateColorPickerVisibility();
+
+// Initialiser LobbyUI
+lobbyUI.init();
+
 console.log('Page chargée');
 
 // ========================================
@@ -1531,80 +1460,13 @@ console.log('Page chargée');
 // ========================================
 
 /**
- * Mettre à jour l'affichage du tableau de scores
- */
-function updateScorePanel() {
-    const playersScoresDiv = document.getElementById('players-scores');
-    if (!playersScoresDiv || !gameState) return;
-    
-    playersScoresDiv.innerHTML = '';
-    
-    const currentPlayer = gameState.getCurrentPlayer();
-    
-    gameState.players.forEach(player => {
-        const isCurrentPlayer = currentPlayer && player.id === currentPlayer.id;
-        
-        const card = document.createElement('div');
-        card.className = 'player-score-card';
-        if (isCurrentPlayer) {
-            card.classList.add('active');
-        }
-        
-        // Header avec nom et score
-        const header = document.createElement('div');
-        header.className = 'player-score-header';
-        
-        if (isCurrentPlayer) {
-            const indicator = document.createElement('span');
-            indicator.className = 'turn-indicator';
-            indicator.textContent = '▶';
-            header.appendChild(indicator);
-        }
-        
-        const name = document.createElement('span');
-        name.className = 'player-score-name';
-        name.textContent = player.name;
-        header.appendChild(name);
-        
-        const points = document.createElement('span');
-        points.className = 'player-score-points';
-        points.textContent = `${player.score} point${player.score > 1 ? 's' : ''}`;
-        header.appendChild(points);
-        
-        card.appendChild(header);
-        
-        // Affichage des meeples disponibles
-        const meeplesDisplay = document.createElement('div');
-        meeplesDisplay.className = 'player-meeples-display';
-        
-        const colorCapitalized = player.color.charAt(0).toUpperCase() + player.color.slice(1);
-        
-        for (let i = 0; i < 7; i++) {
-            const meeple = document.createElement('img');
-            meeple.src = `./assets/Meeples/${colorCapitalized}/Normal.png`;
-            meeple.alt = 'Meeple';
-            
-            if (i >= player.meeples) {
-                meeple.classList.add('unavailable');
-            }
-            
-            meeplesDisplay.appendChild(meeple);
-        }
-        
-        card.appendChild(meeplesDisplay);
-        playersScoresDiv.appendChild(card);
-    });
-}
-
-/**
- * Décrémenter le nombre de meeples d'un joueur
  */
 function decrementPlayerMeeples(playerId) {
     const player = gameState.players.find(p => p.id === playerId);
     if (player && player.meeples > 0) {
         player.meeples--;
         console.log(`🎭 ${player.name} a maintenant ${player.meeples} meeples disponibles`);
-        updateScorePanel();
+        eventBus.emit('score-updated');
         
         // Synchroniser
         if (gameSync) {
@@ -1625,7 +1487,7 @@ function incrementPlayerMeeples(playerId) {
     if (player && player.meeples < 7) {
         player.meeples++;
         console.log(`🎭 ${player.name} récupère un meeple (${player.meeples}/7)`);
-        updateScorePanel();
+        eventBus.emit('score-updated');
         
         // Synchroniser
         if (gameSync) {
@@ -1641,10 +1503,6 @@ function incrementPlayerMeeples(playerId) {
 /**
  * Vérifier si le joueur a des meeples disponibles
  */
-function hasAvailableMeeples(playerId) {
-    const player = gameState.players.find(p => p.id === playerId);
-    return player && player.meeples > 0;
-}
 
 // ========================================
 // ÉVÉNEMENTS DES NOUVEAUX BOUTONS
@@ -1663,14 +1521,19 @@ document.getElementById('remaining-tiles-btn').addEventListener('click', () => {
         return;
     }
     
-    const remaining = deck.remaining();
-    const total = deck.total();
-    alert(`🎴 Tuiles restantes : ${remaining} / ${total}`);
+    const remainingTiles = deck.getRemainingTilesByType();
+    const totalRemaining = deck.remaining();
+    
+    modalUI.showRemainingTiles(remainingTiles, totalRemaining);
 });
 
 // Bouton "Règles de cette partie ?"
 document.getElementById('rules-btn').addEventListener('click', () => {
-    console.log('📜 Affichage des règles (fonctionnalité à implémenter)');
-    alert('Fonctionnalité à venir : Afficher les règles actives pour cette partie');
+    if (!gameConfig) {
+        alert('Aucune partie en cours');
+        return;
+    }
+    
+    modalUI.showGameRules(gameConfig);
 });
 

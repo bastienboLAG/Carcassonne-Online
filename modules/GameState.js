@@ -12,13 +12,14 @@ export class GameState {
     /**
      * Ajouter un joueur
      */
-    addPlayer(playerId, playerName, color) {
+    addPlayer(playerId, playerName, color, isHost = false) {
         this.players.push({
             id: playerId,
             name: playerName,
             color: color,
             score: 0,
-            meeples: 7 // Nombre de meeples disponibles
+            meeples: 7, // Nombre de meeples disponibles
+            isHost: isHost
         });
     }
 
@@ -66,7 +67,15 @@ export class GameState {
      * Restaurer l'état depuis des données reçues
      */
     deserialize(data) {
-        this.players = data.players || [];
+        // Copier les joueurs (objets plain)
+        this.players = (data.players || []).map(p => ({
+            id: p.id,
+            name: p.name,
+            color: p.color,
+            score: p.score || 0,
+            meeples: p.meeples || 7,
+            isHost: p.isHost || false
+        }));
         this.currentPlayerIndex = data.currentPlayerIndex || 0;
         this.placedTiles = data.placedTiles || {};
     }
