@@ -119,4 +119,43 @@ export class ZoneRegistry {
             console.log(`  ${id}: ${zone.type}, ${zone.tiles.length} tuiles, fermée=${zone.isComplete}`);
         }
     }
+
+    /**
+     * Sérialiser le registry pour sauvegarde
+     */
+    serialize() {
+        return {
+            zones: Array.from(this.zones.entries()),
+            nextId: this.nextId,
+            closedCitiesHistory: [...this.closedCitiesHistory]
+        };
+    }
+
+    /**
+     * Désérialiser le registry depuis une sauvegarde
+     */
+    deserialize(data) {
+        this.zones = new Map(data.zones);
+        this.nextId = data.nextId;
+        this.closedCitiesHistory = [...data.closedCitiesHistory];
+    }
+    
+    /**
+     * Reconstruire la tileToZone map depuis les zones actuelles
+     * À appeler après un deserialize pour remettre à jour la map
+     */
+    rebuildTileToZone() {
+        const tileToZone = new Map();
+        
+        for (const [zoneId, zone] of this.zones) {
+            // Pour chaque tuile dans la zone
+            zone.tiles.forEach(tileRef => {
+                const { x, y, zoneIndex } = tileRef;
+                const key = `${x},${y},${zoneIndex}`;
+                tileToZone.set(key, zoneId);
+            });
+        }
+        
+        return tileToZone;
+    }
 }
