@@ -100,6 +100,10 @@
                     <input type="checkbox" id="use-test-deck">
                     <span>Deck de test (15 tuiles)</span>
                 </label>
+                <label class="toggle-option">
+                    <input type="checkbox" id="enable-debug">
+                    <span>Mode debug (boutons test)</span>
+                </label>
             </div>
 
             <div class="config-section extensions-section">
@@ -131,7 +135,10 @@
             
             <button id="undo-btn" class="undo-btn">Annuler le coup !</button>
             <button id="end-turn-btn">Terminer mon tour</button>
-            <button id="recenter-btn" class="secondary-btn">🎯 Recentrer</button>
+            <div style="display: flex; gap: 10px;">
+                <button id="recenter-btn" class="secondary-btn" style="flex: 1;">🎯</button>
+                <button id="highlight-tile-btn" class="secondary-btn" style="flex: 1;">📌</button>
+            </div>
             <button id="remaining-tiles-btn" class="info-btn">Tuiles restantes dans la pioche ?</button>
             <button id="rules-btn" class="info-btn">Règles de cette partie ?</button>
             
@@ -161,6 +168,32 @@
             <p id="join-error" class="error-message" style="display: none;"></p>
         </div>
     </div>
+
+    <!-- Modale des scores finaux -->
+    <div id="final-scores-modal" class="modal" style="display: none;">
+        <div class="modal-content final-scores-content">
+            <h2>🏆 Scores finaux</h2>
+            <table id="final-scores-table">
+                <thead>
+                    <tr>
+                        <th>Joueur</th>
+                        <th>Villes</th>
+                        <th>Routes</th>
+                        <th>Abbayes</th>
+                        <th>Champs</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody id="final-scores-body">
+                    <!-- Rempli dynamiquement -->
+                </tbody>
+            </table>
+            <button id="close-final-scores-btn" class="modal-btn confirm">Fermer</button>
+        </div>
+    </div>
+
+    <!-- Bouton de test debug (caché par défaut) -->
+    <button id="test-modal-btn" style="display: none; position: fixed; bottom: 20px; right: 20px; z-index: 9999; padding: 10px 20px; background: red; color: white; border: none; cursor: pointer; border-radius: 5px; font-weight: bold;">🐛 TEST MODALE</button>
 
     <script type="module" src="home.js"></script>
 </body>
