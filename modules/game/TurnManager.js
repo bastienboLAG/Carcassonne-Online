@@ -68,7 +68,9 @@ export class TurnManager {
      */
     drawTile() {
         console.log('🎲 Pioche d\'une nouvelle tuile...');
+        console.log('📦 Index AVANT draw():', this.deck.currentIndex);
         const tileData = this.deck.draw();
+        console.log('📦 Index APRÈS draw():', this.deck.currentIndex);
         
         if (!tileData) {
             console.log('⚠️ Pioche vide !');
@@ -185,13 +187,7 @@ export class TurnManager {
             this.drawTile();
         }
         
-        // Émettre turn-changed pour que TOUS les joueurs rafraîchissent (y compris inactifs)
-        this.eventBus.emit('turn-changed', {
-            isMyTurn: this.isMyTurn,
-            currentPlayer: this.getCurrentPlayer()
-        });
-        
-        // Émettre événement
+        // ✅ Un seul emit turn-changed pour rafraîchir TOUS les joueurs
         this.eventBus.emit('turn-changed', {
             isMyTurn: this.isMyTurn,
             currentPlayer: this.getCurrentPlayer()
@@ -203,8 +199,12 @@ export class TurnManager {
      */
     receiveTileDrawn(tileId, rotation) {
         console.log('🎲 [SYNC] Tuile piochée:', tileId);
+        console.log('📦 [SYNC] Index AVANT draw():', this.deck.currentIndex);
         
-        const tileData = this.deck.tiles.find(t => t.id === tileId);
+        // Piocher localement pour synchroniser l'index
+        const tileData = this.deck.draw();
+        console.log('📦 [SYNC] Index APRÈS draw():', this.deck.currentIndex);
+        
         if (tileData) {
             this.currentTile = { ...tileData, rotation };
             this.tilePlaced = false;

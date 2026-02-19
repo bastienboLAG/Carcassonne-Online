@@ -37,6 +37,9 @@ html, body {
     border-right: 3px solid #444;
     z-index: 10;
     box-shadow: 4px 0 10px rgba(0,0,0,0.5);
+    overflow-y: hidden;
+    height: auto;
+    max-height: 100vh;
 }
 
 #current-tile-container {
@@ -62,6 +65,21 @@ html, body {
     overflow: auto;
     background-color: #000;
     cursor: grab;
+    /* Scrollbars invisibles — le drag remplace le scroll */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+}
+
+#board-container::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+}
+
+#board-container::-webkit-scrollbar-track {
+    background: #000;
+}
+
+#board-container::-webkit-scrollbar-thumb {
+    background: #000;
 }
 
 #board-container:active {
@@ -528,6 +546,48 @@ button:disabled {
     cursor: pointer;
 }
 
+/* Options en 2 colonnes */
+.options-columns {
+    display: flex;
+    gap: 30px;
+    align-items: flex-start;
+}
+
+.options-col {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.options-col h4 {
+    font-size: 14px;
+    color: #bdc3c7;
+    margin-bottom: 6px;
+    margin-top: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.radio-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background-color: rgba(255,255,255,0.05);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.radio-inline:hover {
+    background-color: rgba(255,255,255,0.1);
+}
+
+.radio-inline input[type="radio"] {
+    margin: 0;
+    cursor: pointer;
+}
+
 .config-note {
     font-size: 12px;
     color: #bdc3c7;
@@ -607,22 +667,11 @@ button:disabled {
     color: #000;
     font-weight: bold;
     width: 80%;
-    width: 80%;
-    width: 80%;
-    width: 80%;
-
-/* Bouton end-turn et recenter à 80% aussi */
-#end-turn-btn, #recenter-btn {
-    width: 80%;
-}
 }
 
 .undo-btn:hover {
+    background: #d4ac0d;
 }
-
-/* Bouton end-turn et recenter à 80% aussi */
-
-/* Terminer mon tour et Recentrer à 80% aussi */
 
 /* Boutons d'info - Gris foncé */
 .info-btn {
@@ -638,24 +687,22 @@ button:disabled {
 }
 
 /* Panneau de score à droite */
-#score-panel {
-    width: 320px;
-    height: 100vh;
-    background-color: #2c3e50;
+#score-overlay {
+    position: fixed;
+    top: 20px;
+    right: 50px;
+    width: 280px;
+    max-height: calc(100vh - 40px);
     display: flex;
     flex-direction: column;
-    padding: 20px;
-    border-left: 3px solid #444;
-    z-index: 10;
-    box-shadow: -4px 0 10px rgba(0,0,0,0.5);
+    gap: 10px;
+    z-index: 40;
     overflow-y: auto;
+    pointer-events: none;
 }
 
-#score-panel h2 {
-    color: gold;
-    text-align: center;
-    margin-bottom: 20px;
-    font-size: 24px;
+#score-overlay > * {
+    pointer-events: auto;
 }
 
 #players-scores {
@@ -718,8 +765,8 @@ button:disabled {
 }
 
 .player-meeples-display img.unavailable {
-    opacity: 0.2;
-    filter: grayscale(100%);
+    opacity: 0.15;
+    filter: grayscale(100%) brightness(3);
 }
 
 /* Les 3 boutons principaux ont la même largeur */
@@ -728,6 +775,11 @@ button:disabled {
 }
 
 /* Animations pour highlight de tuile */
+@keyframes badgePulse {
+    0%, 100% { box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4); }
+    50%       { box-shadow: 0 4px 25px rgba(231, 76, 60, 0.9); }
+}
+
 @keyframes borderPulse {
     0%, 100% { 
         border-color: gold;
@@ -829,4 +881,282 @@ button:disabled {
 #close-final-scores-btn {
     width: 100%;
     margin-top: 10px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   MOBILE — Éléments cachés par défaut (visibles uniquement < 768px)
+   ═══════════════════════════════════════════════════════ */
+
+#mobile-players-bar,
+#mobile-bottom-bar {
+    display: none;
+}
+
+/* ═══════════════════════════════════════════════════════
+   MOBILE — Media Query principale
+   ═══════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+    /* Masquer les panneaux PC */
+    #game-ui,
+    #score-panel,
+    #score-overlay {
+        display: none !important;
+    }
+
+    /* Game page en colonne sur mobile */
+    #game-page {
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+        position: relative;
+    }
+
+    /* ── Barre joueurs en overlay sur le plateau ────────── */
+    #mobile-players-bar {
+        display: flex;
+        align-items: center;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: rgba(44, 62, 80, 0.85);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        padding: 4px 6px;
+        z-index: 50;
+        min-height: 0;
+    }
+
+    #mobile-players-scores {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        width: 100%;
+    }
+
+    /* Carte joueur mobile */
+    .mobile-player-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background: rgba(0,0,0,0.3);
+        border: 2px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 4px 8px;
+        min-width: 80px;
+        flex: 1;
+        transition: all 0.2s;
+        opacity: 0.7;
+        transform: scale(0.95);
+    }
+
+    .mobile-player-card.active {
+        border-color: #2ecc71;
+        background: rgba(46, 204, 113, 0.15);
+        opacity: 1;
+        transform: scale(1.05);
+        box-shadow: 0 0 8px rgba(46, 204, 113, 0.4);
+    }
+
+    .mobile-player-name {
+        font-size: 11px;
+        font-weight: bold;
+        color: white;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 80px;
+    }
+
+    .mobile-player-score {
+        font-size: 14px;
+        font-weight: bold;
+        color: gold;
+    }
+
+    .mobile-player-meeples {
+        display: flex;
+        gap: 2px;
+        margin-top: 2px;
+    }
+
+    .mobile-player-meeples img {
+        width: 12px;
+        height: 12px;
+    }
+
+    .mobile-player-meeples img.unavailable {
+        opacity: 0.2;
+        filter: grayscale(100%) brightness(3);
+    }
+
+    /* ── Plateau prend tout l'espace restant ───────────── */
+    #board-container {
+        flex: 1;
+        overflow: auto;
+        min-height: 0;
+        order: 1; /* le seul enfant flex maintenant */
+    }
+
+    /* ── Barre du bas ──────────────────────────────────── */
+    #mobile-bottom-bar {
+        display: flex;
+        align-items: stretch;
+        background: #2c3e50;
+        border-top: 2px solid #444;
+        padding: 6px 8px;
+        padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px) + 70px);
+        gap: 8px;
+        flex-shrink: 0;
+        z-index: 50;
+        width: 100%;
+        box-sizing: border-box;
+        order: 3;
+    }
+
+    /* Section tuile en main */
+    #mobile-tile-section {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        min-width: 80px;
+    }
+
+    #mobile-tile-preview {
+        width: 72px;
+        height: 72px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+
+    #mobile-tile-preview img {
+        width: 72px;
+        height: 72px;
+        object-fit: contain;
+    }
+
+    #mobile-tile-counter {
+        font-size: 10px;
+        color: rgba(255,255,255,0.7);
+        text-align: center;
+        font-weight: bold;
+    }
+
+    /* Section boutons principaux */
+    #mobile-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 1;
+    }
+
+    .mobile-action-btn {
+        border: none;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        padding: 6px 8px;
+        text-align: center;
+        width: 100%;
+    }
+
+    .mobile-action-btn.undo-btn {
+        background: #f1c40f;
+        color: #000;
+    }
+
+    .mobile-action-btn.end-turn-btn {
+        background: #2ecc71;
+        color: #000;
+        flex: 1;
+    }
+
+    .mobile-action-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    .mobile-icon-row {
+        display: flex;
+        gap: 4px;
+    }
+
+    /* Boutons icônes */
+    .mobile-icon-btn {
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 6px;
+        color: white;
+        font-size: 18px;
+        cursor: pointer;
+        padding: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+        min-width: 36px;
+    }
+
+    .mobile-icon-btn:active {
+        background: rgba(255,255,255,0.25);
+    }
+
+    /* Section boutons secondaires (empilés verticalement) */
+    #mobile-secondary {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 44px;
+    }
+
+    #mobile-secondary .mobile-icon-btn {
+        flex: 1;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════
+   LOBBY MOBILE
+   ═══════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+    .home-page {
+        align-items: flex-start;
+        padding: 12px;
+    }
+
+    .home-container {
+        flex-direction: column;
+        gap: 16px;
+        max-width: 100%;
+    }
+
+    .home-left {
+        max-width: 100%;
+        width: 100%;
+        padding: 20px;
+    }
+
+    .home-right {
+        width: 100%;
+        max-height: none;
+        padding: 20px;
+        padding-bottom: 80px;
+    }
+
+    .home-left h1 {
+        font-size: 26px;
+        margin-bottom: 20px;
+    }
+
+    .options-columns {
+        flex-direction: column;
+        gap: 16px;
+    }
 }

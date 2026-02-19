@@ -2,6 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Carcassonne Online</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -92,18 +93,27 @@
 
             <div class="config-section">
                 <h3>Options</h3>
-                <label class="toggle-option">
-                    <input type="checkbox" id="list-remaining" checked>
-                    <span>Lister les tuiles restantes</span>
-                </label>
-                <label class="toggle-option">
-                    <input type="checkbox" id="use-test-deck">
-                    <span>Deck de test (15 tuiles)</span>
-                </label>
-                <label class="toggle-option">
-                    <input type="checkbox" id="enable-debug">
-                    <span>Mode debug (boutons test)</span>
-                </label>
+                <div class="options-columns">
+                    <div class="options-col">
+                        <label class="toggle-option">
+                            <input type="checkbox" id="list-remaining" checked>
+                            <span>Lister les tuiles restantes</span>
+                        </label>
+                        <label class="toggle-option">
+                            <input type="checkbox" id="use-test-deck">
+                            <span>Deck de test (15 tuiles)</span>
+                        </label>
+                        <label class="toggle-option">
+                            <input type="checkbox" id="enable-debug">
+                            <span>Mode debug (boutons test)</span>
+                        </label>
+                    </div>
+                    <div class="options-col">
+                        <h4>Tuile implaçable</h4>
+                        <label class="radio-inline"><input type="radio" name="unplaceable" value="destroy" checked> Détruire la tuile</label>
+                        <label class="radio-inline"><input type="radio" name="unplaceable" value="reshuffle"> Remettre dans la pioche</label>
+                    </div>
+                </div>
             </div>
 
             <div class="config-section extensions-section">
@@ -123,6 +133,12 @@
 
     <!-- ========== PAGE DE JEU ========== -->
     <div id="game-page" class="game-page" style="display: none;">
+
+        <!-- BARRE JOUEURS MOBILE (cachée sur PC) -->
+        <div id="mobile-players-bar">
+            <div id="mobile-players-scores"></div>
+        </div>
+
         <div id="game-ui">
             <h2>Carcassonne</h2>
             
@@ -149,18 +165,45 @@
             <div id="board"></div>
         </div>
 
-        <div id="score-panel">
-            <h2>Tableau de score</h2>
+        <!-- Overlay scores joueurs (PC) -->
+        <div id="score-overlay">
             <div id="players-scores"></div>
         </div>
+
+        <!-- BARRE DU BAS MOBILE (cachée sur PC) -->
+            <div id="mobile-bottom-bar">
+                <!-- Tuile en main + compteur -->
+                <div id="mobile-tile-section">
+                    <div id="mobile-tile-preview"></div>
+                    <div id="mobile-tile-counter">0 / 72</div>
+                </div>
+        
+                <!-- Boutons principaux -->
+                <div id="mobile-actions">
+                    <button id="mobile-undo-btn" class="mobile-action-btn undo-btn">Annuler</button>
+                    <button id="mobile-end-turn-btn" class="mobile-action-btn end-turn-btn">Terminer mon tour</button>
+                    <div class="mobile-icon-row">
+                        <button id="mobile-recenter-btn" class="mobile-icon-btn" title="Recentrer">🎯</button>
+                        <button id="mobile-highlight-btn" class="mobile-icon-btn" title="Dernière tuile">📌</button>
+                    </div>
+                </div>
+        
+                <!-- Boutons secondaires -->
+                <div id="mobile-secondary">
+                    <button id="mobile-remaining-btn" class="mobile-icon-btn" title="Tuiles restantes">🎴</button>
+                    <button id="mobile-rules-btn" class="mobile-icon-btn" title="Règles">📜</button>
+                    <button id="mobile-lobby-btn" class="mobile-icon-btn" title="Retour lobby" style="display:none;">🏠</button>
+                </div>
+            </div>
     </div>
+
 
     <!-- Modale pour rejoindre une partie -->
     <div id="join-modal" class="modal" style="display: none;">
         <div class="modal-content">
             <h2>Rejoindre une partie</h2>
             <p>Entrez le code de la partie :</p>
-            <input type="text" id="join-code-input" placeholder="Code de la partie" maxlength="50">
+            <input type="text" id="join-code-input" placeholder="Code à 6 chiffres" maxlength="6" pattern="[0-9]{6}" inputmode="numeric">
             <div class="modal-buttons">
                 <button id="join-confirm-btn" class="modal-btn confirm">Rejoindre</button>
                 <button id="join-cancel-btn" class="modal-btn cancel">Annuler</button>
@@ -195,6 +238,39 @@
     <!-- Bouton de test debug (caché par défaut) -->
     <button id="test-modal-btn" style="display: none; position: fixed; bottom: 20px; right: 20px; z-index: 9999; padding: 10px 20px; background: red; color: white; border: none; cursor: pointer; border-radius: 5px; font-weight: bold;">🐛 TEST MODALE</button>
 
+    <!-- Badge tuile implaçable (position fixed, caché par défaut) -->
+    <div id="unplaceable-badge" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; background: #e74c3c; color: white; padding: 10px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.4); animation: badgePulse 1.5s ease-in-out infinite;">
+        ⚠️ Tuile implaçable — Cliquez pour confirmer
+    </div>
+
+    <!-- Modale tuile implaçable -->
+    <div id="unplaceable-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>⚠️ Tuile implaçable</h2>
+            <p id="unplaceable-modal-text">Cette tuile ne peut être placée sur le plateau.</p>
+            <p>Vous repiocherez une tuile pour continuer votre tour.</p>
+            <div class="modal-buttons">
+                <button id="unplaceable-confirm-btn" class="modal-btn confirm">Confirmer</button>
+                <button id="unplaceable-examine-btn" class="modal-btn cancel">Examiner le plateau</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale info destruction (visible par tous) -->
+    <div id="tile-destroyed-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>🗑️ Tuile détruite</h2>
+            <p id="tile-destroyed-text"></p>
+            <div class="modal-buttons">
+                <button id="tile-destroyed-ok-btn" class="modal-btn confirm">OK</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="home.js"></script>
+
+    <!-- DEBUG MOBILE - À retirer après debug -->
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
 </body>
 </html>

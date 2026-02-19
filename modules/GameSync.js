@@ -19,6 +19,8 @@ export class GameSync {
         this.onScoreUpdate = null;
         this.onTurnUndo = null;
         this.onGameEnded = null;
+        this.onTileDestroyed = null;
+        this.onDeckReshuffled = null;
     }
 
     /**
@@ -46,7 +48,7 @@ export class GameSync {
         const gameMessages = [
             'game-start', 'tile-rotated', 'tile-placed', 'turn-ended',
             'tile-drawn', 'meeple-placed', 'meeple-count-update', 'score-update',
-            'turn-undo', 'game-ended'
+            'turn-undo', 'game-ended', 'tile-destroyed', 'deck-reshuffled'
             // NOTE: 'return-to-lobby', 'player-order-update' et 'game-starting' 
             //       sont gérés par le lobby handler
         ];
@@ -106,11 +108,11 @@ export class GameSync {
      */
     syncTurnEnd() {
         console.log('⏭️ Sync fin de tour');
-        
-        // Passer au joueur suivant
-        this.gameState.nextPlayer();
-        
-        // Diffuser aux autres joueurs
+
+        // ✅ turnManager.nextPlayer() est appelé dans home.js AVANT syncTurnEnd(),
+        // donc currentPlayerIndex est déjà à jour ici.
+        // On broadcaste le gameState déjà mis à jour pour que les invités
+        // aient le bon état via receiveTurnEnded().
         this.multiplayer.broadcast({
             type: 'turn-ended',
             playerId: this.multiplayer.playerId,
@@ -171,6 +173,33 @@ export class GameSync {
         this.multiplayer.broadcast({
             type: 'turn-undo',
             action: undoneAction,
+            playerId: this.multiplayer.playerId
+        });
+    }
+
+    /**
+     * Synchroniser la destruction d'une tuile
+     */
+    syncTileDestroyed(tileId, playerName, action) {
+        console.log('🗑️ Sync tile destroyed:', tileId);
+        this.multiplayer.broadcast({
+            type: 'tile-destroyed',
+            tileId: tileId,
+            playerName: playerName,
+            action: action,
+            playerId: this.multiplayer.playerId
+        });
+    }
+
+    /**
+     * Synchroniser le remélange du deck
+     */
+    syncDeckReshuffle(tiles, currentIndex) {
+        console.log('🔀 Sync deck reshuffle, currentIndex:', currentIndex);
+        this.multiplayer.broadcast({
+            type: 'deck-reshuffled',
+            tiles: tiles,
+            currentIndex: currentIndex,
             playerId: this.multiplayer.playerId
         });
     }
@@ -262,6 +291,20 @@ export class GameSync {
                 if (this.onGameEnded && data.playerId !== this.multiplayer.playerId) {
                     console.log('🏁 [SYNC] Fin de partie reçue');
                     this.onGameEnded(data.scores);
+                }
+                break;
+            
+            case 'tile-destroyed':
+                if (this.onTileDestroyed && data.playerId !== this.multiplayer.playerId) {
+                    console.log('🗑️ [SYNC] Tuile détruite reçue:', data.tileId);
+                    this.onTileDestroyed(data.tileId, data.playerName, data.action);
+                }
+                break;
+            
+            case 'deck-reshuffled':
+                if (this.onDeckReshuffled && data.playerId !== this.multiplayer.playerId) {
+                    console.log('🔀 [SYNC] Deck remélangé reçu');
+                    this.onDeckReshuffled(data.tiles, data.currentIndex);
                 }
                 break;
         }

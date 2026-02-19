@@ -3,258 +3,195 @@ import { Tile } from './Tile.js';
 /**
  * SlotsUI - Gère l'affichage des slots de placement
  * CONNECTÉ À EVENTBUS
+ *
+ * Fix: on maintient un flag interne `this.tileAvailable` pour savoir
+ * si une tuile est vraiment en main CE tour-ci.
+ * Cela évite que le refresh déclenché par turn-changed affiche des slots
+ * alors que le joueur inactif n'a pas de tuile à poser.
  */
 export class SlotsUI {
     constructor(plateau, gameSync, eventBus, getTileEnMain) {
-        this.plateau = plateau;
-        this.gameSync = gameSync;
-        this.eventBus = eventBus;
-        this.boardElement = null;
-        this.getTileEnMain = getTileEnMain; // Fonction pour obtenir tuileEnMain
-        
-        // État local
-        this.isMyTurn = false;
+        this.plateau       = plateau;
+        this.gameSync      = gameSync;
+        this.eventBus      = eventBus;
+        this.boardElement  = null;
+        this.getTileEnMain = getTileEnMain;
+
+        this.isMyTurn        = false;
         this.firstTilePlaced = false;
-        this.onSlotClick = null;
-        
-        // S'abonner aux événements
-        this.eventBus.on('tile-drawn', (data) => this.onTileDrawn(data));
-        this.eventBus.on('tile-placed', (data) => this.onTilePlaced(data));
-        this.eventBus.on('turn-changed', (data) => this.onTurnChanged(data));
-        this.eventBus.on('tile-rotated', (data) => this.onTileRotated(data));
+        this.onSlotClick     = null;
+
+        // ✅ Flag interne : une tuile est-elle disponible pour CE joueur CE tour ?
+        // Mis à true par tile-drawn, remis à false par tile-placed.
+        this.tileAvailable = false;
+
+        // Binder pour que off() retrouve la même référence
+        this._onTileDrawn   = this.onTileDrawn.bind(this);
+        this._onTilePlaced  = this.onTilePlaced.bind(this);
+        this._onTurnChanged = this.onTurnChanged.bind(this);
+        this._onTileRotated = this.onTileRotated.bind(this);
+
+        this.eventBus.on('tile-drawn',   this._onTileDrawn);
+        this.eventBus.on('tile-placed',  this._onTilePlaced);
+        this.eventBus.on('turn-changed', this._onTurnChanged);
+        this.eventBus.on('tile-rotated', this._onTileRotated);
     }
 
     init() {
         this.boardElement = document.getElementById('board');
     }
-    
-    /**
-     * Définir le callback de clic sur slot
-     */
+
     setSlotClickHandler(callback) {
         this.onSlotClick = callback;
     }
-    
-    /**
-     * Quand une tuile est piochée
-     */
+
+    // ─── Handlers événements ─────────────────────────────────────────────────
+
     onTileDrawn(data) {
-        console.log('🎴 onTileDrawn appelé avec:', data);
-        
-        // Stocker la tuile pour pouvoir afficher les slots même si on n'est pas le joueur actif
-        if (data.tileData) {
-            this.currentTile = new Tile(data.tileData);
-            this.currentTile.rotation = data.tileData.rotation || 0;
-            console.log('  → currentTile mis à jour:', this.currentTile.id, 'rotation:', this.currentTile.rotation);
-        }
-        
-        // Rafraîchir les slots pour TOUT LE MONDE (joueur actif et inactif)
-        console.log('  → Vérification refresh: firstTilePlaced =', this.firstTilePlaced);
+        // Une nouvelle tuile est disponible pour ce tour
+        this.tileAvailable = true;
+        console.log('🎴 SlotsUI.onTileDrawn — tileAvailable = true, firstTilePlaced =', this.firstTilePlaced);
         if (this.firstTilePlaced) {
-            console.log('  → ✅ Appel de refresh()');
             this.refresh();
-        } else {
-            console.log('  → ❌ Pas de refresh (firstTilePlaced = false)');
         }
     }
-    
-    /**
-     * Quand une tuile est placée
-     */
+
     onTilePlaced(data) {
+        // La tuile vient d'être posée : plus rien à afficher
+        this.tileAvailable   = false;
         this.firstTilePlaced = true;
-        // Ne PAS refresh ici - les slots seront rafraîchis par turn-changed après la fin du tour
-        // Si on refresh ici, isMyTurn n'est pas encore à jour et on crée les slots du mauvais joueur
+        this._clearSlots();
+        console.log('📌 SlotsUI.onTilePlaced — slots effacés, tileAvailable = false');
     }
-    
-    /**
-     * Quand une tuile est tournée
-     */
+
     onTileRotated(data) {
-        // Mettre à jour la rotation de currentTile
-        if (this.currentTile && data.rotation !== undefined) {
-            this.currentTile.rotation = data.rotation;
-        }
-        // Rafraîchir les slots car les possibilités changent
-        this.refresh();
+        // On ne rafraîchit que si une tuile est réellement disponible
+        if (this.tileAvailable) this.refresh();
     }
-    
-    /**
-     * Quand le tour change
-     */
+
     onTurnChanged(data) {
-        console.log('🔄 SlotsUI.onTurnChanged - isMyTurn:', data.isMyTurn);
+        console.log('🔄 SlotsUI.onTurnChanged — isMyTurn:', data.isMyTurn, 'tileAvailable:', this.tileAvailable);
         this.isMyTurn = data.isMyTurn;
-        
-        // Mettre à jour les slots existants (readonly ou non)
-        const slots = document.querySelectorAll('.slot');
-        console.log(`🔄 Mise à jour de ${slots.length} slots existants`);
-        slots.forEach(slot => {
+
+        // Si aucune tuile disponible : on efface les slots et on s'arrête
+        if (!this.tileAvailable) {
+            this._clearSlots();
+            return;
+        }
+
+        // Sinon on met à jour le mode (readonly/actif) des slots existants
+        document.querySelectorAll('.slot').forEach(slot => {
             if (!this.isMyTurn) {
                 slot.classList.add('slot-readonly');
-                slot.style.cursor = 'default';
-                slot.style.pointerEvents = 'none'; // Désactiver hover
-                console.log('  → Slot mis en readonly');
+                slot.style.cursor        = 'default';
+                slot.style.pointerEvents = 'none';
             } else {
                 slot.classList.remove('slot-readonly');
-                slot.style.cursor = 'pointer';
-                slot.style.pointerEvents = 'auto'; // Réactiver
-                console.log('  → Slot mis en actif');
+                slot.style.cursor        = 'pointer';
+                slot.style.pointerEvents = 'auto';
             }
         });
-        
+
         this.refresh();
     }
-    
-    /**
-     * Rafraîchir l'affichage des slots
-     */
+
+    // ─── Rafraîchissement ────────────────────────────────────────────────────
+
     refresh() {
-        if (this.firstTilePlaced) {
+        if (this.firstTilePlaced && this.tileAvailable) {
             this.refreshAllSlots();
         }
-        // Note: Les slots sont affichés pour TOUS les joueurs
-        // mais en readonly (pointer-events: none) pour les joueurs inactifs
     }
 
     /**
-     * Créer le slot central - COPIE EXACTE de creerSlotCentral()
+     * Supprime tous les slots non-centraux
      */
+    _clearSlots() {
+        document.querySelectorAll('.slot:not(.slot-central)').forEach(s => s.remove());
+    }
+
     createCentralSlot() {
         console.log('🎯 Création du slot central...');
-        const board = this.boardElement;
-        console.log('📋 Board element:', board);
-        
         const slot = document.createElement('div');
-        slot.className = "slot slot-central";
+        slot.className        = 'slot slot-central';
         slot.style.gridColumn = 50;
-        slot.style.gridRow = 50;
-        
-        // ✅ Si ce n'est pas notre tour : readonly, pas de clic, pas de hover
+        slot.style.gridRow    = 50;
+
         if (!this.isMyTurn) {
             slot.classList.add('slot-readonly');
-            slot.style.cursor = 'default';
+            slot.style.cursor        = 'default';
             slot.style.pointerEvents = 'none';
-            console.log('🔒 Slot central readonly (pas notre tour)');
         } else {
-            // ✅ Seulement le joueur actif a un onclick
             slot.onclick = () => {
                 if (this.getTileEnMain() && !this.firstTilePlaced && this.onSlotClick) {
-                    console.log('✅ Clic sur slot central - pose de la tuile');
                     this.onSlotClick(50, 50, this.getTileEnMain(), true);
                 }
             };
-            console.log('✅ Slot central cliquable (notre tour)');
         }
-        
-        board.appendChild(slot);
+
+        this.boardElement.appendChild(slot);
         console.log('✅ Slot central ajouté au board');
     }
 
-    /**
-     * Rafraîchir tous les slots - COPIE EXACTE de rafraichirTousLesSlots()\n     */
     refreshAllSlots() {
-        console.log('═══════════════════════════════════════');
-        console.log('🔄 refreshAllSlots appelé');
-        console.log('  firstTilePlaced:', this.firstTilePlaced);
-        console.log('  isMyTurn:', this.isMyTurn);
-        console.log('  plateau.placedTiles:', Object.keys(this.plateau.placedTiles));
-        
-        // Supprimer les anciens slots (sauf central)
-        if (this.firstTilePlaced) {
-            const slotsToRemove = document.querySelectorAll('.slot:not(.slot-central)');
-            console.log('  → Suppression de', slotsToRemove.length, 'slots existants');
-            slotsToRemove.forEach(s => s.remove());
-        }
-        
-        // Vérifier qu'il y a une tuile en main
-        const tile = this.currentTile || this.getTileEnMain();
-        console.log('  currentTile:', this.currentTile?.id || 'null');
-        console.log('  getTileEnMain():', this.getTileEnMain()?.id || 'null');
-        console.log('  → tile finale:', tile?.id || 'null');
-        
-        if (!tile) {
-            console.log('  ❌ STOP: Pas de tuile');
-            console.log('═══════════════════════════════════════');
+        const tile = this.getTileEnMain();
+        console.log('🔄 refreshAllSlots — tile:', tile?.id || 'null', 'tileAvailable:', this.tileAvailable);
+
+        // Supprimer les anciens slots
+        this._clearSlots();
+
+        if (!tile || !this.tileAvailable) {
+            console.log('  ❌ STOP: pas de tuile disponible');
             return;
         }
-        
-        // Vérifier qu'il y a des tuiles sur le plateau
+
         const placedTilesCount = Object.keys(this.plateau.placedTiles).length;
-        console.log('  Tuiles sur plateau:', placedTilesCount);
-        
         if (placedTilesCount === 0) {
-            console.log('  ❌ STOP: Plateau vide');
-            console.log('═══════════════════════════════════════');
+            console.log('  ❌ STOP: plateau vide');
             return;
         }
-        
-        // Générer les slots autour des tuiles placées
-        console.log('  ✅ Génération des slots...');
+
         for (let coord in this.plateau.placedTiles) {
             const [x, y] = coord.split(',').map(Number);
-            console.log('    → Autour de', coord);
             this.generateSlotsAround(x, y, tile);
         }
-        console.log('═══════════════════════════════════════');
     }
 
-    /**
-     * Générer les slots autour d'une position - COPIE EXACTE de genererSlotsAutour()
-     */
     generateSlotsAround(x, y, tile) {
         const directions = [{dx:0, dy:-1}, {dx:1, dy:0}, {dx:0, dy:1}, {dx:-1, dy:0}];
-        directions.forEach(dir => {
-            const nx = x + dir.dx, ny = y + dir.dy;
-            const isFree = this.plateau.isFree(nx, ny);
-            const canPlace = tile && this.plateau.canPlaceTile(nx, ny, tile);
-            console.log(`  Slot (${nx},${ny}): free=${isFree} canPlace=${canPlace} tile=${tile?.id}`);
-            
-            if (tile && isFree && canPlace) {
-                const slot = document.createElement('div');
-                slot.className = "slot";
-                slot.style.gridColumn = nx;
-                slot.style.gridRow = ny;
-                
-                console.log(`🔧 Création slot (${nx},${ny}) - isMyTurn:`, this.isMyTurn);
-                
-                // ✅ Si ce n'est pas notre tour : readonly, pas de clic, pas de hover
-                if (!this.isMyTurn) {
-                    slot.classList.add('slot-readonly');
-                    slot.style.cursor = 'default';
-                    slot.style.pointerEvents = 'none';
-                    // PAS de onclick
-                } else {
-                    // ✅ Seulement le joueur actif a un onclick
-                    slot.onclick = () => {
-                        if (this.onSlotClick) {
-                            this.onSlotClick(nx, ny, this.getTileEnMain());
-                        }
-                    };
-                }
-                
-                this.boardElement.appendChild(slot);
+        directions.forEach(({ dx, dy }) => {
+            const nx = x + dx, ny = y + dy;
+            if (!this.plateau.isFree(nx, ny)) return;
+            if (!this.plateau.canPlaceTile(nx, ny, tile)) return;
+
+            const slot = document.createElement('div');
+            slot.className        = 'slot';
+            slot.style.gridColumn = nx;
+            slot.style.gridRow    = ny;
+
+            if (!this.isMyTurn) {
+                slot.classList.add('slot-readonly');
+                slot.style.cursor        = 'default';
+                slot.style.pointerEvents = 'none';
+            } else {
+                slot.onclick = () => {
+                    if (this.onSlotClick) this.onSlotClick(nx, ny, this.getTileEnMain());
+                };
             }
+
+            this.boardElement.appendChild(slot);
         });
     }
 
-    /**
-     * Détruire le module et nettoyer
-     */
     destroy() {
         console.log('🧹 SlotsUI: cleanup');
-        
-        // Supprimer tous les slots du DOM
         document.querySelectorAll('.slot').forEach(el => el.remove());
-        
-        // Se désabonner des événements
-        if (this.eventBus) {
-            this.eventBus.off('tile-drawn', this.onTileDrawn);
-            this.eventBus.off('tile-placed', this.onTilePlaced);
-            this.eventBus.off('tile-rotated', this.onTileRotated);
-            this.eventBus.off('turn-changed', this.onTurnChanged);
-        }
-        
+
+        this.eventBus.off('tile-drawn',   this._onTileDrawn);
+        this.eventBus.off('tile-placed',  this._onTilePlaced);
+        this.eventBus.off('tile-rotated', this._onTileRotated);
+        this.eventBus.off('turn-changed', this._onTurnChanged);
+
         this.onSlotClick = null;
     }
 }
