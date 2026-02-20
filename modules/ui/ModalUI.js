@@ -191,7 +191,7 @@ export class ModalUI {
         `;
         
         // Section Départ
-        const startSection = this._createSection('🎯 Départ', [
+        const startSection = this._createSection('🏁 Départ', [
             'Tuile unique'
         ]);
         content.appendChild(startSection);
@@ -279,15 +279,39 @@ export class ModalUI {
             extensionsSection.appendChild(baseContainer);
         }
         
-        // Prêt pour futures extensions
-        // if (config.extensions?.auberges) {
-        //     const aubergesLine = document.createElement('div');
-        //     aubergesLine.textContent = '└─ ✓ Auberges et Cathédrales';
-        //     ...
-        // }
-        
+        // Extension Abbé
+        if (config.extensions?.abbot) {
+            const abbotContainer = document.createElement('div');
+            abbotContainer.style.cssText = `
+                font-family: 'Courier New', monospace;
+                color: #e0e0e0;
+                line-height: 1.6;
+                margin-top: 8px;
+            `;
+
+            const abbotLine = document.createElement('div');
+            abbotLine.textContent = '└─ ✓ L\'Abbé';
+            abbotLine.style.cssText = 'margin-left: 5px; font-size: 15px;';
+            abbotContainer.appendChild(abbotLine);
+
+            extensionsSection.appendChild(abbotContainer);
+        }
+
         content.appendChild(extensionsSection);
-        
+
+        // Section Tuiles
+        const tilesSection = this._createSection('🧩 Tuiles', (() => {
+            const list = [];
+            if (config.tileGroups?.base !== false) {
+                list.push('Base : 72 tuiles');
+            }
+            if (config.tileGroups?.abbot) {
+                list.push("L'Abbé : +8 tuiles");
+            }
+            return list;
+        })());
+        content.appendChild(tilesSection);
+
         modal.appendChild(content);
         
         // Bouton fermer

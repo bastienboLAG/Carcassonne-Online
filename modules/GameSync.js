@@ -48,7 +48,8 @@ export class GameSync {
         const gameMessages = [
             'game-start', 'tile-rotated', 'tile-placed', 'turn-ended',
             'tile-drawn', 'meeple-placed', 'meeple-count-update', 'score-update',
-            'turn-undo', 'game-ended', 'tile-destroyed', 'deck-reshuffled'
+            'turn-undo', 'game-ended', 'tile-destroyed', 'deck-reshuffled',
+            'abbe-recalled', 'abbe-recalled-undo'
             // NOTE: 'return-to-lobby', 'player-order-update' et 'game-starting' 
             //       sont gérés par le lobby handler
         ];
@@ -168,6 +169,20 @@ export class GameSync {
     /**
      * Synchroniser une annulation
      */
+    syncAbbeRecall(x, y, key, playerId, points) {
+        this.multiplayer.broadcast({
+            type: 'abbe-recalled',
+            x, y, key, playerId, points
+        });
+    }
+
+    syncAbbeRecallUndo(x, y, key, playerId) {
+        this.multiplayer.broadcast({
+            type: 'abbe-recalled-undo',
+            x, y, key, playerId
+        });
+    }
+
     syncUndo(undoneAction) {
         console.log('⏪ Sync annulation:', undoneAction);
         this.multiplayer.broadcast({
@@ -270,7 +285,7 @@ export class GameSync {
             case 'meeple-count-update':
                 if (this.onMeepleCountUpdate) {
                     console.log('🎭 [SYNC] Mise à jour compteur meeples:', data.playerId, data.meeples);
-                    this.onMeepleCountUpdate(data.playerId, data.meeples);
+                    this.onMeepleCountUpdate(data.playerId, data.meeples, data.hasAbbot);
                 }
                 break;
             case 'score-update':
@@ -305,6 +320,20 @@ export class GameSync {
                 if (this.onDeckReshuffled && data.playerId !== this.multiplayer.playerId) {
                     console.log('🔀 [SYNC] Deck remélangé reçu');
                     this.onDeckReshuffled(data.tiles, data.currentIndex);
+                }
+                break;
+
+            case 'abbe-recalled':
+                if (this.onAbbeRecalled && data.playerId !== this.multiplayer.playerId) {
+                    console.log('↩️ [SYNC] Rappel Abbé reçu:', data.key);
+                    this.onAbbeRecalled(data.x, data.y, data.key, data.playerId, data.points);
+                }
+                break;
+
+            case 'abbe-recalled-undo':
+                if (this.onAbbeRecalledUndo && data.playerId !== this.multiplayer.playerId) {
+                    console.log('↩️ [SYNC] Undo rappel Abbé reçu');
+                    this.onAbbeRecalledUndo(data.x, data.y, data.key, data.playerId);
                 }
                 break;
         }

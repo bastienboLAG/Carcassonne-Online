@@ -26,7 +26,7 @@ export class MeeplePlacement {
     /**
      * Vérifier si un meeple peut être placé à une position
      */
-    canPlace(x, y, position, playerId) {
+    canPlace(x, y, position, playerId, meepleType = 'Normal') {
         const key = `${x},${y},${position}`;
         
         // 1. Vérifier si position déjà occupée
@@ -37,7 +37,13 @@ export class MeeplePlacement {
         
         // 2. Vérifier que le joueur a des meeples disponibles
         const player = this.gameState.players.find(p => p.id === playerId);
-        if (!player || player.meeples <= 0) {
+        if (!player) return false;
+        const isAbbot = meepleType === 'Abbot';
+        if (isAbbot && !player.hasAbbot) {
+            console.log('❌ Abbé non disponible');
+            return false;
+        }
+        if (!isAbbot && player.meeples <= 0) {
             console.log('❌ Plus de meeples disponibles');
             return false;
         }
@@ -67,7 +73,7 @@ export class MeeplePlacement {
         console.log('🎭 MeeplePlacement: placement meeple', { x, y, position, meepleType, playerId });
         
         // Valider le placement
-        if (!this.canPlace(x, y, position, playerId)) {
+        if (!this.canPlace(x, y, position, playerId, meepleType)) {
             console.warn('⚠️ Impossible de placer le meeple ici');
             return false;
         }
@@ -89,8 +95,10 @@ export class MeeplePlacement {
             playerId: playerId
         };
         
-        // Décrémenter le compteur
-        this.decrementMeeples(playerId);
+        // Décrémenter le compteur (pas pour l'Abbé — géré via hasAbbot dans home.js)
+        if (meepleType !== 'Abbot') {
+            this.decrementMeeples(playerId);
+        }
         
         // Émettre événement
         this.eventBus.emit('meeple-placed', {

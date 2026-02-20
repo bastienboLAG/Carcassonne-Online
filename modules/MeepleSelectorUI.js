@@ -22,7 +22,9 @@ export class MeepleSelectorUI {
      * Afficher le sélecteur de meeple - COPIE EXACTE de afficherSelecteurMeeple()
      */
     show(x, y, position, zoneType, mouseX, mouseY, onMeepleSelected) {
-        console.log('📋 Sélecteur de meeple à la position', position, 'type:', zoneType);
+        const player = this.gameState.players.find(p => p.id === this.multiplayer.playerId);
+        console.log('📋 Sélecteur meeple — zone:', zoneType, '— hasAbbot:', player?.hasAbbot, '— meeples:', player?.meeples, '— config.extensions.abbot:', this.config?.extensions?.abbot);
+        console.log('📋 playerId recherché:', this.multiplayer.playerId, '— joueurs dispo:', this.gameState.players.map(p => p.id + ':hasAbbot=' + p.hasAbbot));
         
         // Nettoyer l'ancien sélecteur
         const oldSelector = document.getElementById('meeple-selector');
@@ -57,8 +59,27 @@ export class MeepleSelectorUI {
             meepleTypes = [
                 { type: 'Normal', image: `./assets/Meeples/${this.getPlayerColor()}/Normal.png` }
             ];
+        } else if (zoneType === 'garden') {
+            // Garden → Abbé uniquement (si disponible)
+            const player = this.gameState.players.find(p => p.id === this.multiplayer.playerId);
+            if (player?.hasAbbot) {
+                meepleTypes = [
+                    { type: 'Abbot', image: `./assets/Meeples/${this.getPlayerColor()}/Abbot.png` }
+                ];
+            }
+        } else if (zoneType === 'abbey') {
+            // Abbey → Normal + Abbé si disponible
+            const player = this.gameState.players.find(p => p.id === this.multiplayer.playerId);
+            meepleTypes = [
+                { type: 'Normal', image: `./assets/Meeples/${this.getPlayerColor()}/Normal.png` }
+            ];
+            if (player?.hasAbbot) {
+                meepleTypes.push(
+                    { type: 'Abbot', image: `./assets/Meeples/${this.getPlayerColor()}/Abbot.png` }
+                );
+            }
         } else {
-            // Par défaut (abbey, etc.) → Normal
+            // Par défaut → Normal
             meepleTypes = [
                 { type: 'Normal', image: `./assets/Meeples/${this.getPlayerColor()}/Normal.png` }
             ];

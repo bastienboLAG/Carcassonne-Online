@@ -22,6 +22,8 @@ export class GameSyncCallbacks {
         onFinalScores,
         onTileDestroyed,
         onDeckReshuffled,
+        onAbbeRecalled,
+        onAbbeRecalledUndo,
         updateTurnDisplay,
         poserTuileSync,
     }) {
@@ -43,6 +45,8 @@ export class GameSyncCallbacks {
         this.onFinalScores     = onFinalScores;       // (scores) => void
         this.onTileDestroyed   = onTileDestroyed;     // (id, name, action) => void
         this.onDeckReshuffled  = onDeckReshuffled;    // (tiles, idx) => void
+        this.onAbbeRecalled    = onAbbeRecalled;      // (x, y, key, playerId, points) => void
+        this.onAbbeRecalledUndo = onAbbeRecalledUndo; // (x, y, key, playerId) => void
         this.updateTurnDisplay = updateTurnDisplay;   // () => void
         this.poserTuileSync    = poserTuileSync;      // (x, y, tile) => void
     }
@@ -112,11 +116,12 @@ export class GameSyncCallbacks {
         };
 
         // ── Mise à jour du compteur de meeples ───────────────────────────────
-        gs.onMeepleCountUpdate = (playerId, meeples) => {
-            console.log('🎭 [SYNC] Mise à jour compteur reçue:', playerId, meeples);
+        gs.onMeepleCountUpdate = (playerId, meeples, hasAbbot) => {
+            console.log('🎭 [SYNC] Mise à jour compteur reçue:', playerId, meeples, 'hasAbbot:', hasAbbot);
             const player = this.gameState.players.find(p => p.id === playerId);
             if (player) {
                 player.meeples = meeples;
+                if (hasAbbot !== undefined) player.hasAbbot = hasAbbot;
                 this.eventBus.emit('meeple-count-updated', { playerId, meeples });
             }
         };
@@ -164,6 +169,14 @@ export class GameSyncCallbacks {
         };
 
         // ── Deck remélangé ────────────────────────────────────────────────────
+        gs.onAbbeRecalled = (x, y, key, playerId, points) => {
+            if (this.onAbbeRecalled) this.onAbbeRecalled(x, y, key, playerId, points);
+        };
+
+        gs.onAbbeRecalledUndo = (x, y, key, playerId) => {
+            if (this.onAbbeRecalledUndo) this.onAbbeRecalledUndo(x, y, key, playerId);
+        };
+
         gs.onDeckReshuffled = (tiles, currentIndex) => {
             console.log('🔀 [SYNC] Réception deck remélangé, currentIndex:', currentIndex);
             this.deck.tiles        = tiles;
