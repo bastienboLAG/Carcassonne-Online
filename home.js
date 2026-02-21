@@ -124,6 +124,9 @@ eventBus.on('tile-drawn', (data) => {
     tuileEnMain.rotation = data.tileData.rotation || 0;
     tuilePosee           = false;
 
+    // Mettre à jour isRiverPhase : true si la tuile courante est une tuile river
+    if (slotsUI) slotsUI.isRiverPhase = tuileEnMain.id.startsWith('river-');
+
     if (tilePreviewUI) tilePreviewUI.showTile(tuileEnMain);
     updateMobileTilePreview();
 
@@ -324,7 +327,9 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
             if (data.type === 'player-info') {
                 if (!players.find(p => p.id === from)) {
                     const taken    = players.map(p => p.color);
-                    const assigned = taken.includes(data.color) ? getAvailableColor() : data.color;
+                    const assigned = taken.includes(data.color)
+                        ? (allColors.find(c => !taken.includes(c)) || 'blue')
+                        : data.color;
                     players.push({ id: from, name: data.name, color: assigned, isHost: false });
                     lobbyUI.setPlayers(players);
                 }
@@ -358,6 +363,21 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
                 players = data.players;
                 lobbyUI.setPlayers(players);
             }
+
+            if (data.type === 'player-left') {
+                // Un invité quitte volontairement
+                players = players.filter(p => p.id !== from);
+                lobbyUI.setPlayers(players);
+                multiplayer.broadcast({ type: 'players-update', players });
+            }
+        };
+
+        // Hôte : kick un invité
+        lobbyUI.onKickPlayer = (playerId) => {
+            multiplayer.sendTo(playerId, { type: 'you-are-kicked' });
+            players = players.filter(p => p.id !== playerId);
+            lobbyUI.setPlayers(players);
+            multiplayer.broadcast({ type: 'players-update', players });
         };
 
     } catch (error) {
@@ -453,6 +473,15 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
                 if (data.config) { gameConfig = data.config; }
                 startGameForInvite();
             }
+            if (data.type === 'you-are-kicked') {
+                returnToInitialLobby('Vous avez été retiré du salon.');
+            }
+        };
+
+        // Invité : quitter volontairement
+        lobbyUI.onLeaveGame = () => {
+            multiplayer.broadcast({ type: 'player-left' });
+            returnToInitialLobby();
         };
 
         originalLobbyHandler          = lobbyHandler;
@@ -495,13 +524,15 @@ document.getElementById('start-game-btn').addEventListener('click', async () => 
         testDeck:           document.getElementById('use-test-deck').checked,
         enableDebug:        document.getElementById('enable-debug').checked,
         unplaceableAction:  document.querySelector('input[name="unplaceable"]:checked')?.value || 'destroy',
+        startType: document.querySelector('input[name="start"]:checked')?.value || 'unique',
         extensions: {
             base:  true,
             abbot: document.getElementById('ext-abbot')?.checked ?? false
         },
         tileGroups: {
             base:  true,
-            abbot: document.getElementById('tiles-abbot')?.checked ?? false
+            abbot: document.getElementById('tiles-abbot')?.checked ?? false,
+            river: document.querySelector('input[name="start"]:checked')?.value === 'river'
         }
     };
 
@@ -640,7 +671,7 @@ async function startGame() {
     setupNavigation(document.getElementById('board-container'), document.getElementById('board'));
 
     // L'hôte charge et envoie la pioche
-    await deck.loadAllTiles(gameConfig.testDeck ?? false, gameConfig.tileGroups ?? {});
+    await deck.loadAllTiles(gameConfig.testDeck ?? false, gameConfig.tileGroups ?? {}, gameConfig.startType ?? 'unique');
     gameSync.startGame(deck);
     turnManager.drawTile();
     eventBus.emit('deck-updated', { remaining: deck.remaining(), total: deck.total() });
@@ -747,6 +778,15 @@ function updateMobilePlayers() {
             img.src = `./assets/Meeples/${colorCap}/Normal.png`;
             if (i >= player.meeples) img.classList.add('unavailable');
             meeplesDiv.appendChild(img);
+        }
+        // Abbé (si extension activée)
+        if (gameConfig?.extensions?.abbot) {
+            const abbot = document.createElement('img');
+            abbot.src = `./assets/Meeples/${colorCap}/Abbot.png`;
+            abbot.alt = 'Abbé';
+            abbot.style.marginLeft = '6px';
+            if (!player.hasAbbot) abbot.classList.add('unavailable');
+            meeplesDiv.appendChild(abbot);
         }
         card.appendChild(meeplesDiv);
         container.appendChild(card);
@@ -924,7 +964,7 @@ function poserTuile(x, y, tile, isFirst = false) {
     updateMobileButtons();
     updateTurnDisplay();
 
-    if (gameSync) gameSync.syncTilePlacement(x, y, tile);
+    if (gameSync) gameSync.syncTilePlacement(x, y, tile, zoneMerger);
 
     if (isMyTurn && gameSync && meepleCursorsUI && !undoManager?.abbeRecalledThisTurn) {
         meepleCursorsUI.showCursors(x, y, gameState, placedMeeples, afficherSelecteurMeeple);
@@ -943,7 +983,7 @@ function poserTuile(x, y, tile, isFirst = false) {
     updateTurnDisplay(); // Mettre à jour undo (canUndo vient de changer)
 }
 
-function poserTuileSync(x, y, tile) {
+function poserTuileSync(x, y, tile, extraOptions = {}) {
     console.log('🔄 poserTuileSync appelé:', { x, y, tile });
     const isFirst = !firstTilePlaced;
 
@@ -953,13 +993,13 @@ function poserTuileSync(x, y, tile) {
     tuileEnMain = null;
     updateMobileTilePreview();
 
-    tilePlacement.placeTile(x, y, tile, { isFirst, skipSync: true });
+    tilePlacement.placeTile(x, y, tile, { isFirst, skipSync: true, ...extraOptions });
 
     if (!firstTilePlaced) firstTilePlaced = true;
     tuilePosee     = true;
     lastPlacedTile = { x, y };
-
-    if (undoManager) undoManager.saveAfterTilePlaced(x, y, tile, placedMeeples);
+    // ✅ Le snapshot est sauvegardé par GameSyncCallbacks après application des zones
+    // Ne pas le sauvegarder ici pour éviter un snapshot avec zones incomplètes
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1251,11 +1291,18 @@ function setupEventListeners() {
             const abbeData = placedMeeples[abbeKey];
             if (abbeData) {
                 const [ax, ay] = abbeKey.split(',').map(Number);
-                eventBus.emit('meeple-placed', { ...abbeData, x: ax, y: ay, key: abbeKey, fromUndo: true });
+                eventBus.emit('meeple-placed', { ...abbeData, x: ax, y: ay, key: abbeKey, position: parseInt(abbeKey.split(',')[2]), meepleType: abbeData.type, playerColor: abbeData.color, fromUndo: true });
             }
             if (gameSync) gameSync.syncAbbeRecallUndo(
                 undoneAction.abbe.x, undoneAction.abbe.y, abbeKey, playerId
             );
+            // Réafficher les curseurs de la tuile courante + curseur rappel abbé
+            if (lastPlacedTile && meepleCursorsUI) {
+                meepleCursorsUI.showCursors(
+                    lastPlacedTile.x, lastPlacedTile.y, gameState, placedMeeples, afficherSelecteurMeeple
+                );
+                meepleCursorsUI.showAbbeRecallTargets(placedMeeples, multiplayer.playerId, handleAbbeRecall);
+            }
             eventBus.emit('score-updated');
             updateTurnDisplay();
             return;
@@ -1390,6 +1437,41 @@ function setupEventListeners() {
 // ═══════════════════════════════════════════════════════
 // RETOUR AU LOBBY
 // ═══════════════════════════════════════════════════════
+function returnToInitialLobby(message = null) {
+    console.log('🔙 Retour au lobby initial...');
+
+    // Réinitialiser l'état
+    players      = [];
+    inLobby      = false;
+    isHost       = false;
+    gameCode     = '';
+
+    // Cacher le code de partie
+    const gameCodeContainer = document.getElementById('game-code-container');
+    if (gameCodeContainer) gameCodeContainer.style.display = 'none';
+
+    // Couper immédiatement tout message entrant
+    multiplayer.onDataReceived = null;
+
+    // Réinitialiser et afficher le lobby
+    lobbyUI.setIsHost(false);
+    lobbyUI.setPlayers([]);
+    lobbyUI.reset();
+    lobbyUI.show();
+    updateLobbyUI();
+
+    // Fermer la connexion PeerJS après la mise à jour UI
+    if (multiplayer?.peer) {
+        setTimeout(() => multiplayer.peer.destroy(), 100);
+    }
+
+    if (message) {
+        setTimeout(() => alert(message), 200);
+    }
+
+    console.log('✅ Retour au lobby initial terminé');
+}
+
 function returnToLobby() {
     console.log('🔙 Retour au lobby...');
 

@@ -439,6 +439,31 @@ button:disabled {
     object-fit: contain;
 }
 
+.player-slot {
+    position: relative;
+}
+.lobby-kick-btn {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #e74c3c;
+    border: none;
+    color: white;
+    font-size: 11px;
+    line-height: 20px;
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+    z-index: 10;
+    transition: background 0.15s;
+}
+.lobby-kick-btn:hover {
+    background: #c0392b;
+}
+
 .color-picker {
     background-color: rgba(0,0,0,0.3);
     padding: 20px;

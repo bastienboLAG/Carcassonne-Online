@@ -191,9 +191,8 @@ export class ModalUI {
         `;
         
         // Section Départ
-        const startSection = this._createSection('🏁 Départ', [
-            'Tuile unique'
-        ]);
+        const startLabel = config.startType === 'river' ? 'Rivière 1' : 'Tuile unique';
+        const startSection = this._createSection('🏁 Départ', [startLabel]);
         content.appendChild(startSection);
         
         // Section Options
@@ -304,6 +303,9 @@ export class ModalUI {
             const list = [];
             if (config.tileGroups?.base !== false) {
                 list.push('Base : 72 tuiles');
+            }
+            if (config.startType === 'river') {
+                list.push('Rivière : +12 tuiles');
             }
             if (config.tileGroups?.abbot) {
                 list.push("L'Abbé : +8 tuiles");

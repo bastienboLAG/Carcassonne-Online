@@ -86,13 +86,25 @@ export class GameSyncCallbacks {
         };
 
         // ── Placement d'une tuile ─────────────────────────────────────────────
-        gs.onTilePlaced = (x, y, tileId, rotation) => {
+        gs.onTilePlaced = (x, y, tileId, rotation, zoneRegistryData, tileToZoneData) => {
             console.log('📍 [SYNC] Placement reçu:', x, y, tileId, rotation);
             const tileData = this.deck.tiles.find(t => t.id === tileId);
             if (tileData) {
                 const tile = new Tile(tileData);
                 tile.rotation = rotation;
-                this.poserTuileSync(x, y, tile);
+                // Passer skipZoneMerger=true si l'hôte fournit l'état des zones
+                this.poserTuileSync(x, y, tile, zoneRegistryData ? { skipZoneMerger: true } : {});
+                // Appliquer l'état des zones de l'hôte directement
+                if (zoneRegistryData && tileToZoneData) {
+                    this.zoneMerger.registry.deserialize(zoneRegistryData);
+                    this.zoneMerger.tileToZone = new Map(tileToZoneData);
+                    console.log('✅ [SYNC] ZoneRegistry appliqué depuis hôte');
+                }
+                // ✅ Sauvegarder le snapshot APRÈS application des zones
+                // (ne pas le faire dans poserTuileSync qui s'exécute avant)
+                if (this.undoManager) {
+                    this.undoManager.saveAfterTilePlaced(x, y, tile, this.getPlacedMeeples());
+                }
             }
         };
 
