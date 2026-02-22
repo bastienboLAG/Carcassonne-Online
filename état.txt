@@ -1,2 +1,2 @@
-actuel :	Carcassonne-Online-FIXED 21-02-2026(3) (add presets lobby)
+actuel :	Carcassonne-Online-FIXED 22-02-2026 (bug fix multi)
 précédent :	Carcassonne-Online-FIXED 19-02-2026(1) (version mobile)

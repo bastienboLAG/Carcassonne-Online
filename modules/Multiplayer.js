@@ -9,6 +9,9 @@ export class Multiplayer {
         this.onPlayerJoined = null; // Callback quand un joueur rejoint
         this.onPlayerLeft = null; // Callback quand un joueur part
         this.onDataReceived = null; // Callback pour recevoir des données
+        this._recentMsgIds = new Set(); // Pour dédupliquer les messages reçus en double
+        this._msgCounter = 0; // Compteur pour générer des IDs uniques
+        this._connectedPeers = new Set(); // Pour dédupliquer les connexions par peer ID
     }
 
     /**
@@ -28,6 +31,13 @@ export class Multiplayer {
                 
                 // Écouter les connexions entrantes
                 this.peer.on('connection', (conn) => {
+                    // PeerJS peut déclencher 'connection' deux fois pour le même pair
+                    // (connexion entrante + connexion retour automatique)
+                    // On bloque immédiatement si le pair est déjà connu
+                    if (conn.peer && this._connectedPeers.has(conn.peer)) {
+                        console.warn(`⚠️ [HOST] Connexion entrante ignorée (pair déjà connu): ${conn.peer}`);
+                        return;
+                    }
                     this._handleConnection(conn);
                 });
 
@@ -57,12 +67,12 @@ export class Multiplayer {
 
                 // Se connecter à l'hôte
                 const conn = this.peer.connect(hostId);
-                this._handleConnection(conn);
-
-                conn.on('open', () => {
+                // resolve() dans le conn.on('open') de _handleConnection
+                conn.once('open', () => {
                     console.log('✅ Connecté à l\'hôte !');
                     resolve();
                 });
+                this._handleConnection(conn);
             });
 
             this.peer.on('error', (err) => {
@@ -77,36 +87,64 @@ export class Multiplayer {
      * @private
      */
     _handleConnection(conn) {
-        this.connections.push(conn);
+        // ✅ Utiliser un flag sur conn pour garantir l'initialisation unique
+        // même si PeerJS déclenche 'open' plusieurs fois
+        conn._initialized = false;
 
-        conn.on('open', () => {
-            console.log('👤 Nouveau joueur connecté:', conn.peer);
+        const onOpen = () => {
+            const peerId = conn.peer;
+
+            // ✅ Dédupliquer via Set global — couvre tous les cas
+            // (double open, double _handleConnection, deux objets conn pour même pair)
+            if (this._connectedPeers.has(peerId)) {
+                console.warn(`⚠️ Pair déjà connecté, connexion ignorée: ${peerId}`);
+                return;
+            }
+            this._connectedPeers.add(peerId);
+
+            this.connections.push(conn);
+            console.log('👤 Nouveau joueur connecté:', peerId);
+
             if (this.onPlayerJoined) {
-                this.onPlayerJoined(conn.peer);
+                this.onPlayerJoined(peerId);
             }
 
-            // Envoyer un message de bienvenue
             conn.send({
                 type: 'welcome',
                 from: this.playerId,
                 message: 'Bienvenue dans la partie !'
             });
-        });
+        };
 
-        conn.on('data', (data) => {
+        const onData = (data) => {
+            // Dédupliquer les messages broadcast reçus en double
+            if (data.msgId) {
+                if (this._recentMsgIds.has(data.msgId)) {
+                    console.warn(`⚠️ Message dupliqué ignoré: ${data.msgId}`);
+                    return;
+                }
+                this._recentMsgIds.add(data.msgId);
+                setTimeout(() => this._recentMsgIds.delete(data.msgId), 5000);
+            }
             console.log('📨 Données reçues:', data);
             if (this.onDataReceived) {
                 this.onDataReceived(data, conn.peer);
             }
-        });
+        };
 
-        conn.on('close', () => {
-            console.log('👋 Joueur déconnecté:', conn.peer);
+        const onClose = () => {
+            const peerId = conn.peer;
+            console.log('👋 Joueur déconnecté:', peerId);
             this.connections = this.connections.filter(c => c !== conn);
+            this._connectedPeers.delete(peerId);
             if (this.onPlayerLeft) {
-                this.onPlayerLeft(conn.peer);
+                this.onPlayerLeft(peerId);
             }
-        });
+        };
+
+        conn.on('open',  onOpen);
+        conn.on('data',  onData);
+        conn.on('close', onClose);
     }
 
     /**
@@ -114,6 +152,8 @@ export class Multiplayer {
      * @param {Object} data - Données à envoyer
      */
     broadcast(data) {
+        // ✅ Ajouter un ID unique pour détecter les doublons côté receveur
+        data.msgId = `${this.playerId}-${++this._msgCounter}`;
         this.connections.forEach(conn => {
             if (conn.open) {
                 conn.send(data);
@@ -131,6 +171,17 @@ export class Multiplayer {
         if (conn && conn.open) {
             conn.send(data);
         }
+    }
+
+    /**
+     * Envoyer à tous sauf un pair spécifique (pour le relais hôte)
+     */
+    broadcastExcept(data, excludePeerId) {
+        this.connections.forEach(conn => {
+            if (conn.open && conn.peer !== excludePeerId) {
+                conn.send(data);
+            }
+        });
     }
 
     /**
