@@ -134,6 +134,21 @@
                         <span>Meeple Abbé</span>
                     </label>
                 </details>
+                <details>
+                    <summary><strong>Auberges &amp; Cathédrales</strong></summary>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-large-meeple">
+                        <span>Grand Meeple</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-cathedrals" checked>
+                        <span>Cathédrales</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-inns" checked>
+                        <span>Auberges</span>
+                    </label>
+                </details>
             </div>
 
             <div class="config-section">
@@ -145,6 +160,10 @@
                 <label class="toggle-option">
                     <input type="checkbox" id="tiles-abbot">
                     <span>L'Abbé (+8 tuiles)</span>
+                </label>
+                <label class="toggle-option">
+                    <input type="checkbox" id="tiles-inns-cathedrals">
+                    <span>Auberges &amp; Cathédrales (+18 tuiles)</span>
                 </label>
             </div>
 
@@ -201,8 +220,10 @@
         
                 <!-- Boutons principaux -->
                 <div id="mobile-actions">
-                    <button id="mobile-undo-btn" class="mobile-action-btn undo-btn">Annuler</button>
-                    <button id="mobile-end-turn-btn" class="mobile-action-btn end-turn-btn">Terminer mon tour</button>
+                    <div class="mobile-main-btns">
+                        <button id="mobile-undo-btn" class="mobile-action-btn undo-btn">Annuler</button>
+                        <button id="mobile-end-turn-btn" class="mobile-action-btn end-turn-btn">Terminer mon tour</button>
+                    </div>
                     <div class="mobile-icon-row">
                         <button id="mobile-recenter-btn" class="mobile-icon-btn" title="Recentrer">🎯</button>
                         <button id="mobile-highlight-btn" class="mobile-icon-btn" title="Dernière tuile">📌</button>
@@ -236,6 +257,7 @@
     <!-- Modale des scores finaux -->
     <div id="final-scores-modal" class="modal" style="display: none;">
         <div class="modal-content final-scores-content">
+            <button id="close-final-scores-btn" class="final-scores-close-btn">✕</button>
             <h2>🏆 Scores finaux</h2>
             <table id="final-scores-table">
                 <thead>
@@ -252,7 +274,6 @@
                     <!-- Rempli dynamiquement -->
                 </tbody>
             </table>
-            <button id="close-final-scores-btn" class="modal-btn confirm">Fermer</button>
         </div>
     </div>
 

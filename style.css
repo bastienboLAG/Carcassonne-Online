@@ -988,9 +988,29 @@ button:disabled {
     height: 30px;
 }
 
-#close-final-scores-btn {
-    width: 100%;
-    margin-top: 10px;
+.final-scores-close-btn {
+    position: sticky;
+    top: 8px;
+    float: right;
+    z-index: 10;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: background 0.15s;
+    margin-bottom: -28px;
+}
+
+.final-scores-close-btn:hover {
+    background: #c0392b;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1167,6 +1187,12 @@ button:disabled {
         flex: 1;
     }
 
+    .mobile-main-btns {
+        display: flex;
+        flex-direction: row;
+        gap: 4px;
+    }
+
     .mobile-action-btn {
         border: none;
         border-radius: 6px;
@@ -1175,7 +1201,8 @@ button:disabled {
         cursor: pointer;
         padding: 6px 8px;
         text-align: center;
-        width: 100%;
+        flex: 1;
+        min-height: 52px;
     }
 
     .mobile-action-btn.undo-btn {
@@ -1186,7 +1213,6 @@ button:disabled {
     .mobile-action-btn.end-turn-btn {
         background: #2ecc71;
         color: #000;
-        flex: 1;
     }
 
     .mobile-action-btn:disabled {

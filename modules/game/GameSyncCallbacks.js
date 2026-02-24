@@ -26,6 +26,7 @@ export class GameSyncCallbacks {
         onAbbeRecalledUndo,
         updateTurnDisplay,
         poserTuileSync,
+        afficherMessage,
     }) {
         this.gameSync        = gameSync;
         this.gameState       = gameState;
@@ -49,6 +50,7 @@ export class GameSyncCallbacks {
         this.onAbbeRecalledUndo = onAbbeRecalledUndo; // (x, y, key, playerId) => void
         this.updateTurnDisplay = updateTurnDisplay;   // () => void
         this.poserTuileSync    = poserTuileSync;      // (x, y, tile) => void
+        this.afficherMessage   = afficherMessage;     // (msg) => void
     }
 
     /**
@@ -128,12 +130,13 @@ export class GameSyncCallbacks {
         };
 
         // ── Mise à jour du compteur de meeples ───────────────────────────────
-        gs.onMeepleCountUpdate = (playerId, meeples, hasAbbot) => {
-            console.log('🎭 [SYNC] Mise à jour compteur reçue:', playerId, meeples, 'hasAbbot:', hasAbbot);
+        gs.onMeepleCountUpdate = (playerId, meeples, hasAbbot, hasLargeMeeple) => {
+            console.log('🎭 [SYNC] Mise à jour compteur reçue:', playerId, meeples, 'hasAbbot:', hasAbbot, 'hasLarge:', hasLargeMeeple);
             const player = this.gameState.players.find(p => p.id === playerId);
             if (player) {
                 player.meeples = meeples;
-                if (hasAbbot !== undefined) player.hasAbbot = hasAbbot;
+                if (hasAbbot       !== undefined) player.hasAbbot       = hasAbbot;
+                if (hasLargeMeeple !== undefined) player.hasLargeMeeple = hasLargeMeeple;
                 this.eventBus.emit('meeple-count-updated', { playerId, meeples });
             }
         };
@@ -168,9 +171,27 @@ export class GameSyncCallbacks {
         };
 
         // ── Fin de partie ─────────────────────────────────────────────────────
-        gs.onGameEnded = (detailedScores) => {
+        gs.onPlayerDisconnected = (peerId, playerName, nextPlayerIndex) => {
+            console.log('👋 [SYNC] Joueur déconnecté:', playerName);
+            // Retirer le joueur de gameState côté invité
+            if (this.gameState) {
+                this.gameState.players = this.gameState.players.filter(p => p.id !== peerId);
+                this.gameState.currentPlayerIndex = nextPlayerIndex;
+            }
+            if (this.afficherMessage) this.afficherMessage(`💔 ${playerName} s'est déconnecté.`);
+            // Mettre à jour le tour
+            if (this.turnManager) {
+                this.turnManager.updateTurnState();
+                this.turnManager.eventBus.emit('turn-changed', {
+                    isMyTurn: this.turnManager.isMyTurn,
+                    currentPlayer: this.turnManager.getCurrentPlayer()
+                });
+            }
+        };
+
+        gs.onGameEnded = (detailedScores, destroyedTilesCount = 0) => {
             console.log('🏁 [SYNC] Fin de partie reçue');
-            this.onFinalScores(detailedScores);
+            this.onFinalScores(detailedScores, destroyedTilesCount);
         };
 
         // ── Tuile détruite ────────────────────────────────────────────────────
