@@ -1,3 +1,5 @@
+import { getMeepleSize } from './MeepleConfig.js';
+
 /**
  * MeepleSelectorUI - Gère le sélecteur de type de meeple
  * CODE COPIÉ EXACTEMENT de afficherSelecteurMeeple et getPlayerColor
@@ -39,6 +41,7 @@ export class MeepleSelectorUI {
         selector.style.transform = 'translateX(-50%)';
         selector.style.zIndex = '1000';
         selector.style.display = 'flex';
+        selector.style.alignItems = 'flex-end';
         selector.style.gap = '0px';
         selector.style.padding = '2px';
         selector.style.background = 'rgba(44, 62, 80, 0.5)';
@@ -103,8 +106,9 @@ export class MeepleSelectorUI {
             
             const img = document.createElement('img');
             img.src = meeple.image;
-            img.style.width = '30px';
-            img.style.height = '30px';
+            const { width, height } = getMeepleSize(meeple.type, 'selector');
+            img.style.width  = width;
+            img.style.height = height;
             img.style.display = 'block';
             
             option.appendChild(img);

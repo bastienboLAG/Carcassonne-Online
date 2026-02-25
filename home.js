@@ -11,6 +11,8 @@ import { EventBus }               from './modules/core/EventBus.js';
 import { RuleRegistry }           from './modules/core/RuleRegistry.js';
 import { BaseRules }              from './modules/rules/BaseRules.js';
 import { AbbeRules }              from './modules/rules/AbbeRules.js';
+import { InnsRules }              from './modules/rules/InnsRules.js';
+import { getMeepleSize }          from './modules/MeepleConfig.js';
 import { TurnManager }            from './modules/game/TurnManager.js';
 import { UndoManager }            from './modules/game/UndoManager.js';
 import { TilePlacement }          from './modules/game/TilePlacement.js';
@@ -38,6 +40,20 @@ const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
 // VARIABLES LOBBY
 // ═══════════════════════════════════════════════════════
 const multiplayer = new Multiplayer();
+// Callbacks heartbeat assignés dès le départ — heartbeatManager peut être null avant le démarrage
+multiplayer.onHeartbeatPing = () => heartbeatManager?.receivePing();
+multiplayer.onHeartbeatPong = (peerId) => heartbeatManager?.receivePong(peerId);
+
+/**
+ * Démarrer (ou redémarrer) le heartbeat avec le bon handler selon le contexte
+ * @param {Function} onTimeout - callback(peerId) en cas de timeout
+ */
+function _startHeartbeat(onTimeout) {
+    if (!multiplayer?.peer) return;
+    if (heartbeatManager) { heartbeatManager.stop(); heartbeatManager = null; }
+    heartbeatManager = new HeartbeatManager({ multiplayer, onPeerTimeout: onTimeout });
+    heartbeatManager.start();
+}
 const lobbyUI     = new LobbyUI(multiplayer);
 const modalUI     = new ModalUI();
 let gameCode      = null;
@@ -52,8 +68,8 @@ let eventListenersInstalled = false;
 let gameConfig = {
     playFields:         true,
     showRemainingTiles: true,
-    extensions: { base: true, abbot: false },
-    tileGroups: { base: true, abbot: false }
+    extensions: { base: true, abbot: false, largeMeeple: false, cathedrals: true, inns: true },
+    tileGroups: { base: true, abbot: false, inns_cathedrals: false }
 };
 
 // ═══════════════════════════════════════════════════════
@@ -135,6 +151,7 @@ eventBus.on('tile-drawn', (data) => {
 
     // Snapshot début de tour (sauf lors d'une annulation)
     if (undoManager && !data.fromNetwork && !data.fromUndo) {
+        undoManager.setLastPlacedTileBeforeTurn(lastPlacedTile);
         undoManager.saveTurnStart(placedMeeples);
     }
 
@@ -209,11 +226,14 @@ eventBus.on('meeple-count-updated', (data) => {
         const player = gameState?.players.find(p => p.id === data.playerId);
         gameSync.multiplayer.broadcast({
             type: 'meeple-count-update',
-            playerId: data.playerId,
-            meeples:  player ? player.meeples : data.meeples,
-            hasAbbot: player ? player.hasAbbot : undefined
+            playerId:       data.playerId,
+            meeples:        player ? player.meeples        : data.meeples,
+            hasAbbot:       player ? player.hasAbbot       : undefined,
+            hasLargeMeeple: player ? player.hasLargeMeeple : undefined
         });
     }
+    // Mettre à jour le panel mobile en temps réel pour tous les joueurs
+    updateMobilePlayers();
 });
 
 // ═══════════════════════════════════════════════════════
@@ -287,8 +307,12 @@ function applyPreset(preset) {
         'show_remaining':    'list-remaining',
         'test_deck':         'use-test-deck',
         'debug':             'enable-debug',
-        'abbot_extension':   'ext-abbot',
-        'abbot_tiles':       'tiles-abbot',
+        'abbot_extension':       'ext-abbot',
+        'abbot_tiles':           'tiles-abbot',
+        'large_meeple':          'ext-large-meeple',
+        'cathedrals_extension':  'ext-cathedrals',
+        'inns_extension':        'ext-inns',
+        'inns_cathedrals_tiles': 'tiles-inns-cathedrals',
     };
     for (const [key, id] of Object.entries(map)) {
         if (preset[key] !== undefined) {
@@ -313,8 +337,12 @@ function saveLobbyOptions() {
         show_remaining:  document.getElementById('list-remaining')?.checked ?? true,
         test_deck:       document.getElementById('use-test-deck')?.checked ?? false,
         debug:           document.getElementById('enable-debug')?.checked ?? false,
-        abbot_extension: document.getElementById('ext-abbot')?.checked ?? false,
-        abbot_tiles:     document.getElementById('tiles-abbot')?.checked ?? false,
+        abbot_extension:         document.getElementById('ext-abbot')?.checked              ?? false,
+        abbot_tiles:             document.getElementById('tiles-abbot')?.checked            ?? false,
+        large_meeple:            document.getElementById('ext-large-meeple')?.checked       ?? false,
+        cathedrals_extension:    document.getElementById('ext-cathedrals')?.checked         ?? true,
+        inns_extension:          document.getElementById('ext-inns')?.checked               ?? true,
+        inns_cathedrals_tiles:   document.getElementById('tiles-inns-cathedrals')?.checked  ?? false,
         unplaceable:     document.querySelector('input[name="unplaceable"]:checked')?.value ?? 'reshuffle',
     };
     localStorage.setItem(LS_KEY, JSON.stringify(state));
@@ -382,8 +410,12 @@ function syncAllOptions() {
         'list-remaining': document.getElementById('list-remaining')?.checked ?? true,
         'use-test-deck':  document.getElementById('use-test-deck')?.checked ?? false,
         'enable-debug':   document.getElementById('enable-debug')?.checked ?? false,
-        'ext-abbot':      document.getElementById('ext-abbot')?.checked ?? false,
-        'tiles-abbot':    document.getElementById('tiles-abbot')?.checked ?? false,
+        'ext-abbot':               document.getElementById('ext-abbot')?.checked              ?? false,
+        'tiles-abbot':             document.getElementById('tiles-abbot')?.checked            ?? false,
+        'ext-large-meeple':        document.getElementById('ext-large-meeple')?.checked       ?? false,
+        'ext-cathedrals':          document.getElementById('ext-cathedrals')?.checked         ?? true,
+        'ext-inns':                document.getElementById('ext-inns')?.checked               ?? true,
+        'tiles-inns-cathedrals':   document.getElementById('tiles-inns-cathedrals')?.checked  ?? false,
         'unplaceable':    document.querySelector('input[name="unplaceable"]:checked')?.value ?? 'reshuffle',
         'start':          document.querySelector('input[name="start"]:checked')?.value ?? 'unique',
     };
@@ -392,7 +424,7 @@ function syncAllOptions() {
 
 // Sauvegarder les options à chaque changement manuel
 document.querySelectorAll(
-    '#base-fields, #list-remaining, #use-test-deck, #enable-debug, #ext-abbot, #tiles-abbot'
+    '#base-fields, #list-remaining, #use-test-deck, #enable-debug, #ext-abbot, #tiles-abbot, #ext-large-meeple, #ext-cathedrals, #ext-inns, #tiles-inns-cathedrals'
 ).forEach(el => el.addEventListener('change', saveLobbyOptions));
 document.querySelectorAll('input[name="unplaceable"], input[name="start"]')
     .forEach(el => el.addEventListener('change', saveLobbyOptions));
@@ -455,7 +487,7 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
         lobbyUI.setPlayers(players);
 
         // Sync temps réel de toutes les options vers les invités
-        ['base-fields', 'list-remaining', 'use-test-deck', 'enable-debug', 'ext-abbot', 'tiles-abbot'].forEach(id => {
+        ['base-fields', 'list-remaining', 'use-test-deck', 'enable-debug', 'ext-abbot', 'tiles-abbot', 'ext-large-meeple', 'ext-cathedrals', 'ext-inns', 'tiles-inns-cathedrals'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('change', (e) => {
                 multiplayer.broadcast({ type: 'option-change', option: id, value: e.target.checked });
@@ -475,6 +507,13 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
 
         multiplayer.onPlayerJoined = (playerId) => {
             console.log('👤 Nouveau joueur connecté:', playerId);
+            // Démarrer/redémarrer le heartbeat avec handler lobby (kick de la liste)
+            _startHeartbeat((peerId) => {
+                players = players.filter(p => p.id !== peerId);
+                lobbyUI.setPlayers(players);
+                multiplayer.broadcast({ type: 'players-update', players });
+                console.warn(`💔 Joueur ${peerId} retiré du lobby (timeout heartbeat)`);
+            });
         };
 
         multiplayer.onDataReceived = (data, from) => {
@@ -499,8 +538,12 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
                     'use-test-deck':   document.getElementById('use-test-deck')?.checked   ?? false,
                     'enable-debug':    document.getElementById('enable-debug')?.checked    ?? false,
                     'unplaceable':     document.querySelector('input[name="unplaceable"]:checked')?.value ?? 'reshuffle',
-                    'ext-abbot':       document.getElementById('ext-abbot')?.checked       ?? false,
-                    'tiles-abbot':     document.getElementById('tiles-abbot')?.checked     ?? false,
+                    'ext-abbot':               document.getElementById('ext-abbot')?.checked              ?? false,
+                    'tiles-abbot':             document.getElementById('tiles-abbot')?.checked            ?? false,
+                    'ext-large-meeple':        document.getElementById('ext-large-meeple')?.checked       ?? false,
+                    'ext-cathedrals':          document.getElementById('ext-cathedrals')?.checked         ?? true,
+                    'ext-inns':                document.getElementById('ext-inns')?.checked               ?? true,
+                    'tiles-inns-cathedrals':   document.getElementById('tiles-inns-cathedrals')?.checked  ?? false,
                     'start':           document.querySelector('input[name="start"]:checked')?.value ?? 'unique',
                 };
                 multiplayer.sendTo(from, { type: 'options-sync', options: currentOptions });
@@ -584,6 +627,10 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
                 // Afficher le code d'invitation côté invité
                 document.getElementById('game-code-container').style.display = 'block';
                 document.getElementById('game-code-text').textContent = `Code: ${code}`;
+                // Démarrer le heartbeat côté invité (détecte si l'hôte disparaît)
+                _startHeartbeat((peerId) => {
+                    returnToInitialLobby("L'hote ne repond plus.");
+                });
             }
             if (data.type === 'players-update') {
                 players = data.players;
@@ -619,7 +666,7 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
             if (data.type === 'options-sync') {
                 // ✅ Réception de l'état complet des options
                 const opts = data.options;
-                ['base-fields', 'list-remaining', 'use-test-deck', 'enable-debug', 'ext-abbot', 'tiles-abbot'].forEach(id => {
+                ['base-fields', 'list-remaining', 'use-test-deck', 'enable-debug', 'ext-abbot', 'tiles-abbot', 'ext-large-meeple', 'ext-cathedrals', 'ext-inns', 'tiles-inns-cathedrals'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el && opts[id] !== undefined) el.checked = opts[id];
                 });
@@ -691,11 +738,15 @@ document.getElementById('start-game-btn').addEventListener('click', async () => 
         startType: document.querySelector('input[name="start"]:checked')?.value || 'unique',
         extensions: {
             base:  true,
-            abbot: document.getElementById('ext-abbot')?.checked ?? false
+            abbot:       document.getElementById('ext-abbot')?.checked        ?? false,
+            largeMeeple: document.getElementById('ext-large-meeple')?.checked  ?? false,
+            cathedrals:  document.getElementById('ext-cathedrals')?.checked    ?? true,
+            inns:        document.getElementById('ext-inns')?.checked          ?? true
         },
         tileGroups: {
             base:  true,
-            abbot: document.getElementById('tiles-abbot')?.checked ?? false,
+            abbot:            document.getElementById('tiles-abbot')?.checked           ?? false,
+            inns_cathedrals:  document.getElementById('tiles-inns-cathedrals')?.checked  ?? false,
             river: document.querySelector('input[name="start"]:checked')?.value === 'river'
         }
     };
@@ -726,7 +777,7 @@ function initializeGameModules() {
     tilePreviewUI.init();
 
     zoneMerger = new ZoneMerger(plateau);
-    scoring    = new Scoring(zoneMerger);
+    scoring    = new Scoring(zoneMerger, gameConfig);
 
     tilePlacement  = new TilePlacement(eventBus, plateau, zoneMerger);
     meeplePlacement = new MeeplePlacement(eventBus, gameState, zoneMerger);
@@ -828,6 +879,10 @@ async function startGame() {
     } else {
         console.log('ℹ️ [HOST] abbot désactivé');
     }
+    if (gameConfig.extensions?.largeMeeple) {
+        gameState.players.forEach(p => { p.hasLargeMeeple = true; });
+        console.log('✅ [HOST] hasLargeMeeple initialisé');
+    }
 
     gameSync = new GameSync(multiplayer, gameState, null);
     gameSync.init();
@@ -873,6 +928,10 @@ async function startGameForInvite() {
     } else {
         console.log('ℹ️ [INVITÉ] extension abbot désactivée — gameConfig:', JSON.stringify(gameConfig.extensions));
     }
+    if (gameConfig.extensions?.largeMeeple) {
+        gameState.players.forEach(p => { p.hasLargeMeeple = true; });
+        console.log('✅ [INVITÉ] hasLargeMeeple initialisé');
+    }
 
     gameSync = new GameSync(multiplayer, gameState, originalLobbyHandler);
     gameSync.init();
@@ -907,6 +966,10 @@ function _postStartSetup() {
         ruleRegistry.register('abbot', AbbeRules, gameConfig);
         ruleRegistry.enable('abbot');
     }
+    if (gameConfig.extensions?.largeMeeple || gameConfig.extensions?.cathedrals || gameConfig.extensions?.inns) {
+        ruleRegistry.register('inns', InnsRules, gameConfig);
+        ruleRegistry.enable('inns');
+    }
 
     document.getElementById('remaining-tiles-btn').style.display =
         gameConfig.showRemainingTiles ? 'block' : 'none';
@@ -914,11 +977,10 @@ function _postStartSetup() {
         gameConfig.enableDebug ? 'block' : 'none';
     document.getElementById('back-to-lobby-btn').style.display = isHost ? 'block' : 'none';
 
-    // Démarrer le heartbeat si partie multijoueur
+    // Redémarrer le heartbeat avec le handler de jeu (gestion déconnexion en cours de partie)
     if (multiplayer?.peer) {
         const handleDisconnect = (peerId) => {
             if (!isHost) return;
-            // Retirer aussi du tableau lobby
             players = players.filter(p => p.id !== peerId);
             if (turnManager) {
                 turnManager.handlePlayerDisconnected(peerId, {
@@ -931,18 +993,10 @@ function _postStartSetup() {
                     }
                 });
             }
-            // Retirer du heartbeat pour éviter un double déclenchement
             if (heartbeatManager) heartbeatManager._timedOut.add(peerId);
         };
-
-        heartbeatManager = new HeartbeatManager({
-            multiplayer,
-            onPeerTimeout: handleDisconnect
-        });
-        multiplayer.onHeartbeatPing = () => heartbeatManager.receivePing();
-        multiplayer.onHeartbeatPong = (peerId) => heartbeatManager.receivePong(peerId);
-        multiplayer.onPlayerLeft    = handleDisconnect;
-        heartbeatManager.start();
+        multiplayer.onPlayerLeft = handleDisconnect;
+        _startHeartbeat(handleDisconnect);
     }
 }
 
@@ -980,9 +1034,15 @@ function updateMobilePlayers() {
 
         const meeplesDiv = document.createElement('div');
         meeplesDiv.className = 'mobile-player-meeples';
+        const applyMeepleSize = (el, type) => {
+            const { width, height } = getMeepleSize(type, 'panelMobile');
+            el.style.width  = width;
+            el.style.height = height;
+        };
         for (let i = 0; i < 7; i++) {
             const img = document.createElement('img');
             img.src = `./assets/Meeples/${colorCap}/Normal.png`;
+            applyMeepleSize(img, 'Normal');
             if (i >= player.meeples) img.classList.add('unavailable');
             meeplesDiv.appendChild(img);
         }
@@ -992,8 +1052,19 @@ function updateMobilePlayers() {
             abbot.src = `./assets/Meeples/${colorCap}/Abbot.png`;
             abbot.alt = 'Abbé';
             abbot.style.marginLeft = '6px';
+            applyMeepleSize(abbot, 'Abbot');
             if (!player.hasAbbot) abbot.classList.add('unavailable');
             meeplesDiv.appendChild(abbot);
+        }
+        // Grand meeple (si extension activée)
+        if (gameConfig?.extensions?.largeMeeple) {
+            const large = document.createElement('img');
+            large.src = `./assets/Meeples/${colorCap}/Large.png`;
+            large.alt = 'Grand Meeple';
+            large.style.marginLeft = '6px';
+            applyMeepleSize(large, 'Large');
+            if (!player.hasLargeMeeple) large.classList.add('unavailable');
+            meeplesDiv.appendChild(large);
         }
         card.appendChild(meeplesDiv);
         container.appendChild(card);
@@ -1341,6 +1412,12 @@ function placerMeeple(x, y, position, meepleType) {
         if (player) player.hasAbbot = false;
         eventBus.emit('meeple-count-updated', { playerId: multiplayer.playerId });
     }
+    // Si le grand meeple est posé, il n'est plus disponible
+    if (meepleType === 'Large' || meepleType === 'Large-Farmer') {
+        const player = gameState.players.find(p => p.id === multiplayer.playerId);
+        if (player) player.hasLargeMeeple = false;
+        eventBus.emit('meeple-count-updated', { playerId: multiplayer.playerId });
+    }
 
     if (undoManager && isMyTurn) {
         undoManager.markMeeplePlaced(x, y, position, `${x},${y},${position}`);
@@ -1435,11 +1512,17 @@ function setupEventListeners() {
                 meeplesToReturn.forEach(key => {
                     const meeple = placedMeeples[key];
                     if (meeple) {
-                        // Si c'est l'Abbé, remettre hasAbbot au lieu d'incrémenter les meeples normaux
+                        // Retourner le meeple selon son type
                         if (meeple.type === 'Abbot') {
                             const player = gameState.players.find(p => p.id === meeple.playerId);
                             if (player) {
                                 player.hasAbbot = true;
+                                eventBus.emit('meeple-count-updated', { playerId: meeple.playerId });
+                            }
+                        } else if (meeple.type === 'Large' || meeple.type === 'Large-Farmer') {
+                            const player = gameState.players.find(p => p.id === meeple.playerId);
+                            if (player) {
+                                player.hasLargeMeeple = true;
                                 eventBus.emit('meeple-count-updated', { playerId: meeple.playerId });
                             }
                         } else {
@@ -1584,6 +1667,8 @@ function setupEventListeners() {
             }
 
         } else if (undoneAction.type === 'tile') {
+            // Restaurer l'épingle vers la tuile posée avant ce tour
+            lastPlacedTile = undoneAction.restoredLastPlacedTile ?? null;
             const { x, y } = undoneAction.tile;
             let tileEl = document.querySelector(`.tile[data-pos="${x},${y}"]`);
             if (!tileEl) {
@@ -1626,6 +1711,9 @@ function setupEventListeners() {
         gameState.players.forEach(p => eventBus.emit('meeple-count-updated', { playerId: p.id }));
         eventBus.emit('score-updated');
         updateTurnDisplay();
+        updateMobileTilePreview();
+        updateMobilePlayers();
+        updateMobileButtons();
     });
 
     // Tuiles restantes
@@ -1659,7 +1747,15 @@ function setupEventListeners() {
         const mobileBtn = (id, fn) => {
             const el = document.getElementById(id);
             if (!el) return;
-            el.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
+            // touchstart vide nécessaire pour que :active CSS fonctionne sur iOS
+            el.addEventListener('touchstart', () => {}, { passive: true });
+            el.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                fn();
+                // Forcer le retrait de l'état actif après l'action
+                el.blur();
+            }, { passive: false });
         };
 
         mobileBtn('mobile-end-turn-btn', () => {
@@ -1769,6 +1865,7 @@ function returnToLobby() {
 
     ruleRegistry.disable('base');
     ruleRegistry.disable('abbot'); // no-op si non enregistré
+    ruleRegistry.disable('inns');  // no-op si non enregistré
 
     deck.tiles = []; deck.currentIndex = 0; deck.totalTiles = 0;
     plateau.reset();

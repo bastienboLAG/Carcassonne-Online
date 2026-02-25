@@ -1,3 +1,5 @@
+import { getMeepleSize } from './MeepleConfig.js';
+
 /**
  * ScorePanelUI - Affichage du tableau de scores avec les meeples
  * CONNECTÉ À EVENTBUS
@@ -63,10 +65,17 @@ export class ScorePanelUI {
             meeplesDisplay.className = 'player-meeples-display';
             const colorCap = player.color.charAt(0).toUpperCase() + player.color.slice(1);
 
+            const applySize = (el, type) => {
+                const { width, height } = getMeepleSize(type, 'panel');
+                el.style.width  = width;
+                el.style.height = height;
+            };
+
             for (let i = 0; i < 7; i++) {
                 const meeple = document.createElement('img');
                 meeple.src = `./assets/Meeples/${colorCap}/Normal.png`;
                 meeple.alt = 'Meeple';
+                applySize(meeple, 'Normal');
                 if (i >= player.meeples) meeple.classList.add('unavailable');
                 meeplesDisplay.appendChild(meeple);
             }
@@ -77,11 +86,22 @@ export class ScorePanelUI {
                 abbot.src = `./assets/Meeples/${colorCap}/Abbot.png`;
                 abbot.alt = 'Abbé';
                 abbot.style.marginLeft = '6px';
-                abbot.style.width  = '25px';
-                abbot.style.height = '25px';
+                applySize(abbot, 'Abbot');
                 abbot.style.objectFit = 'contain';
                 if (!player.hasAbbot) abbot.classList.add('unavailable');
                 meeplesDisplay.appendChild(abbot);
+            }
+
+            // Grand meeple (si extension activée)
+            if (this.config?.extensions?.largeMeeple) {
+                const large = document.createElement('img');
+                large.src = `./assets/Meeples/${colorCap}/Large.png`;
+                large.alt = 'Grand Meeple';
+                large.style.marginLeft = '6px';
+                applySize(large, 'Large');
+                large.style.objectFit = 'contain';
+                if (!player.hasLargeMeeple) large.classList.add('unavailable');
+                meeplesDisplay.appendChild(large);
             }
 
             card.appendChild(meeplesDisplay);

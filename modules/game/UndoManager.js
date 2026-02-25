@@ -18,6 +18,7 @@ export class UndoManager {
         this.tilePlacedThisTurn = false;
         this.meeplePlacedThisTurn = false;
         this.lastTilePlaced = null; // {x, y, tile}
+        this.lastPlacedTileBeforeTurn = null; // {x, y} — pour restaurer l'épingle après annulation
         this.lastMeeplePlaced = null; // {x, y, position, key}
 
         // État abbé
@@ -53,8 +54,10 @@ export class UndoManager {
             playerMeeples: this.gameState.players.map(p => ({
                 id: p.id,
                 meeples: p.meeples,
-                hasAbbot: p.hasAbbot
-            }))
+                hasAbbot: p.hasAbbot,
+                hasLargeMeeple: p.hasLargeMeeple
+            })),
+            lastPlacedTile: this.lastPlacedTileBeforeTurn // épingle avant ce tour
         };
         
         // Reset état du tour
@@ -93,7 +96,8 @@ export class UndoManager {
             playerMeeples: this.gameState.players.map(p => ({
                 id: p.id,
                 meeples: p.meeples,
-                hasAbbot: p.hasAbbot
+                hasAbbot: p.hasAbbot,
+                hasLargeMeeple: p.hasLargeMeeple
             }))
         };
         
@@ -170,7 +174,8 @@ export class UndoManager {
             
             const undoneAction = {
                 type: 'tile',
-                tile: this.lastTilePlaced
+                tile: this.lastTilePlaced,
+                restoredLastPlacedTile: this.turnStartSnapshot.lastPlacedTile ?? null
             };
             
             this.tilePlacedThisTurn = false;
@@ -183,6 +188,13 @@ export class UndoManager {
         // Rien à annuler
         console.log('⚠️ Rien à annuler');
         return null;
+    }
+
+    /**
+     * Mettre à jour la dernière tuile posée avant ce tour (pour restauration après annulation)
+     */
+    setLastPlacedTileBeforeTurn(tile) {
+        this.lastPlacedTileBeforeTurn = tile ? { x: tile.x, y: tile.y } : null;
     }
 
     /**
@@ -236,7 +248,8 @@ export class UndoManager {
             const player = this.gameState.players.find(p => p.id === saved.id);
             if (player) {
                 player.meeples  = saved.meeples;
-                if (saved.hasAbbot !== undefined) player.hasAbbot = saved.hasAbbot;
+                if (saved.hasAbbot       !== undefined) player.hasAbbot       = saved.hasAbbot;
+                if (saved.hasLargeMeeple !== undefined) player.hasLargeMeeple = saved.hasLargeMeeple;
             }
         });
     }
