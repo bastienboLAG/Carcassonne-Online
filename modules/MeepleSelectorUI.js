@@ -48,7 +48,6 @@ export class MeepleSelectorUI {
         
         // ✅ Proposer les meeples selon le type de zone
         let meepleTypes = [];
-        const player = this.gameState.players.find(p => p.id === this.multiplayer.playerId);
         const hasLarge = player?.hasLargeMeeple === true && this.config?.extensions?.largeMeeple;
 
         if (zoneType === 'field') {
