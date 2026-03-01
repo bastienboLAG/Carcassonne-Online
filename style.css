@@ -33,13 +33,18 @@ html, body {
     flex-direction: column;
     align-items: center;
     padding: 20px;
-    gap: 20px;
+    gap: 12px;
     border-right: 3px solid #444;
     z-index: 10;
     box-shadow: 4px 0 10px rgba(0,0,0,0.5);
     overflow-y: hidden;
     height: auto;
     max-height: 100vh;
+}
+
+#game-ui h2 {
+    margin: 0;
+    font-size: 18px;
 }
 
 #current-tile-container {
@@ -58,6 +63,18 @@ html, body {
     border-radius: 5px;
     width: 100%;
     text-align: center;
+}
+
+#game-timer {
+    font-size: 15px;
+    font-weight: bold;
+    padding: 8px 10px;
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 5px;
+    width: 100%;
+    text-align: center;
+    color: #fff;
+    letter-spacing: 1px;
 }
 
 #board-container {
@@ -510,6 +527,23 @@ button:disabled {
     gap: 15px;
 }
 
+.color-option--spectator {
+    grid-column: 1 / -1;
+    border-style: dashed;
+    border-color: rgba(255,255,255,0.2);
+    opacity: 0.75;
+}
+
+.color-option--spectator:hover {
+    opacity: 1;
+}
+
+.color-option--spectator.selected {
+    border-color: gold;
+    border-style: dashed;
+    opacity: 1;
+}
+
 .color-option {
     display: flex;
     justify-content: center;
@@ -716,11 +750,61 @@ button:disabled {
     cursor: pointer;
     padding: 5px;
     user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    list-style: none; /* masque la flèche native pour en mettre une custom */
+}
+
+.extensions-section summary::-webkit-details-marker {
+    display: none;
+}
+
+/* Flèche custom via ::before — pointe à droite (fermé), vers le bas (ouvert) */
+.extensions-section summary::before {
+    content: '▶';
+    font-size: 10px;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+    color: rgba(255,255,255,0.6);
+}
+
+.extensions-section details[open] > summary::before {
+    transform: rotate(90deg);
 }
 
 .extensions-section summary:hover {
     color: gold;
 }
+
+.extensions-section summary:hover::before {
+    color: gold;
+}
+
+/* Espace entre le titre et la coche maître */
+.extensions-section summary strong {
+    flex: 1;
+}
+
+/* Coche maître dans les summary */
+.ext-master {
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
+    cursor: pointer;
+    accent-color: gold;
+    flex-shrink: 0;
+    /* Empêche le clic sur la coche de toggle le <details> */
+    position: relative;
+    z-index: 1;
+}
+
+/* Coche maître dans le h3 Tuiles */
+h3 .ext-master {
+    vertical-align: middle;
+    margin-left: 8px;
+}
+
 
 .start-button {
     display: block;
@@ -834,6 +918,12 @@ button:disabled {
     background-color: rgba(46, 204, 113, 0.1);
 }
 
+.player-score-card.active-bonus {
+    border-color: gold;
+    background-color: rgba(255, 215, 0, 0.12);
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+}
+
 .player-score-header {
     display: flex;
     align-items: center;
@@ -845,6 +935,14 @@ button:disabled {
     color: #2ecc71;
     font-size: 18px;
     font-weight: bold;
+}
+
+.player-score-header .turn-indicator.bonus {
+    color: gold;
+}
+
+.player-score-header .bonus-star {
+    font-size: 14px;
 }
 
 .player-score-name {
@@ -862,14 +960,12 @@ button:disabled {
 
 .player-meeples-display {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 5px;
     flex-wrap: wrap;
 }
 
 .player-meeples-display img {
-    width: 25px;
-    height: 25px;
     object-fit: contain;
     opacity: 0.9;
 }
@@ -1089,6 +1185,14 @@ button:disabled {
         opacity: 1;
         transform: scale(1.05);
         box-shadow: 0 0 8px rgba(46, 204, 113, 0.4);
+    }
+
+    .mobile-player-card.active-bonus {
+        border-color: gold;
+        background: rgba(255, 215, 0, 0.15);
+        opacity: 1;
+        transform: scale(1.05);
+        box-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
     }
 
     .mobile-player-name {

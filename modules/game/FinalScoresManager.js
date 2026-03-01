@@ -3,13 +3,14 @@
  * Extrait de home.js pour alléger le fichier principal
  */
 export class FinalScoresManager {
-    constructor({ gameState, scoring, zoneMerger, gameSync, eventBus, updateTurnDisplay }) {
+    constructor({ gameState, scoring, zoneMerger, gameSync, eventBus, updateTurnDisplay, gameConfig = null }) {
         this.gameState       = gameState;
         this.scoring         = scoring;
         this.zoneMerger      = zoneMerger;
         this.gameSync        = gameSync;
         this.eventBus        = eventBus;
         this.updateTurnDisplay = updateTurnDisplay;
+        this.gameConfig      = gameConfig;
 
         this.gameEnded       = false;
         this.finalScoresData = null;
@@ -53,8 +54,10 @@ export class FinalScoresManager {
                     cities:       playerScore.cities,
                     roads:        playerScore.roads,
                     monasteries:  playerScore.monasteries,
-                    fields:       playerScore.fields
+                    fields:       playerScore.fields,
+                    goods:        playerScore.goods ?? 0
                 };
+                player.goods = playerScore.goodsTokens ?? { cloth: 0, wheat: 0, wine: 0 };
             }
         });
 
@@ -69,6 +72,16 @@ export class FinalScoresManager {
     showModal(detailedScores) {
         const modal = document.getElementById('final-scores-modal');
         const isMobile = window.innerWidth < 768;
+
+        // Arrêter le timer de partie et afficher le temps final dans la modale
+        if (typeof stopGameTimer === 'function') stopGameTimer();
+        const timerEl = document.getElementById('game-timer');
+        const timerText = timerEl ? timerEl.textContent : '';
+        if (timerEl) timerEl.style.display = 'none';
+        const finalTimerEl = document.getElementById('final-scores-timer');
+        if (finalTimerEl && timerText) {
+            finalTimerEl.textContent = `Durée de la partie : ${timerText.replace('⏱ ', '')}`;
+        }
 
         if (isMobile) {
             this._showModalMobile(detailedScores, modal);
@@ -87,21 +100,30 @@ export class FinalScoresManager {
         if (cardsContainer) cardsContainer.style.display = 'none';
 
         detailedScores.forEach(player => {
+            if (player.color === 'spectator') return; // spectateur exclu du tableau
             const row      = document.createElement('tr');
             const colorCap = player.color.charAt(0).toUpperCase() + player.color.slice(1);
+            const imgSrc   = player.color === 'spectator'
+                ? 'assets/Meeples/Spectator.png'
+                : `assets/Meeples/${colorCap}/Normal.png`;
 
             const nameCell = document.createElement('td');
             nameCell.innerHTML = `
                 <div class="player-name-cell">
-                    <img src="assets/Meeples/${colorCap}/Normal.png" alt="${player.color}">
+                    <img src="${imgSrc}" alt="${player.color}">
                     <span>${player.name}</span>
                 </div>`;
             row.appendChild(nameCell);
 
-            [player.cities, player.roads, player.monasteries, player.fields, player.total].forEach((val, i) => {
+            const hasMerchants = this.gameConfig?.extensions?.merchants;
+            const vals = hasMerchants
+                ? [player.cities, player.roads, player.monasteries, player.fields, player.goods ?? 0, player.total]
+                : [player.cities, player.roads, player.monasteries, player.fields, player.total];
+            const totalIdx = vals.length - 1;
+            vals.forEach((val, i) => {
                 const td = document.createElement('td');
                 td.textContent = val;
-                if (i === 4) td.style.fontWeight = 'bold';
+                if (i === totalIdx) td.style.fontWeight = 'bold';
                 row.appendChild(td);
             });
 
@@ -145,10 +167,16 @@ export class FinalScoresManager {
             margin-bottom: 16px;
         `;
 
-        const labels = ['Villes', 'Routes', 'Abbayes', 'Champs'];
-        const keys   = ['cities', 'roads', 'monasteries', 'fields'];
+        const hasMerchantsMobile = this.gameConfig?.extensions?.merchants;
+        const labels = hasMerchantsMobile
+            ? ['Villes', 'Routes', 'Abbayes', 'Champs', 'Marchandises']
+            : ['Villes', 'Routes', 'Abbayes', 'Champs'];
+        const keys = hasMerchantsMobile
+            ? ['cities', 'roads', 'monasteries', 'fields', 'goods']
+            : ['cities', 'roads', 'monasteries', 'fields'];
 
         detailedScores.forEach((player, index) => {
+            if (player.color === 'spectator') return;
             const colorCap = player.color.charAt(0).toUpperCase() + player.color.slice(1);
             const isWinner = index === 0;
 
@@ -222,6 +250,8 @@ export class FinalScoresManager {
                     roads:       p.scoreDetail?.roads       || 0,
                     monasteries: p.scoreDetail?.monasteries || 0,
                     fields:      p.scoreDetail?.fields      || 0,
+                    goods:       p.scoreDetail?.goods       || 0,
+                    goodsTokens: p.goods || { cloth: 0, wheat: 0, wine: 0 },
                     total:       p.score
                 }))
                 .sort((a, b) => b.total - a.total);

@@ -24,6 +24,7 @@ export class GameSyncCallbacks {
         onDeckReshuffled,
         onAbbeRecalled,
         onAbbeRecalledUndo,
+        onBonusTurnStarted,
         updateTurnDisplay,
         poserTuileSync,
         afficherMessage,
@@ -47,7 +48,8 @@ export class GameSyncCallbacks {
         this.onTileDestroyed   = onTileDestroyed;     // (id, name, action) => void
         this.onDeckReshuffled  = onDeckReshuffled;    // (tiles, idx) => void
         this.onAbbeRecalled    = onAbbeRecalled;      // (x, y, key, playerId, points) => void
-        this.onAbbeRecalledUndo = onAbbeRecalledUndo; // (x, y, key, playerId) => void
+        this.onAbbeRecalledUndo  = onAbbeRecalledUndo;  // (x, y, key, playerId) => void
+        this.onBonusTurnStarted  = onBonusTurnStarted ?? null; // (playerId) => void
         this.updateTurnDisplay = updateTurnDisplay;   // () => void
         this.poserTuileSync    = poserTuileSync;      // (x, y, tile) => void
         this.afficherMessage   = afficherMessage;     // (msg) => void
@@ -111,8 +113,13 @@ export class GameSyncCallbacks {
         };
 
         // ── Fin de tour ───────────────────────────────────────────────────────
-        gs.onTurnEnded = (nextPlayerIndex, gameStateData) => {
-            this.turnManager.receiveTurnEnded(nextPlayerIndex, gameStateData);
+        gs.onTurnEnded = (nextPlayerIndex, gameStateData, isBonusTurn = false) => {
+            this.turnManager.receiveTurnEnded(nextPlayerIndex, gameStateData, isBonusTurn);
+            // Si tour bonus : afficher le toast ici — plus besoin du message bonus-turn-started séparé
+            if (isBonusTurn && this.onBonusTurnStarted) {
+                const currentPlayer = this.gameState.getCurrentPlayer();
+                this.onBonusTurnStarted(currentPlayer?.id);
+            }
         };
 
         // ── Pioche d'une tuile ────────────────────────────────────────────────
@@ -130,19 +137,20 @@ export class GameSyncCallbacks {
         };
 
         // ── Mise à jour du compteur de meeples ───────────────────────────────
-        gs.onMeepleCountUpdate = (playerId, meeples, hasAbbot, hasLargeMeeple) => {
-            console.log('🎭 [SYNC] Mise à jour compteur reçue:', playerId, meeples, 'hasAbbot:', hasAbbot, 'hasLarge:', hasLargeMeeple);
+        gs.onMeepleCountUpdate = (playerId, meeples, hasAbbot, hasLargeMeeple, hasPig) => {
+            console.log('🎭 [SYNC] Mise à jour compteur reçue:', playerId, meeples, 'hasAbbot:', hasAbbot, 'hasLarge:', hasLargeMeeple, 'hasPig:', hasPig);
             const player = this.gameState.players.find(p => p.id === playerId);
             if (player) {
                 player.meeples = meeples;
                 if (hasAbbot       !== undefined) player.hasAbbot       = hasAbbot;
                 if (hasLargeMeeple !== undefined) player.hasLargeMeeple = hasLargeMeeple;
+                if (hasPig         !== undefined) player.hasPig         = hasPig;
                 this.eventBus.emit('meeple-count-updated', { playerId, meeples });
             }
         };
 
         // ── Mise à jour des scores ────────────────────────────────────────────
-        gs.onScoreUpdate = (scoringResults, meeplesToReturn) => {
+        gs.onScoreUpdate = (scoringResults, meeplesToReturn, goodsResults = [], zoneRegistryData = null, tileToZoneData = null) => {
             console.log('💰 [SYNC] Mise à jour des scores reçue');
             const placedMeeples = this.getPlacedMeeples();
 
@@ -155,6 +163,26 @@ export class GameSyncCallbacks {
                     else if (zoneType === 'abbey') player.scoreDetail.monasteries += points;
                 }
             });
+
+            // Appliquer les jetons de marchandises
+            goodsResults.forEach(({ playerId, cloth, wheat, wine }) => {
+                const player = this.gameState.players.find(p => p.id === playerId);
+                if (player) {
+                    player.goods = player.goods || { cloth: 0, wheat: 0, wine: 0 };
+                    player.goods.cloth += cloth;
+                    player.goods.wheat += wheat;
+                    player.goods.wine  += wine;
+                }
+            });
+
+            // Appliquer le zoneRegistry post-scoring (goods vidés) envoyé par l'hôte
+            if (zoneRegistryData) {
+                this.zoneMerger.registry.deserialize(zoneRegistryData);
+                if (tileToZoneData) {
+                    this.zoneMerger.tileToZone = new Map(tileToZoneData);
+                }
+                console.log('✅ [SYNC] ZoneRegistry post-scoring appliqué (goods mis à jour)');
+            }
 
             meeplesToReturn.forEach(key => {
                 document.querySelectorAll(`.meeple[data-key="${key}"]`).forEach(el => el.remove());

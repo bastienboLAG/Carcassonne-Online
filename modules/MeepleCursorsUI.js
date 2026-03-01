@@ -20,11 +20,13 @@ export class MeepleCursorsUI {
      * Faire tourner une position de meeple - COPIE EXACTE de rotatePosition()
      */
     rotatePosition(position, rotation) {
-        if (rotation === 0) return position;
+        // Normaliser en nombre (meeplePosition JSON peut être string)
+        const pos = Number(position);
+        if (rotation === 0) return pos;
         
         // Convertir position en coordonnées (row, col)
-        const row = Math.floor((position - 1) / 5);
-        const col = (position - 1) % 5;
+        const row = Math.floor((pos - 1) / 5);
+        const col = (pos - 1) % 5;
         
         let newRow = row;
         let newCol = col;
@@ -106,9 +108,11 @@ export class MeepleCursorsUI {
         const hasMeeples  = activePlayer && activePlayer.meeples > 0;
         const hasAbbot    = activePlayer?.hasAbbot       === true;
         const hasLarge    = activePlayer?.hasLargeMeeple === true && this.config?.extensions?.largeMeeple;
-        console.log('🔍 [CURSEURS] hasMeeples:', hasMeeples, '— hasAbbot:', hasAbbot, '— hasLarge:', hasLarge, '— hasLargeMeeple:', activePlayer?.hasLargeMeeple, '— ext.largeMeeple:', this.config?.extensions?.largeMeeple);
-        if (!hasMeeples && !hasAbbot && !hasLarge) {
-            console.log('❌ Pas de meeples ni d\'abbé ni grand meeple disponibles, pas d\'affichage de curseurs');
+        const hasBuilder  = activePlayer?.hasBuilder     === true && this.config?.extensions?.tradersBuilders;
+        const hasPig      = activePlayer?.hasPig         === true && this.config?.extensions?.pig;
+        console.log('🔍 [CURSEURS] hasMeeples:', hasMeeples, '— hasAbbot:', hasAbbot, '— hasLarge:', hasLarge, '— hasBuilder:', hasBuilder, '— hasPig:', hasPig);
+        if (!hasMeeples && !hasAbbot && !hasLarge && !hasBuilder && !hasPig) {
+            console.log('❌ Pas de meeples disponibles, pas d\'affichage de curseurs');
             return;
         }
         
@@ -142,8 +146,8 @@ export class MeepleCursorsUI {
                 console.log('🚫 Champs désactivés, pas de curseur field à position', position);
                 return;
             }
-            // Filtrer les zones normales si pas de meeples ni grand meeple
-            if (zoneType !== 'garden' && zoneType !== 'abbey' && !hasMeeples && !hasLarge) {
+            // Filtrer les zones normales si pas de meeples, grand meeple, ni bâtisseur
+            if (zoneType !== 'garden' && zoneType !== 'abbey' && !hasMeeples && !hasLarge && !hasBuilder && !hasPig) {
                 return;
             }
             // Filtrer les jardins si pas d'abbé
@@ -167,18 +171,41 @@ export class MeepleCursorsUI {
                 return;
             }
             
-            // ✅ Vérifier si la zone mergée contient déjà un meeple
+            // ✅ Vérifier l'occupation de la zone
             if (this.zoneMerger) {
-                console.log('🔎 Recherche zone mergée pour position', position);
                 const mergedZone = this.zoneMerger.findMergedZoneForPosition(x, y, position);
-                console.log('📍 Zone mergée trouvée:', mergedZone);
                 if (mergedZone) {
                     const meeplesInZone = this.zoneMerger.getZoneMeeples(mergedZone, placedMeeples);
-                    console.log('🎭 Meeples dans cette zone:', meeplesInZone);
-                    if (meeplesInZone.length > 0) {
-                        console.log('⏭️ Position', position, 'dans une zone avec meeple(s), pas de curseur');
-                        return;
+                    // Les bâtisseurs ne bloquent pas la zone
+                    // Bâtisseurs et cochons ne bloquent pas
+                    const blockingMeeples = meeplesInZone.filter(m => m.type !== 'Builder' && m.type !== 'Pig');
+
+                    if (blockingMeeples.length > 0) {
+                        // Zone occupée
+                        const zoneIsCityOrRoad = zoneType === 'city' || zoneType === 'road';
+                        const zoneIsField      = zoneType === 'field';
+                        const playerHasMeepleHereCity = blockingMeeples.some(
+                            m => m.playerId === activePlayer.id &&
+                                 m.type !== 'Farmer' && m.type !== 'Large-Farmer'
+                        );
+                        const playerHasMeepleHereField = blockingMeeples.some(
+                            m => m.playerId === activePlayer.id
+                        );
+                        if (hasBuilder && zoneIsCityOrRoad && playerHasMeepleHereCity) {
+                            // Curseur bâtisseur uniquement — on laisse passer
+                        } else if (hasPig && zoneIsField && playerHasMeepleHereField) {
+                            // Curseur cochon sur field avec meeple du joueur — on laisse passer
+                        } else {
+                            return; // Zone occupée, pas de curseur
+                        }
+                    } else if ((hasBuilder && !hasMeeples && !hasLarge) && !(hasPig && zoneType === 'field')) {
+                        // Le joueur n'a QUE le bâtisseur : zone vide → pas de curseur city/road
+                        const zoneIsCityOrRoad = zoneType === 'city' || zoneType === 'road';
+                        if (zoneIsCityOrRoad) return;
                     }
+                } else if ((hasBuilder && !hasMeeples && !hasLarge) && !(hasPig)) {
+                    // Aucune zone fusionnée et uniquement bâtisseur dispo : impossible
+                    return;
                 }
             }
             

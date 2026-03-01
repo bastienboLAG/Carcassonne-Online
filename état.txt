@@ -1,2 +1,2 @@
-actuel :	Carcassonne-Online-FIXED 25-02-2026 (add auberges&cathédrales)
-précédent :	Carcassonne-Online-FIXED 22-02-2026 (bug fix multi)
+actuel :	Carcassonne-Online-FIXED 01-03-2026 (add spectateur)
+précédent :	Carcassonne-Online-FIXED 25-02-2026 (add auberges&cathédrales)

@@ -20,13 +20,17 @@ export class GameState {
             color: color,
             score: 0,
             meeples: 7,
-            hasAbbot:     false, // Initialisé à false, mis à true si extension Abbé activée
+            hasAbbot:       false, // Initialisé à false, mis à true si extension Abbé activée
             hasLargeMeeple: false, // Grand meeple (Auberges & Cathédrales)
+            hasBuilder:     false, // Bâtisseur (Marchands & Bâtisseurs)
+            hasPig:         false, // Cochon (Marchands & Bâtisseurs)
+            goods: { cloth: 0, wheat: 0, wine: 0 }, // Jetons marchandises
             scoreDetail: {
                 cities: 0,
                 roads: 0,
                 monasteries: 0,
-                fields: 0
+                fields: 0,
+                goods: 0
             }
         });
     }
@@ -49,7 +53,14 @@ export class GameState {
      * Passer au joueur suivant
      */
     nextPlayer() {
-        this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+        let attempts = 0;
+        do {
+            this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+            attempts++;
+        } while (
+            this.players[this.currentPlayerIndex]?.color === 'spectator' &&
+            attempts < this.players.length
+        );
     }
 
     /**
@@ -84,11 +95,15 @@ export class GameState {
             meeples: p.meeples ?? 7,
             hasAbbot:       p.hasAbbot       ?? false,
             hasLargeMeeple: p.hasLargeMeeple ?? false,
+            hasBuilder:     p.hasBuilder     ?? false,
+            hasPig:         p.hasPig         ?? false,
+            goods: p.goods ?? { cloth: 0, wheat: 0, wine: 0 },
             scoreDetail: p.scoreDetail || {
                 cities: 0,
                 roads: 0,
                 monasteries: 0,
-                fields: 0
+                fields: 0,
+                goods: 0
             }
         }));
         this.currentPlayerIndex = data.currentPlayerIndex || 0;

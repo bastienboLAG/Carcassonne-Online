@@ -7,16 +7,22 @@
  * - Déclencher le calcul des scores en fin de tour
  */
 export class TurnManager {
-    constructor(eventBus, gameState, deck, multiplayer) {
+    constructor(eventBus, gameState, deck, multiplayer, isHost = false) {
         this.eventBus = eventBus;
         this.gameState = gameState;
         this.deck = deck;
         this.multiplayer = multiplayer;
+        this.isHost = isHost;
         
         // État du tour
-        this.isMyTurn = false;
+        this.isMyTurn   = false;
         this.tilePlaced = false;
         this.currentTile = null;
+
+        // Tour bonus (bâtisseur)
+        this.isBonusTurn            = false; // true pendant le tour bonus
+        this.bonusAlreadyUsedThisTurn = false; // empêche le cumul
+        this.builderRules           = null;  // injecté depuis home.js
         
         // S'abonner aux événements
         this.eventBus.on('tile-placed', (data) => this.onTilePlaced(data));
@@ -38,12 +44,14 @@ export class TurnManager {
      */
     updateTurnState() {
         if (!this.gameState || this.gameState.players.length === 0) {
-            this.isMyTurn = true;
+            this.isMyTurn = false;
             return;
         }
         
         const currentPlayer = this.gameState.getCurrentPlayer();
-        this.isMyTurn = currentPlayer.id === this.multiplayer.playerId;
+        const mePlayer = this.gameState.players.find(p => p.id === this.multiplayer.playerId);
+        const iAmSpectator = mePlayer?.color === 'spectator';
+        this.isMyTurn = currentPlayer.id === this.multiplayer.playerId && !iAmSpectator;
         
         console.log('🔄 Mise à jour isMyTurn:', this.isMyTurn, 'Tour de:', currentPlayer.name);
     }
@@ -113,30 +121,41 @@ export class TurnManager {
      * Terminer le tour
      * @returns {Object} { success: boolean, scoringResults?, meeplesToReturn? }
      */
-    endTurn() {
-        // Vérifier que c'est notre tour
+    /**
+     * Terminer le tour
+     * @param {boolean} builderBonusTriggered - pré-calculé par home.js avant le scoring
+     */
+    endTurn(builderBonusTriggered = false) {
         if (!this.isMyTurn) {
             console.error('❌ Ce n\'est pas votre tour');
             return { success: false, error: 'not_your_turn' };
         }
-
-        // Vérifier qu'une tuile a été placée
         if (!this.tilePlaced) {
             console.error('❌ Vous devez poser la tuile avant de terminer votre tour');
             return { success: false, error: 'tile_not_placed' };
         }
 
-        console.log('⏭️ Fin de tour - passage au joueur suivant');
-        
-        // Émettre événement pour calcul des scores (Scoring écoute cet événement)
-        this.eventBus.emit('turn-ending', { 
-            playerId: this.multiplayer.playerId 
-        });
-        
-        // Passer au joueur suivant
-        this.nextPlayer();
-        
-        return { success: true };
+        console.log('⏭️ Fin de tour');
+
+        this.eventBus.emit('turn-ending', { playerId: this.multiplayer.playerId });
+
+        // Le bonus est pré-calculé par home.js avant le scoring (état le plus fiable)
+        const bonusTriggered = builderBonusTriggered &&
+                               !this.bonusAlreadyUsedThisTurn &&
+                               !this.isBonusTurn;
+
+        if (bonusTriggered) {
+            console.log('⭐ Déclenchement du tour bonus bâtisseur');
+            this.isBonusTurn = true;
+            this.bonusAlreadyUsedThisTurn = true;
+            this.tilePlaced = false;
+            return { success: true, bonusTurnStarted: true };
+        } else {
+            this.isBonusTurn = false;
+            this.bonusAlreadyUsedThisTurn = false;
+            this.nextPlayer();
+            return { success: true, bonusTurnStarted: false };
+        }
     }
 
     /**
@@ -145,8 +164,15 @@ export class TurnManager {
     nextPlayer() {
         if (!this.gameState) return;
 
-        // Incrémenter l'index du joueur
-        this.gameState.currentPlayerIndex = (this.gameState.currentPlayerIndex + 1) % this.gameState.players.length;
+        // Incrémenter l'index du joueur en sautant les spectateurs
+        let attempts = 0;
+        do {
+            this.gameState.currentPlayerIndex = (this.gameState.currentPlayerIndex + 1) % this.gameState.players.length;
+            attempts++;
+        } while (
+            this.gameState.players[this.gameState.currentPlayerIndex]?.color === 'spectator' &&
+            attempts < this.gameState.players.length
+        );
         
         // Mettre à jour l'état
         this.updateTurnState();
@@ -162,8 +188,9 @@ export class TurnManager {
             currentPlayer: this.getCurrentPlayer()
         });
         
-        // Piocher la tuile suivante si c'est notre tour
-        if (this.isMyTurn) {
+        // L'hôte pioche toujours (il gère la pioche pour tous)
+        // Un joueur normal pioche seulement si c'est son tour
+        if (this.isMyTurn || this.isHost) {
             this.drawTile();
         }
     }
@@ -241,26 +268,43 @@ export class TurnManager {
         }
     }
 
-    receiveTurnEnded(nextPlayerIndex, gameStateData) {
-        console.log('⏭️ [SYNC] Fin de tour reçue');
+    receiveTurnEnded(nextPlayerIndex, gameStateData, isBonusTurn = false) {
+        console.log('⏭️ [SYNC] Fin de tour reçue — isBonusTurn:', isBonusTurn);
         
         // Restaurer le GameState
         if (gameStateData) {
             this.gameState.deserialize(gameStateData);
+            // S'assurer que currentPlayerIndex ne pointe pas sur un spectateur
+            let attempts = 0;
+            while (
+                this.gameState.players[this.gameState.currentPlayerIndex]?.color === 'spectator' &&
+                attempts < this.gameState.players.length
+            ) {
+                this.gameState.currentPlayerIndex = (this.gameState.currentPlayerIndex + 1) % this.gameState.players.length;
+                attempts++;
+            }
         }
         
-        // Mettre à jour l'état
-        this.updateTurnState();
-        
-        // Piocher si c'est notre tour
-        if (this.isMyTurn) {
-            this.drawTile();
+        // Propager l'état de tour bonus
+        this.isBonusTurn = isBonusTurn;
+        if (isBonusTurn) {
+            // Tour bonus : on ne change pas de joueur, pas de pioche pour nous
+            this.updateTurnState();
+        } else {
+            // Tour normal : remettre à zéro les flags bonus
+            this.bonusAlreadyUsedThisTurn = false;
+            this.updateTurnState();
+            // L'hôte pioche toujours, sinon seulement si c'est notre tour
+            if (this.isMyTurn || this.isHost) {
+                this.drawTile();
+            }
         }
         
         // ✅ Un seul emit turn-changed pour rafraîchir TOUS les joueurs
         this.eventBus.emit('turn-changed', {
             isMyTurn: this.isMyTurn,
-            currentPlayer: this.getCurrentPlayer()
+            currentPlayer: this.getCurrentPlayer(),
+            isBonusTurn: this.isBonusTurn
         });
     }
 
@@ -302,8 +346,10 @@ export class TurnManager {
      * Réinitialiser pour une nouvelle partie
      */
     reset() {
-        this.isMyTurn = false;
+        this.isMyTurn   = false;
         this.tilePlaced = false;
         this.currentTile = null;
+        this.isBonusTurn = false;
+        this.bonusAlreadyUsedThisTurn = false;
     }
 }

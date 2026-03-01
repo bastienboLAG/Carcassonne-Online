@@ -12,7 +12,7 @@ export class GameSync {
         this.onDeckReceived = null;
         this.onTileRotated = null;
         this.onTilePlaced = null;
-        this.onTurnEnded = null;
+        this.onTurnEnded        = null;
         this.onGameStarted = null;
         this.onTileDrawn = null;
         this.onMeeplePlaced = null;
@@ -110,18 +110,15 @@ export class GameSync {
     /**
      * Synchroniser la fin du tour
      */
-    syncTurnEnd() {
-        console.log('⏭️ Sync fin de tour');
+    syncTurnEnd(isBonusTurn = false) {
+        console.log('⏭️ Sync fin de tour — isBonusTurn:', isBonusTurn);
 
-        // ✅ turnManager.nextPlayer() est appelé dans home.js AVANT syncTurnEnd(),
-        // donc currentPlayerIndex est déjà à jour ici.
-        // On broadcaste le gameState déjà mis à jour pour que les invités
-        // aient le bon état via receiveTurnEnded().
         this.multiplayer.broadcast({
             type: 'turn-ended',
             playerId: this.multiplayer.playerId,
             nextPlayerIndex: this.gameState.currentPlayerIndex,
-            gameState: this.gameState.serialize()
+            gameState: this.gameState.serialize(),
+            isBonusTurn: isBonusTurn
         });
         
         return true;
@@ -159,12 +156,16 @@ export class GameSync {
     /**
      * Synchroniser la mise à jour des scores
      */
-    syncScoreUpdate(scoringResults, meeplesToReturn) {
+    syncScoreUpdate(scoringResults, meeplesToReturn, goodsResults = [], zoneMerger = null) {
         console.log('💰 Sync score update:', scoringResults);
         this.multiplayer.broadcast({
             type: 'score-update',
-            scoringResults: scoringResults,
+            scoringResults:  scoringResults,
             meeplesToReturn: meeplesToReturn,
+            goodsResults:    goodsResults,
+            // Registry post-scoring : goods déjà vidés, état cohérent pour l'invité
+            zoneRegistry: zoneMerger ? zoneMerger.registry.serialize() : null,
+            tileToZone:   zoneMerger ? Array.from(zoneMerger.tileToZone.entries()) : null,
             playerId: this.multiplayer.playerId
         });
     }
@@ -292,7 +293,7 @@ export class GameSync {
             case 'turn-ended':
                 if (this.onTurnEnded && data.playerId !== this.multiplayer.playerId) {
                     console.log('⏭️ [SYNC] Fin de tour reçue');
-                    this.onTurnEnded(data.nextPlayerIndex, data.gameState);
+                    this.onTurnEnded(data.nextPlayerIndex, data.gameState, data.isBonusTurn ?? false);
                 }
                 break;
 
@@ -314,13 +315,13 @@ export class GameSync {
             case 'meeple-count-update':
                 if (this.onMeepleCountUpdate) {
                     console.log('🎭 [SYNC] Mise à jour compteur meeples:', data.playerId, data.meeples);
-                    this.onMeepleCountUpdate(data.playerId, data.meeples, data.hasAbbot, data.hasLargeMeeple);
+                    this.onMeepleCountUpdate(data.playerId, data.meeples, data.hasAbbot, data.hasLargeMeeple, data.hasPig);
                 }
                 break;
             case 'score-update':
                 if (this.onScoreUpdate && data.playerId !== this.multiplayer.playerId) {
                     console.log('💰 [SYNC] Mise à jour des scores reçue');
-                    this.onScoreUpdate(data.scoringResults, data.meeplesToReturn);
+                    this.onScoreUpdate(data.scoringResults, data.meeplesToReturn, data.goodsResults ?? [], data.zoneRegistry ?? null, data.tileToZone ?? null);
                 }
                 break;
             

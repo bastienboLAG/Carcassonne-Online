@@ -55,7 +55,9 @@ export class UndoManager {
                 id: p.id,
                 meeples: p.meeples,
                 hasAbbot: p.hasAbbot,
-                hasLargeMeeple: p.hasLargeMeeple
+                hasLargeMeeple: p.hasLargeMeeple,
+                hasBuilder: p.hasBuilder,
+                hasPig:     p.hasPig
             })),
             lastPlacedTile: this.lastPlacedTileBeforeTurn // épingle avant ce tour
         };
@@ -97,7 +99,9 @@ export class UndoManager {
                 id: p.id,
                 meeples: p.meeples,
                 hasAbbot: p.hasAbbot,
-                hasLargeMeeple: p.hasLargeMeeple
+                hasLargeMeeple: p.hasLargeMeeple,
+                hasBuilder: p.hasBuilder,
+                hasPig:     p.hasPig
             }))
         };
         
@@ -250,6 +254,8 @@ export class UndoManager {
                 player.meeples  = saved.meeples;
                 if (saved.hasAbbot       !== undefined) player.hasAbbot       = saved.hasAbbot;
                 if (saved.hasLargeMeeple !== undefined) player.hasLargeMeeple = saved.hasLargeMeeple;
+                if (saved.hasBuilder     !== undefined) player.hasBuilder     = saved.hasBuilder;
+                if (saved.hasPig         !== undefined) player.hasPig         = saved.hasPig;
             }
         });
     }

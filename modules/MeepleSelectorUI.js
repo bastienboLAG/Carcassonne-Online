@@ -6,9 +6,11 @@ import { getMeepleSize } from './MeepleConfig.js';
  */
 export class MeepleSelectorUI {
     constructor(multiplayer, gameState, config = {}) {
-        this.multiplayer = multiplayer;
-        this.gameState = gameState;
-        this.config = config;
+        this.multiplayer   = multiplayer;
+        this.gameState     = gameState;
+        this.config        = config;
+        this.zoneMerger    = null; // injecté depuis home.js
+        this.placedMeeples = {};   // injecté depuis home.js
     }
 
     /**
@@ -51,23 +53,84 @@ export class MeepleSelectorUI {
         
         // ✅ Proposer les meeples selon le type de zone
         let meepleTypes = [];
-        const hasLarge = player?.hasLargeMeeple === true && this.config?.extensions?.largeMeeple;
+        const hasLarge   = player?.hasLargeMeeple === true && this.config?.extensions?.largeMeeple;
+        const hasBuilder = player?.hasBuilder === true && this.config?.extensions?.tradersBuilders;
+        const hasPig     = player?.hasPig     === true && this.config?.extensions?.pig;
 
         if (zoneType === 'field') {
-            // Field → Farmer (+ Large-Farmer si grand meeple dispo)
-            if (player?.meeples > 0) {
-                meepleTypes.push({ type: 'Farmer', image: `./assets/Meeples/${this.getPlayerColor()}/Farmer.png` });
-            }
-            if (hasLarge) {
-                meepleTypes.push({ type: 'Large-Farmer', image: `./assets/Meeples/${this.getPlayerColor()}/Large-Farmer.png` });
+            // Vérifier si le joueur a déjà un meeple dans ce field
+            let hasOwnFarmerInZone = false;
+            if (this.zoneMerger) {
+                const mergedZone = this.zoneMerger.findMergedZoneForPosition(x, y, position);
+                if (mergedZone) {
+                    const meeplesInZone = this.zoneMerger.getZoneMeeples(mergedZone, this.placedMeeples);
+                    // Ignorer les cochons pour ce check (ils ne bloquent pas)
+                    const realMeeples = meeplesInZone.filter(m => m.type !== 'Pig');
+                    hasOwnFarmerInZone = realMeeples.some(m => m.playerId === player?.id);
+
+                    if (realMeeples.length > 0 && hasOwnFarmerInZone) {
+                        // Zone déjà occupée par un meeple du joueur → cochon uniquement
+                        if (hasPig) {
+                            meepleTypes.push({ type: 'Pig', image: `./assets/Meeples/${this.getPlayerColor()}/Pig.png` });
+                        }
+                        // Pas de Farmer/Large-Farmer supplémentaire
+                    } else if (realMeeples.length > 0) {
+                        // Zone occupée par un adversaire uniquement → rien à proposer
+                    } else {
+                        // Zone libre → Farmer (+ Large-Farmer si dispo)
+                        if (player?.meeples > 0) {
+                            meepleTypes.push({ type: 'Farmer', image: `./assets/Meeples/${this.getPlayerColor()}/Farmer.png` });
+                        }
+                        if (hasLarge) {
+                            meepleTypes.push({ type: 'Large-Farmer', image: `./assets/Meeples/${this.getPlayerColor()}/Large-Farmer.png` });
+                        }
+                    }
+                }
+            } else {
+                // Pas de zoneMerger : fallback
+                if (player?.meeples > 0) {
+                    meepleTypes.push({ type: 'Farmer', image: `./assets/Meeples/${this.getPlayerColor()}/Farmer.png` });
+                }
+                if (hasLarge) {
+                    meepleTypes.push({ type: 'Large-Farmer', image: `./assets/Meeples/${this.getPlayerColor()}/Large-Farmer.png` });
+                }
             }
         } else if (zoneType === 'road' || zoneType === 'city') {
-            // Road ou City → Normal (+ Large si grand meeple dispo)
-            if (player?.meeples > 0) {
-                meepleTypes.push({ type: 'Normal', image: `./assets/Meeples/${this.getPlayerColor()}/Normal.png` });
-            }
-            if (hasLarge) {
-                meepleTypes.push({ type: 'Large', image: `./assets/Meeples/${this.getPlayerColor()}/Large.png` });
+            // Vérifier si la zone contient déjà un meeple (non-bâtisseur)
+            let zoneHasOwnMeeple = false;
+            if (this.zoneMerger) {
+                const mergedZone = this.zoneMerger.findMergedZoneForPosition(x, y, position);
+                if (mergedZone) {
+                    const meeplesInZone = this.zoneMerger.getZoneMeeples(mergedZone, this.placedMeeples);
+                    const blockingMeeples = meeplesInZone.filter(m => m.type !== 'Builder');
+                    if (blockingMeeples.length > 0) {
+                        // Zone occupée : seul le Builder est proposé, et uniquement si c'est un meeple du joueur
+                        zoneHasOwnMeeple = blockingMeeples.some(
+                            m => m.playerId === player?.id &&
+                                 m.type !== 'Farmer' && m.type !== 'Large-Farmer'
+                        );
+                        if (hasBuilder && zoneHasOwnMeeple) {
+                            meepleTypes.push({ type: 'Builder', image: `./assets/Meeples/${this.getPlayerColor()}/Builder.png` });
+                        }
+                        // Pas de Normal/Large sur une zone déjà occupée
+                    } else {
+                        // Zone libre : Normal + Large (pas de Builder car pas de meeple du joueur ici)
+                        if (player?.meeples > 0) {
+                            meepleTypes.push({ type: 'Normal', image: `./assets/Meeples/${this.getPlayerColor()}/Normal.png` });
+                        }
+                        if (hasLarge) {
+                            meepleTypes.push({ type: 'Large', image: `./assets/Meeples/${this.getPlayerColor()}/Large.png` });
+                        }
+                    }
+                }
+            } else {
+                // Pas de zoneMerger : comportement par défaut
+                if (player?.meeples > 0) {
+                    meepleTypes.push({ type: 'Normal', image: `./assets/Meeples/${this.getPlayerColor()}/Normal.png` });
+                }
+                if (hasLarge) {
+                    meepleTypes.push({ type: 'Large', image: `./assets/Meeples/${this.getPlayerColor()}/Large.png` });
+                }
             }
         } else if (zoneType === 'garden') {
             // Garden → Abbé uniquement (si disponible)

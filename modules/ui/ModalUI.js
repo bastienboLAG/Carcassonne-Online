@@ -78,7 +78,7 @@ export class ModalUI {
             margin-bottom: 20px;
         `;
         
-        const prefixOrder = ['base', 'river', 'abbot'];
+        const prefixOrder = ['base', 'river', 'abbot', 'inns_cathedrals', 'traders_builders'];
         const prefixRank = id => {
             const prefix = prefixOrder.findIndex(p => id.startsWith(p));
             return prefix === -1 ? prefixOrder.length : prefix;
@@ -342,6 +342,40 @@ export class ModalUI {
             extensionsSection.appendChild(innsContainer);
         }
 
+        // Extension Marchands & Bâtisseurs
+        if (config.extensions?.tradersBuilders || config.extensions?.merchants || config.extensions?.pig) {
+            const tbContainer = document.createElement('div');
+            tbContainer.style.cssText = `
+                font-family: 'Courier New', monospace;
+                color: #e0e0e0;
+                line-height: 1.6;
+                margin-top: 8px;
+            `;
+
+            const tbLine = document.createElement('div');
+            tbLine.textContent = '└─ ✓ Marchands & Bâtisseurs';
+            tbLine.style.cssText = 'margin-left: 5px; font-size: 15px;';
+            tbContainer.appendChild(tbLine);
+
+            const makeSubLine = (text, active) => {
+                const el = document.createElement('div');
+                el.textContent = `   └─ ${active ? '✓' : '✗'} ${text}`;
+                el.style.cssText = `
+                    margin-left: 5px;
+                    font-size: 14px;
+                    padding-left: 20px;
+                    color: ${active ? '#a8d8a8' : '#888'};
+                    ${active ? '' : 'font-style: italic;'}
+                `;
+                return el;
+            };
+            tbContainer.appendChild(makeSubLine('Bâtisseur',    config.extensions?.tradersBuilders ?? false));
+            tbContainer.appendChild(makeSubLine('Marchandises', config.extensions?.merchants        ?? false));
+            tbContainer.appendChild(makeSubLine('Meeple Cochon', config.extensions?.pig            ?? false));
+
+            extensionsSection.appendChild(tbContainer);
+        }
+
         content.appendChild(extensionsSection);
 
         // Section Tuiles
@@ -358,6 +392,9 @@ export class ModalUI {
             }
             if (config.tileGroups?.inns_cathedrals) {
                 list.push('Auberges & Cathédrales : +18 tuiles');
+            }
+            if (config.tileGroups?.traders_builders) {
+                list.push('Marchands & Bâtisseurs : +24 tuiles');
             }
             return list;
         })());
