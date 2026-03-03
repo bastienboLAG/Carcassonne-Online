@@ -3,36 +3,19 @@
  * Extrait de home.js pour alléger le fichier principal
  */
 export class UnplaceableTileManager {
-    constructor({ deck, gameState, tilePreviewUI, gameSync, gameConfig, setRedrawMode, triggerEndGame }) {
-        this.deck           = deck;
-        this.gameState      = gameState;
-        this.tilePreviewUI  = tilePreviewUI;
-        this.gameSync       = gameSync;
-        this.gameConfig     = gameConfig;
-        this.setRedrawMode  = setRedrawMode;
-        this.triggerEndGame = triggerEndGame;
-
-        // Tuiles rivière vues comme implaçables depuis le dernier placement réussi
-        this._seenImplacableRiver = new Set();
-        // IDs des tuiles rivière à tester (capturés à la première alerte)
-        this._riverTilesToTest = null;
-        // IDs des tuiles normales à tester (phase normale)
-        this._normalTilesToTest = null;
-    }
-
-    /**
-     * Réinitialiser le suivi des tuiles implaçables (appelé après chaque placement réussi)
-     */
-    resetSeenImplacable() {
-        this._seenImplacableRiver.clear();
-        this._riverTilesToTest = null;
-        this._normalTilesToTest = null;
+    constructor({ deck, gameState, tilePreviewUI, gameSync, gameConfig, setRedrawMode }) {
+        this.deck          = deck;
+        this.gameState     = gameState;
+        this.tilePreviewUI = tilePreviewUI;
+        this.gameSync      = gameSync;
+        this.gameConfig    = gameConfig;
+        this.setRedrawMode = setRedrawMode;
     }
 
     /**
      * Vérifie si une tuile peut être posée quelque part sur le plateau
      */
-    isTilePlaceable(tile, plateau, isRiverPhase = false) {
+    isTilePlaceable(tile, plateau) {
         if (!plateau) return true;
 
         const placedCount = Object.keys(plateau.placedTiles).length;
@@ -48,7 +31,7 @@ export class UnplaceableTileManager {
                 const directions = [{dx:0,dy:-1},{dx:1,dy:0},{dx:0,dy:1},{dx:-1,dy:0}];
                 for (const {dx, dy} of directions) {
                     const nx = x + dx, ny = y + dy;
-                    if (plateau.isFree(nx, ny) && plateau.canPlaceTile(nx, ny, tile, isRiverPhase)) {
+                    if (plateau.isFree(nx, ny) && plateau.canPlaceTile(nx, ny, tile)) {
                         tile.rotation = originalRotation;
                         return true;
                     }
@@ -89,156 +72,24 @@ export class UnplaceableTileManager {
     /**
      * Afficher la modale info destruction/remélange
      */
-    showTileDestroyedModal(tileId, playerName, isActivePlayer, action, isRiver = false, extraMessage = null) {
+    showTileDestroyedModal(tileId, playerName, isActivePlayer, action) {
         const modal = document.getElementById('tile-destroyed-modal');
         const text  = document.getElementById('tile-destroyed-text');
         const title = modal.querySelector('h2');
 
-        const riverNote = isRiver ? ' (tuile rivière)' : '';
-
-        if (extraMessage) {
-            title.textContent = '🌊 Rivière bloquée';
-            text.textContent  = extraMessage;
-        } else if (action === 'reshuffle') {
+        if (action === 'reshuffle') {
             title.textContent = '🎲 Tuile remélangée';
             text.textContent  = isActivePlayer
-                ? `La tuile ${tileId}${riverNote} était impossible à placer, elle a été remise dans la rivière. Cliquez sur Repiocher pour continuer.`
-                : `La tuile ${tileId}${riverNote} était impossible à placer, elle a été remise dans la rivière. ${playerName} va repiocher.`;
+                ? `La tuile ${tileId} était impossible à placer, elle a été remise dans la pioche. Cliquez sur Repiocher pour continuer.`
+                : `La tuile ${tileId} était impossible à placer, elle a été remise dans la pioche. ${playerName} va repiocher.`;
         } else {
             title.textContent = '🗑️ Tuile détruite';
             text.textContent  = isActivePlayer
-                ? `La tuile ${tileId}${riverNote} était impossible à placer, elle a été détruite. Cliquez sur Repiocher pour continuer.`
-                : `La tuile ${tileId}${riverNote} était impossible à placer, elle a été détruite. ${playerName} va repiocher.`;
+                ? `La tuile ${tileId} était impossible à placer, elle a été détruite. Cliquez sur Repiocher pour continuer.`
+                : `La tuile ${tileId} était impossible à placer, elle a été détruite. ${playerName} va repiocher.`;
         }
 
         modal.style.display = 'flex';
-    }
-
-    /**
-     * Détruire une tuile dans le deck (la retirer physiquement + décrémenter total)
-     */
-    _destroyTileAtIndex(idx) {
-        this.deck.tiles.splice(idx, 1);
-        this.deck.totalTiles--;
-        if (this.gameState) this.gameState.destroyedTilesCount++;
-        // currentIndex ne change pas — la prochaine tuile prend la place de l'ancienne
-    }
-
-    /**
-     * Vérifier si toutes les tuiles rivière restantes (sauf river-12) ont été vues comme implaçables
-     * Si oui, déclencher la destruction en chaîne
-     */
-    _checkRiverAllImplacable(currentTileId, gameSync) {
-        const idx = this.deck.currentIndex - 1;
-
-        // À la première alerte, capturer les IDs des tuiles rivière restantes (sans river-12)
-        if (!this._riverTilesToTest) {
-            this._riverTilesToTest = new Set(
-                this.deck.tiles.slice(idx, 11).map(t => t.id)
-            );
-            console.log('🌊 Capture des tuiles rivière à tester:', [...this._riverTilesToTest]);
-        }
-
-        // Ajouter la tuile courante aux vues
-        this._seenImplacableRiver.add(currentTileId);
-
-        // Vérifier si toutes les tuiles capturées ont été vues
-        const allSeen = [...this._riverTilesToTest].every(id => this._seenImplacableRiver.has(id));
-
-        if (!allSeen) return false;
-
-        // Toutes vues → destruction en chaîne jusqu'à river-12
-        const currentPlayer = this.gameState?.getCurrentPlayer();
-        const playerName    = currentPlayer?.name || '?';
-        const count         = this._riverTilesToTest.size;
-
-        console.log(`🌊 Toutes les tuiles rivière implaçables — destruction de ${count} tuile(s)`);
-
-        // Détruire toutes les tuiles entre idx et 10 inclus
-        // On supprime depuis la fin pour ne pas décaler les indices
-        for (let i = 10; i >= idx; i--) {
-            if (this.deck.tiles[i] && this.deck.tiles[i].id !== 'river-12') {
-                this.deck.tiles.splice(i, 1);
-                this.deck.totalTiles--;
-                if (this.gameState) this.gameState.destroyedTilesCount++;
-            }
-        }
-        // currentIndex pointe maintenant sur river-12
-        this.deck.currentIndex = idx;
-
-        if (gameSync) gameSync.syncDeckReshuffle(this.deck.tiles, this.deck.currentIndex);
-
-        const msg = isActivePlayer =>
-            isActivePlayer
-                ? `La rivière était complètement bloquée. ${count} tuile(s) rivière ont été détruites. River-12 (embouchure) va maintenant être piochée.`
-                : `La rivière était complètement bloquée. ${count} tuile(s) rivière ont été détruites. ${playerName} va piocher l'embouchure.`;
-
-        this.showTileDestroyedModal('?', playerName, true, 'destroy', true, msg(true));
-        if (gameSync) gameSync.syncTileDestroyed(`[${count} tuiles rivière]`, playerName, 'destroy', count);
-
-        this._seenImplacableRiver.clear();
-        this._riverTilesToTest = null;
-        this.setRedrawMode(true);
-        return true;
-    }
-
-    /**
-     * Vérifier si toutes les tuiles normales restantes ont été vues comme implaçables
-     * Si oui, les détruire toutes et déclencher la fin de partie
-     */
-    _checkNormalAllImplacable(currentTileId, gameSync) {
-        const idx = this.deck.currentIndex - 1;
-
-        // À la première alerte, capturer les IDs des tuiles restantes
-        if (!this._normalTilesToTest) {
-            this._normalTilesToTest = new Set(
-                this.deck.tiles.slice(idx).map(t => t.id)
-            );
-            console.log('🎴 Capture des tuiles normales à tester:', [...this._normalTilesToTest]);
-        }
-
-        // Ajouter la tuile courante aux vues
-        this._seenImplacableRiver.add(currentTileId);
-
-        // Vérifier si toutes les tuiles capturées ont été vues
-        const allSeen = [...this._normalTilesToTest].every(id => this._seenImplacableRiver.has(id));
-        if (!allSeen) return false;
-
-        // Toutes vues → détruire toutes les tuiles restantes et fin de partie
-        const count = this.deck.tiles.length - idx;
-        console.log(`🎴 Toutes les tuiles normales implaçables — destruction de ${count} tuile(s), fin de partie`);
-
-        // Détruire depuis la fin pour ne pas décaler les indices
-        for (let i = this.deck.tiles.length - 1; i >= idx; i--) {
-            this.deck.tiles.splice(i, 1);
-            this.deck.totalTiles--;
-            if (this.gameState) this.gameState.destroyedTilesCount++;
-        }
-        this.deck.currentIndex = idx;
-
-        if (gameSync) gameSync.syncDeckReshuffle(this.deck.tiles, this.deck.currentIndex);
-
-        const currentPlayer = this.gameState?.getCurrentPlayer();
-        const playerName    = currentPlayer?.name || '?';
-        const msg = `Plus aucune tuile ne peut être placée. ${count} tuile${count > 1 ? 's ont' : ' a'} été détruite${count > 1 ? 's' : ''}. La partie se termine.`;
-        this.showTileDestroyedModal('?', playerName, true, 'destroy', false, msg);
-        if (gameSync) gameSync.syncTileDestroyed(`[${count} tuiles]`, playerName, 'destroy', count);
-
-        this._seenImplacableRiver.clear();
-        this._normalTilesToTest = null;
-
-        // Déclencher la fin de partie après fermeture de la modale
-        const modal = document.getElementById('tile-destroyed-modal');
-        const btn   = modal?.querySelector('button');
-        if (btn) {
-            const originalOnclick = btn.onclick;
-            btn.onclick = () => {
-                if (originalOnclick) originalOnclick();
-                if (this.triggerEndGame) this.triggerEndGame();
-            };
-        }
-
-        return true;
     }
 
     /**
@@ -254,93 +105,25 @@ export class UnplaceableTileManager {
 
         if (this.tilePreviewUI) this.tilePreviewUI.showBackside();
 
-        const idx     = (this.deck?.currentIndex ?? 1) - 1;
-        const isRiver = idx < 12 && tuileEnMain?.id?.startsWith('river-');
-
         if (action === 'reshuffle' && this.deck && tuileEnMain) {
-            const idx     = this.deck.currentIndex - 1;
-            const isRiver = idx < 12 && tuileEnMain.id?.startsWith('river-');
+            console.log('🔀 Remise de la tuile dans la pioche + mélange');
+            const tileData = { id: tuileEnMain.id, zones: tuileEnMain.zones, imagePath: tuileEnMain.imagePath };
+            this.deck.tiles.splice(this.deck.currentIndex, 0, tileData);
 
-            if (isRiver) {
-                // Vérifier si river-12 → traitement spécial
-                if (tuileEnMain.id === 'river-12') {
-                    // River-12 implaçable → destruction forcée, message adapté
-                    console.log('🌊 river-12 implaçable — détruite, fin de rivière');
-                    this._destroyTileAtIndex(idx);
-                    if (gameSync) gameSync.syncDeckReshuffle(this.deck.tiles, this.deck.currentIndex);
-                    const msg = `L'embouchure (river-12) était impossible à placer et a été détruite. La rivière se termine sans embouchure. Cliquez sur Repiocher pour continuer avec les tuiles normales.`;
-                    this.showTileDestroyedModal(tileId, playerName, true, 'destroy', true, msg);
-                    if (gameSync) gameSync.syncTileDestroyed(tileId, playerName, 'destroy');
-                    this._seenImplacableRiver.clear();
-                    this._riverTilesToTest = null;
-                    this.setRedrawMode(true);
-                    return;
-                }
-
-                // Vérifier si toutes les tuiles rivière ont été vues → destruction en chaîne
-                if (this._checkRiverAllImplacable(tileId, gameSync)) return;
-
-                // Remélange normal dans la rivière
-                console.log('🌊 Tuile rivière implaçable — remélange dans la rivière');
-                const sub = this.deck.tiles.slice(idx, 11);
-                for (let i = sub.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [sub[i], sub[j]] = [sub[j], sub[i]];
-                }
-                this.deck.tiles.splice(idx, sub.length, ...sub);
-                this.deck.currentIndex--;
-                if (gameSync) gameSync.syncDeckReshuffle(this.deck.tiles, this.deck.currentIndex);
-
-            } else {
-                // Phase normale : vérifier si toutes les tuiles restantes sont implaçables
-                if (this._checkNormalAllImplacable(tileId, gameSync)) return;
-
-                // Mélanger toutes les tuiles restantes
-                console.log('🔀 Remise de la tuile dans la pioche + mélange');
-                const remaining = this.deck.tiles.slice(idx);
-                for (let i = remaining.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
-                }
-                this.deck.tiles.splice(idx, remaining.length, ...remaining);
-                this.deck.currentIndex--;
-                if (gameSync) gameSync.syncDeckReshuffle(this.deck.tiles, this.deck.currentIndex);
+            const remaining = this.deck.tiles.slice(this.deck.currentIndex);
+            for (let i = remaining.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
             }
+            this.deck.tiles.splice(this.deck.currentIndex, remaining.length, ...remaining);
 
-        } else if (action === 'destroy' && this.deck && tuileEnMain) {
-            const idx     = this.deck.currentIndex - 1;
-            const isRiver = idx < 12 && tuileEnMain.id?.startsWith('river-');
-
-            if (isRiver) {
-                if (tuileEnMain.id === 'river-12') {
-                    console.log('🌊 river-12 implaçable — détruite, fin de rivière');
-                    const msg = `L'embouchure (river-12) était impossible à placer et a été détruite. La rivière se termine sans embouchure. Cliquez sur Repiocher pour continuer avec les tuiles normales.`;
-                    this._destroyTileAtIndex(idx);
-                    this.deck.currentIndex--;
-                    if (gameSync) gameSync.syncDeckReshuffle(this.deck.tiles, this.deck.currentIndex);
-                    this.showTileDestroyedModal(tileId, playerName, true, 'destroy', true, msg);
-                    if (gameSync) gameSync.syncTileDestroyed(tileId, playerName, 'destroy');
-                    this._seenImplacableRiver.clear();
-                    this._riverTilesToTest = null;
-                    this.setRedrawMode(true);
-                    return;
-                }
-                // Destroy rivière : détruire la tuile courante
-                // currentIndex-- car splice décale les tuiles suivantes d'un cran
-                console.log('🌊 Tuile rivière implaçable — détruite, rivière continue');
-                this._destroyTileAtIndex(idx);
-                this.deck.currentIndex--;
-                if (gameSync) gameSync.syncDeckReshuffle(this.deck.tiles, this.deck.currentIndex);
-            } else {
-                // Destroy normal : détruire la tuile du deck
-                // currentIndex-- car splice décale les tuiles suivantes d'un cran
-                this._destroyTileAtIndex(idx);
-                this.deck.currentIndex--;
-            }
+            if (gameSync) gameSync.syncDeckReshuffle(this.deck.tiles, this.deck.currentIndex);
         }
 
-        this.showTileDestroyedModal(tileId, playerName, true, action, isRiver);
+        this.showTileDestroyedModal(tileId, playerName, true, action);
+
         if (gameSync) gameSync.syncTileDestroyed(tileId, playerName, action);
+
         this.setRedrawMode(true);
     }
 }

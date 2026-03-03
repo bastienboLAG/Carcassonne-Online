@@ -1,12 +1,9 @@
-import { InnsRules } from './rules/InnsRules.js';
-
 /**
  * Gère le calcul des scores
  */
 export class Scoring {
-    constructor(zoneMerger, config = {}) {
+    constructor(zoneMerger) {
         this.zoneMerger = zoneMerger;
-        this.config = config; // { extensions: { cathedrals, inns } }
     }
 
     /**
@@ -14,18 +11,17 @@ export class Scoring {
      * Appelé à la fin de chaque tour
      * @returns {scoringResults: [{playerId, points, reason}], meeplesToReturn: [keys]}
      */
-    scoreClosedZones(placedMeeples, currentPlayerId = null, gameState = null, newlyClosedZones = null) {
+    scoreClosedZones(placedMeeples) {
         console.log('💰 Calcul des scores pour zones fermées...');
         
         const scoringResults = [];
         const meeplesToReturn = [];
-        const goodsResults = []; // { playerId, cloth, wheat, wine }
 
-        // N'opérer que sur les zones qui viennent de se fermer ce tour
-        // Si aucune zone nouvellement fermée, rien à scorer
-        const zonesToScore = newlyClosedZones ?? [];
+        // ✅ Récupérer toutes les zones du registry
+        const allZones = this.zoneMerger.getAllZones();
         
-        zonesToScore.forEach(mergedZone => {
+        // Parcourir toutes les zones mergées
+        allZones.forEach(mergedZone => {
             if (!mergedZone.isComplete) return;
 
             console.log(`✅ Zone ${mergedZone.type} fermée détectée`);
@@ -33,13 +29,6 @@ export class Scoring {
             // Récupérer les meeples dans cette zone
             const meeples = this.zoneMerger.getZoneMeeples(mergedZone, placedMeeples);
             
-            // Marchandises : distribuées au joueur qui ferme la ville,
-            // INDÉPENDAMMENT de la présence de meeples dans la zone
-            if (this._builderRules) {
-                const goodsResult = this._builderRules.distributeGoods(mergedZone, currentPlayerId, gameState);
-                if (goodsResult) goodsResults.push(goodsResult);
-            }
-
             if (meeples.length === 0) {
                 console.log('  Aucun meeple dans cette zone');
                 return;
@@ -75,7 +64,7 @@ export class Scoring {
                     playerId, 
                     points, 
                     reason,
-                    zoneType: mergedZone.type
+                    zoneType: mergedZone.type // ← Ajout du type de zone
                 });
                 console.log(`  ${playerId} gagne ${points} points pour ${reason}`);
             });
@@ -86,28 +75,25 @@ export class Scoring {
             });
         });
 
-        return { scoringResults, meeplesToReturn, goodsResults };
+        return { scoringResults, meeplesToReturn };
     }
 
     /**
      * Calculer les points d'une ville fermée
-     * Normal : 2 pts/tuile + 2 pts/blason
-     * Cathedral : 3 pts/tuile + 3 pts/blason
+     * 2 points par tuile + 2 points par blason
      */
     _scoreClosedCity(mergedZone) {
         const uniqueTiles = this._countUniqueTiles(mergedZone);
-        const coeff = InnsRules.getCityCoefficient(mergedZone, this.config);
-        return (uniqueTiles + mergedZone.shields) * coeff;
+        return (uniqueTiles * 2) + (mergedZone.shields * 2);
     }
 
     /**
      * Calculer les points d'une route fermée
-     * Normal : 1 pt/tuile
-     * Inn : 2 pts/tuile
+     * 1 point par tuile
      */
     _scoreClosedRoad(mergedZone) {
         const uniqueTiles = this._countUniqueTiles(mergedZone);
-        return uniqueTiles * InnsRules.getRoadCoefficient(mergedZone, this.config);
+        return uniqueTiles;
     }
 
     /**
@@ -138,8 +124,7 @@ export class Scoring {
         const counts = {};
         
         meeples.forEach(meeple => {
-            const weight = InnsRules.getMeepleWeight(meeple);
-            counts[meeple.playerId] = (counts[meeple.playerId] || 0) + weight;
+            counts[meeple.playerId] = (counts[meeple.playerId] || 0) + 1;
         });
 
         const maxCount = Math.max(...Object.values(counts));
@@ -151,21 +136,18 @@ export class Scoring {
     /**
      * Calculer les scores finaux (fin de partie)
      */
-    calculateFinalScores(placedMeeples, gameState, pigRules = null) {
+    calculateFinalScores(placedMeeples, gameState) {
         console.log('🏁 Calcul des scores finaux...');
         
         const finalScores = [];
         const allZones = this.zoneMerger.getAllZones();
 
-        // 1. Villes incomplètes : 1 pt/tuile + 1 pt/blason (0 si cathedral)
+        // 1. Villes incomplètes : 1 pt/tuile + 1 pt/blason
         allZones.forEach(mergedZone => {
             if (mergedZone.type !== 'city' || mergedZone.isComplete) return;
 
             const meeples = this.zoneMerger.getZoneMeeples(mergedZone, placedMeeples);
             if (meeples.length === 0) return;
-
-            // Cathedral non fermée → 0 pts
-            if (InnsRules.cityOpenPenalty(mergedZone, this.config)) return;
 
             const owners = this._getZoneOwners(meeples);
             const points = this._countUniqueTiles(mergedZone) + mergedZone.shields;
@@ -179,15 +161,12 @@ export class Scoring {
             });
         });
 
-        // 2. Routes incomplètes : 1 pt/tuile (0 si inn)
+        // 2. Routes incomplètes : 1 pt/tuile
         allZones.forEach(mergedZone => {
             if (mergedZone.type !== 'road' || mergedZone.isComplete) return;
 
             const meeples = this.zoneMerger.getZoneMeeples(mergedZone, placedMeeples);
             if (meeples.length === 0) return;
-
-            // Inn non fermée → 0 pts
-            if (InnsRules.roadOpenPenalty(mergedZone, this.config)) return;
 
             const owners = this._getZoneOwners(meeples);
             const points = this._countUniqueTiles(mergedZone);
@@ -221,14 +200,11 @@ export class Scoring {
             });
         });
 
-        // 4. Champs (farmers) : 3 pts par ville complète adjacente (4 si cochon du joueur sur ce champ)
+        // 4. Champs (farmers) : 3 pts par ville complète adjacente
         const closedCities = this.zoneMerger.getClosedCities();
-        // Récupérer les zones où un cochon est posé : Map<zoneId, playerId>
-        const pigZones = pigRules ? pigRules.getPigZones() : new Map();
         
         console.log('🌾 === CALCUL DES CHAMPS ===');
         console.log(`  Villes fermées disponibles: ${closedCities.map(c => c.id).join(', ')}`);
-        if (pigZones.size) console.log(`  🐷 Cochons sur zones: ${[...pigZones.entries()].map(([z,p]) => z+'->'+p).join(', ')}`);
         
         allZones.forEach(mergedZone => {
             if (mergedZone.type !== 'field') return;
@@ -244,20 +220,16 @@ export class Scoring {
             if (adjacentClosedCities === 0) return;
 
             const owners = this._getZoneOwners(meeples);
-            // Le cochon du joueur sur ce champ lui donne 4 pts/ville au lieu de 3
-            const pigOwner = pigZones.get(mergedZone.id) ?? null;
+            const points = adjacentClosedCities * 3;
             
-            console.log(`    Propriétaires: ${owners.join(', ')}${pigOwner ? ' 🐷 cochon de ' + pigOwner : ''}`);
+            console.log(`    Propriétaires: ${owners.join(', ')}`);
+            console.log(`    Points attribués: ${points} (${adjacentClosedCities} villes × 3)`);
 
             owners.forEach(playerId => {
-                // Bonus cochon : seulement si CE joueur est majoritaire ET a son cochon sur ce champ
-                const hasPigBonus = pigOwner === playerId;
-                const pts = adjacentClosedCities * (hasPigBonus ? 4 : 3);
-                console.log(`    Points pour ${playerId}: ${pts} (${adjacentClosedCities} villes × ${hasPigBonus ? 4 : 3}${hasPigBonus ? ' 🐷' : ''})`);
                 finalScores.push({
                     playerId,
-                    points: pts,
-                    reason: `Champ (${adjacentClosedCities} villes complètes${hasPigBonus ? ', bonus cochon' : ''})`
+                    points,
+                    reason: `Champ (${adjacentClosedCities} villes complètes)`
                 });
             });
         });
@@ -272,7 +244,7 @@ export class Scoring {
      * @returns {Array} Tableau des scores détaillés, trié par score décroissant
      */
     applyAndGetFinalScores(placedMeeples, gameState) {
-        const finalScores = this.calculateFinalScores(placedMeeples, gameState, this._builderRules ?? null);
+        const finalScores = this.calculateFinalScores(placedMeeples, gameState);
         
         console.log('📊 Application des scores finaux...');
         
@@ -297,26 +269,19 @@ export class Scoring {
             }
         });
         
-        // ── Marchandises : délégué à BuilderRules ──
-        if (this._builderRules) {
-            this._builderRules.applyMerchandiseFinalScores(gameState);
-        }
-
         // Créer le détail complet pour chaque joueur, trié par score décroissant
         const detailedScores = gameState.players
             .map(p => ({
                 id: p.id,
                 name: p.name,
                 color: p.color,
-                cities:      p.scoreDetail.cities,
-                roads:       p.scoreDetail.roads,
+                cities: p.scoreDetail.cities,
+                roads: p.scoreDetail.roads,
                 monasteries: p.scoreDetail.monasteries,
-                fields:      p.scoreDetail.fields,
-                goods:       p.scoreDetail.goods || 0,
-                goodsTokens: { ...(p.goods || { cloth: 0, wheat: 0, wine: 0 }) },
-                total:       p.score
+                fields: p.scoreDetail.fields,
+                total: p.score
             }))
-            .sort((a, b) => b.total - a.total);
+            .sort((a, b) => b.total - a.total); // Tri décroissant
         
         console.log('✅ Scores finaux appliqués et triés');
         

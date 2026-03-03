@@ -1,5 +1,3 @@
-import { getMeepleSize } from './MeepleConfig.js';
-
 /**
  * MeepleDisplayUI - Gère l'affichage des meeples sur le plateau
  * CODE COPIÉ EXACTEMENT de afficherMeeple
@@ -49,9 +47,8 @@ export class MeepleDisplayUI {
         meeple.style.position = 'absolute';
         meeple.style.left = `${offsetX}px`;
         meeple.style.top = `${offsetY}px`;
-        const { width, height } = getMeepleSize(meepleType, 'plate');
-        meeple.style.width  = width;
-        meeple.style.height = height;
+        meeple.style.width = '60px'; // ✅ Doublé de 30px à 60px
+        meeple.style.height = '60px';
         meeple.style.transform = 'translate(-50%, -50%)';
         meeple.style.pointerEvents = 'none';
         

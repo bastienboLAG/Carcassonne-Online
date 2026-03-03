@@ -78,20 +78,7 @@ export class ModalUI {
             margin-bottom: 20px;
         `;
         
-        const prefixOrder = ['base', 'river', 'abbot', 'inns_cathedrals', 'traders_builders'];
-        const prefixRank = id => {
-            const prefix = prefixOrder.findIndex(p => id.startsWith(p));
-            return prefix === -1 ? prefixOrder.length : prefix;
-        };
-        const sortedTiles = [...tiles].sort((a, b) => {
-            const rankA = prefixRank(a.id), rankB = prefixRank(b.id);
-            if (rankA !== rankB) return rankA - rankB;
-            const numA = parseInt(a.id.replace(/[^0-9]/g, '')) || 0;
-            const numB = parseInt(b.id.replace(/[^0-9]/g, '')) || 0;
-            return numA - numB;
-        });
-
-        sortedTiles.forEach(tile => {
+        tiles.forEach(tile => {
             const tileCard = document.createElement('div');
             tileCard.style.cssText = `
                 position: relative;
@@ -294,88 +281,6 @@ export class ModalUI {
             extensionsSection.appendChild(abbotContainer);
         }
 
-        // Extension Auberges & Cathédrales
-        const hasInnsExt = config.extensions?.largeMeeple || config.extensions?.cathedrals || config.extensions?.inns;
-        if (hasInnsExt) {
-            const innsContainer = document.createElement('div');
-            innsContainer.style.cssText = `
-                font-family: 'Courier New', monospace;
-                color: #e0e0e0;
-                line-height: 1.6;
-                margin-top: 8px;
-            `;
-
-            const innsLine = document.createElement('div');
-            innsLine.textContent = '└─ ✓ Auberges & Cathédrales';
-            innsLine.style.cssText = 'margin-left: 5px; font-size: 15px;';
-            innsContainer.appendChild(innsLine);
-
-            const makeSubLine = (text, active) => {
-                const el = document.createElement('div');
-                el.textContent = `   └─ ${active ? '✓' : '✗'} ${text}`;
-                el.style.cssText = `
-                    margin-left: 5px;
-                    font-size: 14px;
-                    padding-left: 20px;
-                    color: ${active ? '#a8d8a8' : '#888'};
-                    ${active ? '' : 'font-style: italic;'}
-                `;
-                return el;
-            };
-
-            innsContainer.appendChild(makeSubLine('Grand Meeple', config.extensions?.largeMeeple));
-
-            if (config.extensions?.cathedrals) {
-                const catLine = makeSubLine('Cathédrales', true);
-                innsContainer.appendChild(catLine);
-            } else {
-                innsContainer.appendChild(makeSubLine('Cathédrales', false));
-            }
-
-            if (config.extensions?.inns) {
-                const innLine = makeSubLine('Auberges', true);
-                innsContainer.appendChild(innLine);
-            } else {
-                innsContainer.appendChild(makeSubLine('Auberges', false));
-            }
-
-            extensionsSection.appendChild(innsContainer);
-        }
-
-        // Extension Marchands & Bâtisseurs
-        if (config.extensions?.tradersBuilders || config.extensions?.merchants || config.extensions?.pig) {
-            const tbContainer = document.createElement('div');
-            tbContainer.style.cssText = `
-                font-family: 'Courier New', monospace;
-                color: #e0e0e0;
-                line-height: 1.6;
-                margin-top: 8px;
-            `;
-
-            const tbLine = document.createElement('div');
-            tbLine.textContent = '└─ ✓ Marchands & Bâtisseurs';
-            tbLine.style.cssText = 'margin-left: 5px; font-size: 15px;';
-            tbContainer.appendChild(tbLine);
-
-            const makeSubLine = (text, active) => {
-                const el = document.createElement('div');
-                el.textContent = `   └─ ${active ? '✓' : '✗'} ${text}`;
-                el.style.cssText = `
-                    margin-left: 5px;
-                    font-size: 14px;
-                    padding-left: 20px;
-                    color: ${active ? '#a8d8a8' : '#888'};
-                    ${active ? '' : 'font-style: italic;'}
-                `;
-                return el;
-            };
-            tbContainer.appendChild(makeSubLine('Bâtisseur',    config.extensions?.tradersBuilders ?? false));
-            tbContainer.appendChild(makeSubLine('Marchandises', config.extensions?.merchants        ?? false));
-            tbContainer.appendChild(makeSubLine('Meeple Cochon', config.extensions?.pig            ?? false));
-
-            extensionsSection.appendChild(tbContainer);
-        }
-
         content.appendChild(extensionsSection);
 
         // Section Tuiles
@@ -389,12 +294,6 @@ export class ModalUI {
             }
             if (config.tileGroups?.abbot) {
                 list.push("L'Abbé : +8 tuiles");
-            }
-            if (config.tileGroups?.inns_cathedrals) {
-                list.push('Auberges & Cathédrales : +18 tuiles');
-            }
-            if (config.tileGroups?.traders_builders) {
-                list.push('Marchands & Bâtisseurs : +24 tuiles');
             }
             return list;
         })());

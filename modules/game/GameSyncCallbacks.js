@@ -24,10 +24,8 @@ export class GameSyncCallbacks {
         onDeckReshuffled,
         onAbbeRecalled,
         onAbbeRecalledUndo,
-        onBonusTurnStarted,
         updateTurnDisplay,
         poserTuileSync,
-        afficherMessage,
     }) {
         this.gameSync        = gameSync;
         this.gameState       = gameState;
@@ -48,11 +46,9 @@ export class GameSyncCallbacks {
         this.onTileDestroyed   = onTileDestroyed;     // (id, name, action) => void
         this.onDeckReshuffled  = onDeckReshuffled;    // (tiles, idx) => void
         this.onAbbeRecalled    = onAbbeRecalled;      // (x, y, key, playerId, points) => void
-        this.onAbbeRecalledUndo  = onAbbeRecalledUndo;  // (x, y, key, playerId) => void
-        this.onBonusTurnStarted  = onBonusTurnStarted ?? null; // (playerId) => void
+        this.onAbbeRecalledUndo = onAbbeRecalledUndo; // (x, y, key, playerId) => void
         this.updateTurnDisplay = updateTurnDisplay;   // () => void
         this.poserTuileSync    = poserTuileSync;      // (x, y, tile) => void
-        this.afficherMessage   = afficherMessage;     // (msg) => void
     }
 
     /**
@@ -113,13 +109,8 @@ export class GameSyncCallbacks {
         };
 
         // ── Fin de tour ───────────────────────────────────────────────────────
-        gs.onTurnEnded = (nextPlayerIndex, gameStateData, isBonusTurn = false) => {
-            this.turnManager.receiveTurnEnded(nextPlayerIndex, gameStateData, isBonusTurn);
-            // Si tour bonus : afficher le toast ici — plus besoin du message bonus-turn-started séparé
-            if (isBonusTurn && this.onBonusTurnStarted) {
-                const currentPlayer = this.gameState.getCurrentPlayer();
-                this.onBonusTurnStarted(currentPlayer?.id);
-            }
+        gs.onTurnEnded = (nextPlayerIndex, gameStateData) => {
+            this.turnManager.receiveTurnEnded(nextPlayerIndex, gameStateData);
         };
 
         // ── Pioche d'une tuile ────────────────────────────────────────────────
@@ -137,20 +128,18 @@ export class GameSyncCallbacks {
         };
 
         // ── Mise à jour du compteur de meeples ───────────────────────────────
-        gs.onMeepleCountUpdate = (playerId, meeples, hasAbbot, hasLargeMeeple, hasPig) => {
-            console.log('🎭 [SYNC] Mise à jour compteur reçue:', playerId, meeples, 'hasAbbot:', hasAbbot, 'hasLarge:', hasLargeMeeple, 'hasPig:', hasPig);
+        gs.onMeepleCountUpdate = (playerId, meeples, hasAbbot) => {
+            console.log('🎭 [SYNC] Mise à jour compteur reçue:', playerId, meeples, 'hasAbbot:', hasAbbot);
             const player = this.gameState.players.find(p => p.id === playerId);
             if (player) {
                 player.meeples = meeples;
-                if (hasAbbot       !== undefined) player.hasAbbot       = hasAbbot;
-                if (hasLargeMeeple !== undefined) player.hasLargeMeeple = hasLargeMeeple;
-                if (hasPig         !== undefined) player.hasPig         = hasPig;
+                if (hasAbbot !== undefined) player.hasAbbot = hasAbbot;
                 this.eventBus.emit('meeple-count-updated', { playerId, meeples });
             }
         };
 
         // ── Mise à jour des scores ────────────────────────────────────────────
-        gs.onScoreUpdate = (scoringResults, meeplesToReturn, goodsResults = [], zoneRegistryData = null, tileToZoneData = null) => {
+        gs.onScoreUpdate = (scoringResults, meeplesToReturn) => {
             console.log('💰 [SYNC] Mise à jour des scores reçue');
             const placedMeeples = this.getPlacedMeeples();
 
@@ -163,26 +152,6 @@ export class GameSyncCallbacks {
                     else if (zoneType === 'abbey') player.scoreDetail.monasteries += points;
                 }
             });
-
-            // Appliquer les jetons de marchandises
-            goodsResults.forEach(({ playerId, cloth, wheat, wine }) => {
-                const player = this.gameState.players.find(p => p.id === playerId);
-                if (player) {
-                    player.goods = player.goods || { cloth: 0, wheat: 0, wine: 0 };
-                    player.goods.cloth += cloth;
-                    player.goods.wheat += wheat;
-                    player.goods.wine  += wine;
-                }
-            });
-
-            // Appliquer le zoneRegistry post-scoring (goods vidés) envoyé par l'hôte
-            if (zoneRegistryData) {
-                this.zoneMerger.registry.deserialize(zoneRegistryData);
-                if (tileToZoneData) {
-                    this.zoneMerger.tileToZone = new Map(tileToZoneData);
-                }
-                console.log('✅ [SYNC] ZoneRegistry post-scoring appliqué (goods mis à jour)');
-            }
 
             meeplesToReturn.forEach(key => {
                 document.querySelectorAll(`.meeple[data-key="${key}"]`).forEach(el => el.remove());
@@ -199,27 +168,9 @@ export class GameSyncCallbacks {
         };
 
         // ── Fin de partie ─────────────────────────────────────────────────────
-        gs.onPlayerDisconnected = (peerId, playerName, nextPlayerIndex) => {
-            console.log('👋 [SYNC] Joueur déconnecté:', playerName);
-            // Retirer le joueur de gameState côté invité
-            if (this.gameState) {
-                this.gameState.players = this.gameState.players.filter(p => p.id !== peerId);
-                this.gameState.currentPlayerIndex = nextPlayerIndex;
-            }
-            if (this.afficherMessage) this.afficherMessage(`💔 ${playerName} s'est déconnecté.`);
-            // Mettre à jour le tour
-            if (this.turnManager) {
-                this.turnManager.updateTurnState();
-                this.turnManager.eventBus.emit('turn-changed', {
-                    isMyTurn: this.turnManager.isMyTurn,
-                    currentPlayer: this.turnManager.getCurrentPlayer()
-                });
-            }
-        };
-
-        gs.onGameEnded = (detailedScores, destroyedTilesCount = 0) => {
+        gs.onGameEnded = (detailedScores) => {
             console.log('🏁 [SYNC] Fin de partie reçue');
-            this.onFinalScores(detailedScores, destroyedTilesCount);
+            this.onFinalScores(detailedScores);
         };
 
         // ── Tuile détruite ────────────────────────────────────────────────────

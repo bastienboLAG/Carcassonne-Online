@@ -7,7 +7,6 @@ export class GameState {
         this.currentPlayerIndex = 0; // Index du joueur actuel
         this.placedTiles = {}; // Tuiles posées sur le plateau
         this.deck = []; // Pioche (seulement côté hôte)
-        this.destroyedTilesCount = 0; // Compteur global de tuiles détruites
     }
 
     /**
@@ -20,17 +19,12 @@ export class GameState {
             color: color,
             score: 0,
             meeples: 7,
-            hasAbbot:       false, // Initialisé à false, mis à true si extension Abbé activée
-            hasLargeMeeple: false, // Grand meeple (Auberges & Cathédrales)
-            hasBuilder:     false, // Bâtisseur (Marchands & Bâtisseurs)
-            hasPig:         false, // Cochon (Marchands & Bâtisseurs)
-            goods: { cloth: 0, wheat: 0, wine: 0 }, // Jetons marchandises
+            hasAbbot: false, // Initialisé à false, mis à true si extension Abbé activée
             scoreDetail: {
                 cities: 0,
                 roads: 0,
                 monasteries: 0,
-                fields: 0,
-                goods: 0
+                fields: 0
             }
         });
     }
@@ -53,14 +47,7 @@ export class GameState {
      * Passer au joueur suivant
      */
     nextPlayer() {
-        let attempts = 0;
-        do {
-            this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
-            attempts++;
-        } while (
-            this.players[this.currentPlayerIndex]?.color === 'spectator' &&
-            attempts < this.players.length
-        );
+        this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
     }
 
     /**
@@ -93,17 +80,12 @@ export class GameState {
             color: p.color,
             score: p.score || 0,
             meeples: p.meeples ?? 7,
-            hasAbbot:       p.hasAbbot       ?? false,
-            hasLargeMeeple: p.hasLargeMeeple ?? false,
-            hasBuilder:     p.hasBuilder     ?? false,
-            hasPig:         p.hasPig         ?? false,
-            goods: p.goods ?? { cloth: 0, wheat: 0, wine: 0 },
+            hasAbbot: p.hasAbbot ?? false,
             scoreDetail: p.scoreDetail || {
                 cities: 0,
                 roads: 0,
                 monasteries: 0,
-                fields: 0,
-                goods: 0
+                fields: 0
             }
         }));
         this.currentPlayerIndex = data.currentPlayerIndex || 0;

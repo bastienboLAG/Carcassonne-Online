@@ -12,8 +12,6 @@ export class Multiplayer {
         this._recentMsgIds = new Set(); // Pour dédupliquer les messages reçus en double
         this._msgCounter = 0; // Compteur pour générer des IDs uniques
         this._connectedPeers = new Set(); // Pour dédupliquer les connexions par peer ID
-        this.onHeartbeatPing = null; // Callback quand on reçoit un ping
-        this.onHeartbeatPong = null; // Callback quand on reçoit un pong
     }
 
     /**
@@ -24,17 +22,7 @@ export class Multiplayer {
         return new Promise((resolve, reject) => {
             // Générer un code à 6 chiffres et créer le peer avec cet ID
             const code = String(Math.floor(100000 + Math.random() * 900000));
-
-        const peerConfig = {
-            config: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                ]
-            }
-        };
-            this.peer = new Peer(code, peerConfig);
+            this.peer = new Peer(code);
             this.isHost = true;
 
             this.peer.on('open', (id) => {
@@ -70,17 +58,7 @@ export class Multiplayer {
      */
     async joinGame(hostId) {
         return new Promise((resolve, reject) => {
-
-        const peerConfig = {
-            config: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                ]
-            }
-        };
-            this.peer = new Peer(undefined, peerConfig);
+            this.peer = new Peer();
             this.isHost = false;
 
             this.peer.on('open', (id) => {
@@ -139,16 +117,6 @@ export class Multiplayer {
         };
 
         const onData = (data) => {
-            // Messages heartbeat — traités directement, pas de dédup ni de log
-            if (data.type === 'heartbeat-ping') {
-                if (this.onHeartbeatPing) this.onHeartbeatPing(conn.peer);
-                return;
-            }
-            if (data.type === 'heartbeat-pong') {
-                if (this.onHeartbeatPong) this.onHeartbeatPong(conn.peer);
-                return;
-            }
-
             // Dédupliquer les messages broadcast reçus en double
             if (data.msgId) {
                 if (this._recentMsgIds.has(data.msgId)) {

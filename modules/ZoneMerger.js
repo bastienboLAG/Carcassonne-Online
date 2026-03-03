@@ -34,15 +34,13 @@ export class ZoneMerger {
         this._resolveAdjacentCities(x, y);
 
         // Vérifier les fermetures et mettre à jour isComplete
-        const newlyClosed = this._updateCompletionStatus();
+        this._updateCompletionStatus();
         
         // Marquer les villes fermées dans l'historique
         this._updateClosedCitiesHistory();
 
         // Debug
         this.registry.listAll();
-
-        return newlyClosed;
     }
 
     /**
@@ -101,7 +99,7 @@ export class ZoneMerger {
                 });
                 
                 // Fusionner
-                this.registry.mergeZones(primaryZone.id, adjacentZones[i], this.tileToZone);
+                this.registry.mergeZones(primaryZone.id, adjacentZones[i]);
             }
         }
         
@@ -126,7 +124,7 @@ export class ZoneMerger {
                             this.tileToZone.set(tKey, currentZoneId);
                         });
                         
-                        this.registry.mergeZones(currentZoneId, connectedZoneId, this.tileToZone);
+                        this.registry.mergeZones(currentZoneId, connectedZoneId);
                     }
                 }
             });
@@ -308,14 +306,6 @@ export class ZoneMerger {
             if (features.includes('shield')) {
                 mergedZone.shields++;
             }
-            if (features.includes('cathedral')) {
-                mergedZone.hasCathedral = true;
-            }
-            if (features.includes('inn')) {
-                mergedZone.hasInn = true;
-            }
-            // Marchandises : calculées à la volée au moment de la fermeture (cf. BuilderRules.distributeGoods)
-            // Rien n'est stocké ici pour éviter tout problème de double-distribution.
             
             // ✅ Stocker temporairement les IDs locaux avec la position de la tuile
             if (typeof localZone.features === 'object' && localZone.features.adjacentCities) {
@@ -400,18 +390,15 @@ export class ZoneMerger {
      * @private
      */
     _updateCompletionStatus() {
-        const newlyClosed = [];
         for (const [id, zone] of this.registry.zones) {
-            if (zone.isComplete) continue; // déjà fermée avant ce tour
             if (zone.type === 'city') {
-                if (this._isCityComplete(zone)) { zone.isComplete = true; newlyClosed.push(zone); }
+                zone.isComplete = this._isCityComplete(zone);
             } else if (zone.type === 'road') {
-                if (this._isRoadComplete(zone)) { zone.isComplete = true; newlyClosed.push(zone); }
+                zone.isComplete = this._isRoadComplete(zone);
             } else if (zone.type === 'abbey' || zone.type === 'garden') {
-                if (this._isAbbeyComplete(zone)) { zone.isComplete = true; newlyClosed.push(zone); }
+                zone.isComplete = this._isAbbeyComplete(zone);
             }
         }
-        return newlyClosed;
     }
 
     /**
@@ -586,9 +573,6 @@ export class ZoneMerger {
         const tile = this.board.placedTiles[`${x},${y}`];
         if (!tile) return null;
 
-        // Normaliser position en nombre (meeplePosition du JSON peut être string ou number)
-        const posNum = Number(position);
-
         // Trouver quelle zone locale contient cette position
         let targetZoneIndex = null;
         
@@ -598,42 +582,21 @@ export class ZoneMerger {
                 : [zone.meeplePosition];
             
             positions.forEach(originalPos => {
-                // _rotatePosition retourne un Number — comparaison Number===Number
                 const rotatedPos = this._rotatePosition(originalPos, tile.rotation);
-                if (rotatedPos === posNum) {
+                
+                if (rotatedPos === position) {
                     targetZoneIndex = index;
                 }
             });
         });
 
-        if (targetZoneIndex === null) {
-            console.warn(`⚠️ [ZoneMerger] findMergedZoneForPosition(${x},${y},${position}) : aucun zoneIndex trouvé — tile.rotation=${tile.rotation} — positions dispo: ${tile.zones.map((z,i)=>`[${i}:${JSON.stringify(z.meeplePosition)}]`).join(' ')}`);
-            return null;
-        }
+        if (targetZoneIndex === null) return null;
 
         // Trouver la zone mergée via tileToZone
         const key = `${x},${y},${targetZoneIndex}`;
         const zoneId = this.tileToZone.get(key);
         
-        if (!zoneId) {
-            console.warn(`⚠️ [ZoneMerger] findMergedZoneForPosition(${x},${y},${position}) : clé "${key}" absente de tileToZone`);
-            return null;
-        }
-
-        const zone = this.registry.getZone(zoneId);
-        if (!zone) {
-            // Tiletozzone pointe vers une zone supprimée — bug de cohérence
-            // Fallback : chercher dans le registry par scan
-            const fallback = this.registry.findZoneContaining(x, y, targetZoneIndex);
-            console.warn(`⚠️ [ZoneMerger] findMergedZoneForPosition(${x},${y},${position}) : zoneId "${zoneId}" supprimé du registry ! tileToZone stale. Fallback → ${fallback?.id ?? 'null'}`);
-            if (fallback) {
-                // Corriger tileToZone pour éviter la prochaine erreur
-                this.tileToZone.set(key, fallback.id);
-            }
-            return fallback ?? null;
-        }
-        
-        return zone;
+        return zoneId ? this.registry.getZone(zoneId) : null;
     }
 
     /**
@@ -684,12 +647,10 @@ export class ZoneMerger {
      * @private
      */
     _rotatePosition(position, rotation) {
-        // Normaliser en nombre pour éviter "8" === 8 → false (meeplePosition peut être une string depuis le JSON)
-        const pos = Number(position);
-        if (rotation === 0) return pos;
+        if (rotation === 0) return position;
         
-        const row = Math.floor((pos - 1) / 5);
-        const col = (pos - 1) % 5;
+        const row = Math.floor((position - 1) / 5);
+        const col = (position - 1) % 5;
         
         let newRow = row;
         let newCol = col;

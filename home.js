@@ -11,16 +11,12 @@ import { EventBus }               from './modules/core/EventBus.js';
 import { RuleRegistry }           from './modules/core/RuleRegistry.js';
 import { BaseRules }              from './modules/rules/BaseRules.js';
 import { AbbeRules }              from './modules/rules/AbbeRules.js';
-import { InnsRules }              from './modules/rules/InnsRules.js';
-import { BuilderRules }          from './modules/rules/BuilderRules.js';
-import { ZoomManager }           from './modules/game/ZoomManager.js';
 import { TurnManager }            from './modules/game/TurnManager.js';
 import { UndoManager }            from './modules/game/UndoManager.js';
 import { TilePlacement }          from './modules/game/TilePlacement.js';
 import { MeeplePlacement }        from './modules/game/MeeplePlacement.js';
 import { GameSyncCallbacks }      from './modules/game/GameSyncCallbacks.js';
 import { UnplaceableTileManager } from './modules/game/UnplaceableTileManager.js';
-import { HeartbeatManager }       from './modules/HeartbeatManager.js';
 import { FinalScoresManager }     from './modules/game/FinalScoresManager.js';
 
 import { ScorePanelUI }    from './modules/ScorePanelUI.js';
@@ -41,20 +37,6 @@ const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
 // VARIABLES LOBBY
 // ═══════════════════════════════════════════════════════
 const multiplayer = new Multiplayer();
-// Callbacks heartbeat assignés dès le départ — heartbeatManager peut être null avant le démarrage
-multiplayer.onHeartbeatPing = () => heartbeatManager?.receivePing();
-multiplayer.onHeartbeatPong = (peerId) => heartbeatManager?.receivePong(peerId);
-
-/**
- * Démarrer (ou redémarrer) le heartbeat avec le bon handler selon le contexte
- * @param {Function} onTimeout - callback(peerId) en cas de timeout
- */
-function _startHeartbeat(onTimeout) {
-    if (!multiplayer?.peer) return;
-    if (heartbeatManager) { heartbeatManager.stop(); heartbeatManager = null; }
-    heartbeatManager = new HeartbeatManager({ multiplayer, onPeerTimeout: onTimeout });
-    heartbeatManager.start();
-}
 const lobbyUI     = new LobbyUI(multiplayer);
 const modalUI     = new ModalUI();
 let gameCode      = null;
@@ -69,8 +51,8 @@ let eventListenersInstalled = false;
 let gameConfig = {
     playFields:         true,
     showRemainingTiles: true,
-    extensions: { base: true, abbot: false, largeMeeple: false, cathedrals: true, inns: true },
-    tileGroups: { base: true, abbot: false, inns_cathedrals: false }
+    extensions: { base: true, abbot: false },
+    tileGroups: { base: true, abbot: false }
 };
 
 // ═══════════════════════════════════════════════════════
@@ -104,14 +86,6 @@ let meepleDisplayUI = null;
 
 let unplaceableManager = null;
 let finalScoresManager = null;
-let gameTimerInterval  = null;
-let gameTimerStart     = null;
-
-function _isSpectator() {
-    if (!gameState || !multiplayer) return false;
-    const me = gameState.players.find(p => p.id === multiplayer.playerId);
-    return me?.color === 'spectator';
-}
 
 let originalLobbyHandler = null;
 
@@ -128,9 +102,6 @@ let lastPlacedTile = null;
 let placedMeeples  = {};
 
 let zoomLevel  = 1;
-let zoomManager = null; // instance ZoomManager
-let heartbeatManager = null;
-let _navigationSetup = false;
 let isDragging = false, startX = 0, startY = 0, scrollLeft = 0, scrollTop = 0;
 
 const allColors   = ['black', 'red', 'pink', 'green', 'blue', 'yellow'];
@@ -161,26 +132,17 @@ eventBus.on('tile-drawn', (data) => {
 
     // Snapshot début de tour (sauf lors d'une annulation)
     if (undoManager && !data.fromNetwork && !data.fromUndo) {
-        undoManager.setLastPlacedTileBeforeTurn(lastPlacedTile);
         undoManager.saveTurnStart(placedMeeples);
     }
 
-    // Reset du builder au début de chaque tour local (évite faux positifs de tours précédents)
-    if (!data.fromNetwork && !data.fromUndo && gameConfig?.extensions?.tradersBuilders) {
-        ruleRegistry.rules?.get('builders')?.resetLastPlacedTile?.();
-    }
-
-    // L'hôte synchronise toujours la pioche (même spectateur), l'invité seulement si c'est son tour
-    if (!data.fromNetwork && !data.fromUndo && turnManager && gameSync) {
-        if (isHost || turnManager.getIsMyTurn()) {
-            gameSync.syncTileDraw(data.tileData.id, tuileEnMain.rotation);
-        }
+    // Synchroniser si c'est notre tour
+    if (!data.fromNetwork && !data.fromUndo && turnManager && turnManager.getIsMyTurn() && gameSync) {
+        gameSync.syncTileDraw(data.tileData.id, tuileEnMain.rotation);
     }
 
     // Vérifier si la tuile est plaçable
     if (!data.fromNetwork && !data.fromUndo && tilePlacement && unplaceableManager) {
-        const isRiverPhase = tuileEnMain?.id?.startsWith('river-') ?? false;
-        const placeable = unplaceableManager.isTilePlaceable(tuileEnMain, tilePlacement.plateau, isRiverPhase);
+        const placeable = unplaceableManager.isTilePlaceable(tuileEnMain, tilePlacement.plateau);
         if (!placeable) {
             const actionText = gameConfig?.unplaceableAction === 'reshuffle'
                 ? 'remise dans la pioche'
@@ -196,12 +158,8 @@ eventBus.on('deck-updated', (data) => {
 });
 
 eventBus.on('turn-changed', (data) => {
-    isMyTurn = data.isMyTurn && !_isSpectator();
-    console.log('🔄 Sync isMyTurn global:', isMyTurn, '— isBonusTurn:', data.isBonusTurn ?? false);
-    // Synchroniser isBonusTurn sur turnManager si transmis par receiveTurnEnded
-    if (turnManager && data.isBonusTurn !== undefined) {
-        turnManager.isBonusTurn = data.isBonusTurn;
-    }
+    isMyTurn = data.isMyTurn;
+    console.log('🔄 Sync isMyTurn global:', isMyTurn);
     updateTurnDisplay();
 });
 
@@ -247,15 +205,11 @@ eventBus.on('meeple-count-updated', (data) => {
         const player = gameState?.players.find(p => p.id === data.playerId);
         gameSync.multiplayer.broadcast({
             type: 'meeple-count-update',
-            playerId:       data.playerId,
-            meeples:        player ? player.meeples        : data.meeples,
-            hasAbbot:       player ? player.hasAbbot       : undefined,
-            hasLargeMeeple: player ? player.hasLargeMeeple : undefined,
-            hasPig:         player ? player.hasPig         : undefined
+            playerId: data.playerId,
+            meeples:  player ? player.meeples : data.meeples,
+            hasAbbot: player ? player.hasAbbot : undefined
         });
     }
-    // Panel mobile mis à jour via ScorePanelUI
-    if (scorePanelUI) scorePanelUI.updateMobile();
 });
 
 // ═══════════════════════════════════════════════════════
@@ -329,16 +283,8 @@ function applyPreset(preset) {
         'show_remaining':    'list-remaining',
         'test_deck':         'use-test-deck',
         'debug':             'enable-debug',
-        'abbot_extension':       'ext-abbot',
-        'abbot_tiles':           'tiles-abbot',
-        'large_meeple':          'ext-large-meeple',
-        'cathedrals_extension':  'ext-cathedrals',
-        'inns_extension':        'ext-inns',
-        'inns_cathedrals_tiles': 'tiles-inns-cathedrals',
-        'traders_builders_tiles': 'tiles-traders-builders',
-        'ext_builder':           'ext-builder',
-        'ext_merchants':         'ext-merchants',
-        'ext_pig':               'ext-pig',
+        'abbot_extension':   'ext-abbot',
+        'abbot_tiles':       'tiles-abbot',
     };
     for (const [key, id] of Object.entries(map)) {
         if (preset[key] !== undefined) {
@@ -353,12 +299,6 @@ function applyPreset(preset) {
         if (radio) radio.checked = true;
     }
 
-    // Mettre à jour les coches maîtres selon l'état des enfants
-    document.querySelectorAll('.ext-master').forEach(m => { if (m.id) _updateMasterCheckboxSafe(m.id); });
-
-    // Appliquer les contraintes de dépendance (ex: cochon ↔ champs)
-    _updatePigAvailability();
-
     saveLobbyOptions();
 }
 
@@ -369,16 +309,8 @@ function saveLobbyOptions() {
         show_remaining:  document.getElementById('list-remaining')?.checked ?? true,
         test_deck:       document.getElementById('use-test-deck')?.checked ?? false,
         debug:           document.getElementById('enable-debug')?.checked ?? false,
-        abbot_extension:         document.getElementById('ext-abbot')?.checked              ?? false,
-        abbot_tiles:             document.getElementById('tiles-abbot')?.checked            ?? false,
-        large_meeple:            document.getElementById('ext-large-meeple')?.checked       ?? false,
-        cathedrals_extension:    document.getElementById('ext-cathedrals')?.checked         ?? true,
-        inns_extension:          document.getElementById('ext-inns')?.checked               ?? true,
-        inns_cathedrals_tiles:    document.getElementById('tiles-inns-cathedrals')?.checked   ?? false,
-        traders_builders_tiles:   document.getElementById('tiles-traders-builders')?.checked  ?? false,
-        ext_builder:              document.getElementById('ext-builder')?.checked             ?? false,
-        ext_merchants:            document.getElementById('ext-merchants')?.checked           ?? false,
-        ext_pig:                  document.getElementById('ext-pig')?.checked               ?? false,
+        abbot_extension: document.getElementById('ext-abbot')?.checked ?? false,
+        abbot_tiles:     document.getElementById('tiles-abbot')?.checked ?? false,
         unplaceable:     document.querySelector('input[name="unplaceable"]:checked')?.value ?? 'reshuffle',
     };
     localStorage.setItem(LS_KEY, JSON.stringify(state));
@@ -390,28 +322,6 @@ function loadLobbyOptions() {
         if (saved) applyPreset(JSON.parse(saved));
     } catch (e) {
         console.warn('⚠️ Impossible de restaurer les options:', e);
-    }
-    // Mettre à jour les coches maîtres après restauration
-    // (MASTER_IDS peut ne pas être défini encore à ce stade, on utilise querySelectorAll)
-    document.querySelectorAll('.ext-master').forEach(master => {
-        if (master.id) _updateMasterCheckboxSafe(master.id);
-    });
-}
-
-// Version sécurisée appelable avant que MASTER_IDS soit défini
-function _updateMasterCheckboxSafe(masterId) {
-    const master   = document.getElementById(masterId);
-    if (!master) return;
-    const children = [...document.querySelectorAll(`input[data-group="${masterId}"]`)]
-        .filter(el => !el.disabled);
-    if (children.length === 0) return;
-    const checkedCount = children.filter(c => c.checked).length;
-    if (checkedCount === 0) {
-        master.checked = false; master.indeterminate = false;
-    } else if (checkedCount === children.length) {
-        master.checked = true;  master.indeterminate = false;
-    } else {
-        master.checked = false; master.indeterminate = true;
     }
 }
 
@@ -468,16 +378,8 @@ function syncAllOptions() {
         'list-remaining': document.getElementById('list-remaining')?.checked ?? true,
         'use-test-deck':  document.getElementById('use-test-deck')?.checked ?? false,
         'enable-debug':   document.getElementById('enable-debug')?.checked ?? false,
-        'ext-abbot':               document.getElementById('ext-abbot')?.checked              ?? false,
-        'tiles-abbot':             document.getElementById('tiles-abbot')?.checked            ?? false,
-        'ext-large-meeple':        document.getElementById('ext-large-meeple')?.checked       ?? false,
-        'ext-cathedrals':            document.getElementById('ext-cathedrals')?.checked           ?? true,
-        'ext-inns':                  document.getElementById('ext-inns')?.checked               ?? true,
-        'tiles-inns-cathedrals':     document.getElementById('tiles-inns-cathedrals')?.checked  ?? false,
-        'tiles-traders-builders':    document.getElementById('tiles-traders-builders')?.checked ?? false,
-        'ext-builder':               document.getElementById('ext-builder')?.checked            ?? false,
-        'ext-merchants':             document.getElementById('ext-merchants')?.checked          ?? false,
-        'ext-pig':                   document.getElementById('ext-pig')?.checked              ?? false,
+        'ext-abbot':      document.getElementById('ext-abbot')?.checked ?? false,
+        'tiles-abbot':    document.getElementById('tiles-abbot')?.checked ?? false,
         'unplaceable':    document.querySelector('input[name="unplaceable"]:checked')?.value ?? 'reshuffle',
         'start':          document.querySelector('input[name="start"]:checked')?.value ?? 'unique',
     };
@@ -486,7 +388,7 @@ function syncAllOptions() {
 
 // Sauvegarder les options à chaque changement manuel
 document.querySelectorAll(
-    '#base-fields, #list-remaining, #use-test-deck, #enable-debug, #ext-abbot, #tiles-abbot, #ext-large-meeple, #ext-cathedrals, #ext-inns, #tiles-inns-cathedrals, #tiles-traders-builders, #ext-builder, #ext-merchants, #ext-pig'
+    '#base-fields, #list-remaining, #use-test-deck, #enable-debug, #ext-abbot, #tiles-abbot'
 ).forEach(el => el.addEventListener('change', saveLobbyOptions));
 document.querySelectorAll('input[name="unplaceable"], input[name="start"]')
     .forEach(el => el.addEventListener('change', saveLobbyOptions));
@@ -494,92 +396,6 @@ document.querySelectorAll('input[name="unplaceable"], input[name="start"]')
 // Charger presets et options sauvegardées au démarrage
 loadLobbyOptions();
 loadPresets();
-
-// Liaison base-fields <-> ext-pig : si champs désactivés, cochon désactivé et grisé
-function _updatePigAvailability() {
-    const fieldsOn = document.getElementById('base-fields')?.checked ?? true;
-    const pigLabel = document.getElementById('ext-pig-label');
-    const pigCb    = document.getElementById('ext-pig');
-    if (!pigLabel || !pigCb) return;
-    if (!fieldsOn) {
-        pigCb.checked  = false;
-        pigCb.disabled = true;
-        pigLabel.style.opacity       = '0.4';
-        pigLabel.style.pointerEvents = 'none';
-    } else {
-        pigCb.disabled = false;
-        pigLabel.style.opacity       = '';
-        pigLabel.style.pointerEvents = '';
-    }
-    // Mettre à jour la coche maître (pig disabled = exclu du calcul)
-    _updateMasterCheckboxSafe('all-traders-builders');
-    saveLobbyOptions();
-}
-document.getElementById('base-fields')?.addEventListener('change', _updatePigAvailability);
-_updatePigAvailability(); // état initial
-
-// ── Coches maîtres (bidirectionnelles) ────────────────────────────────
-// Un groupe est défini par data-group="<masterId>" sur chaque coche enfant.
-// La coche maître est checked si TOUTES les enfants sont cochées,
-// indeterminate si certaines seulement, unchecked sinon.
-
-function _updateMasterCheckbox(masterId) { _updateMasterCheckboxSafe(masterId); }
-
-function _onMasterChange(masterId) {
-    const master   = document.getElementById(masterId);
-    if (!master) return;
-    const children = [...document.querySelectorAll(`input[data-group="${masterId}"]`)]
-        .filter(el => !el.disabled);
-    children.forEach(c => { c.checked = master.checked; });
-    // Ré-appliquer les contraintes de dépendance AVANT de dispatcher les change
-    // (ex : ext-pig dépend de base-fields, même au sein d'une coche maître)
-    _updatePigAvailability();
-    // Déclencher les side-effects (saveLobbyOptions, sync)
-    children.forEach(c => c.dispatchEvent(new Event('change', { bubbles: true })));
-    saveLobbyOptions();
-}
-
-// IDs de toutes les coches maîtres
-const MASTER_IDS = ['all-base', 'all-abbot', 'all-inns-cathedrals', 'all-traders-builders', 'all-tiles'];
-
-// Brancher les coches maîtres
-MASTER_IDS.forEach(masterId => {
-    const master = document.getElementById(masterId);
-    if (!master) return;
-    master.addEventListener('click', (e) => {
-        // Empêcher le clic de toggle le <details> parent
-        e.stopPropagation();
-    });
-    master.addEventListener('change', (e) => {
-        e.stopPropagation();
-        _onMasterChange(masterId);
-    });
-});
-
-// Brancher les coches enfants → mise à jour de la coche maître
-document.querySelectorAll('input[data-group]').forEach(child => {
-    child.addEventListener('change', () => {
-        _updateMasterCheckbox(child.dataset.group);
-    });
-});
-
-// État initial des coches maîtres
-MASTER_IDS.forEach(_updateMasterCheckbox);
-
-// ✅ Bouton retour Android — interception pendant la partie
-let _handlingPopstate = false;
-window.addEventListener('popstate', (e) => {
-    if (!gameState) return;
-    if (_handlingPopstate) { _handlingPopstate = false; return; }
-    _handlingPopstate = true;
-    history.go(1);
-    setTimeout(() => {
-        const quitter = confirm('Voulez-vous vraiment quitter la partie ?');
-        if (quitter) {
-            location.reload();
-        }
-    }, 50);
-});
 
 // Sélection de couleur
 const colorOptions = document.querySelectorAll('.color-option');
@@ -616,11 +432,11 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
         document.getElementById('game-code-text').textContent = `Code: ${gameCode}`;
 
         players.push({ id: multiplayer.playerId, name: playerName, color: playerColor, isHost: true });
-        lobbyUI.setIsHost(true);
         lobbyUI.setPlayers(players);
+        lobbyUI.setIsHost(true);
 
         // Sync temps réel de toutes les options vers les invités
-        ['base-fields', 'list-remaining', 'use-test-deck', 'enable-debug', 'ext-abbot', 'tiles-abbot', 'ext-large-meeple', 'ext-cathedrals', 'ext-inns', 'tiles-inns-cathedrals', 'tiles-traders-builders', 'ext-builder', 'ext-merchants', 'ext-pig'].forEach(id => {
+        ['base-fields', 'list-remaining', 'use-test-deck', 'enable-debug', 'ext-abbot', 'tiles-abbot'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('change', (e) => {
                 multiplayer.broadcast({ type: 'option-change', option: id, value: e.target.checked });
@@ -640,13 +456,6 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
 
         multiplayer.onPlayerJoined = (playerId) => {
             console.log('👤 Nouveau joueur connecté:', playerId);
-            // Démarrer/redémarrer le heartbeat avec handler lobby (kick de la liste)
-            _startHeartbeat((peerId) => {
-                players = players.filter(p => p.id !== peerId);
-                lobbyUI.setPlayers(players);
-                multiplayer.broadcast({ type: 'players-update', players });
-                console.warn(`💔 Joueur ${peerId} retiré du lobby (timeout heartbeat)`);
-            });
         };
 
         multiplayer.onDataReceived = (data, from) => {
@@ -671,16 +480,8 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
                     'use-test-deck':   document.getElementById('use-test-deck')?.checked   ?? false,
                     'enable-debug':    document.getElementById('enable-debug')?.checked    ?? false,
                     'unplaceable':     document.querySelector('input[name="unplaceable"]:checked')?.value ?? 'reshuffle',
-                    'ext-abbot':               document.getElementById('ext-abbot')?.checked              ?? false,
-                    'tiles-abbot':             document.getElementById('tiles-abbot')?.checked            ?? false,
-                    'ext-large-meeple':        document.getElementById('ext-large-meeple')?.checked       ?? false,
-                    'ext-cathedrals':            document.getElementById('ext-cathedrals')?.checked           ?? true,
-                    'ext-inns':                  document.getElementById('ext-inns')?.checked               ?? true,
-                    'tiles-inns-cathedrals':     document.getElementById('tiles-inns-cathedrals')?.checked  ?? false,
-                    'tiles-traders-builders':    document.getElementById('tiles-traders-builders')?.checked ?? false,
-                    'ext-builder':               document.getElementById('ext-builder')?.checked            ?? false,
-                    'ext-merchants':             document.getElementById('ext-merchants')?.checked          ?? false,
-                    'ext-pig':                   document.getElementById('ext-pig')?.checked              ?? false,
+                    'ext-abbot':       document.getElementById('ext-abbot')?.checked       ?? false,
+                    'tiles-abbot':     document.getElementById('tiles-abbot')?.checked     ?? false,
                     'start':           document.querySelector('input[name="start"]:checked')?.value ?? 'unique',
                 };
                 multiplayer.sendTo(from, { type: 'options-sync', options: currentOptions });
@@ -715,13 +516,6 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
             players = players.filter(p => p.id !== playerId);
             lobbyUI.setPlayers(players);
             multiplayer.broadcast({ type: 'players-update', players });
-        };
-
-        // Hôte : quitter le lobby (kick général + retour menu)
-        lobbyUI.onHostLeave = () => {
-            const invites = players.filter(p => !p.isHost);
-            if (invites.length > 0) multiplayer.broadcast({ type: 'you-are-kicked' });
-            returnToInitialLobby();
         };
 
     } catch (error) {
@@ -759,17 +553,7 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
         const lobbyHandler = (data, from) => {
             console.log('📨 [INVITÉ] Reçu:', data);
 
-            if (data.type === 'welcome') {
-                console.log('🎉', data.message);
-                // Afficher le code d'invitation côté invité
-                gameCode = code; // ✅ mémoriser pour que le bouton "Copier" fonctionne
-                document.getElementById('game-code-container').style.display = 'block';
-                document.getElementById('game-code-text').textContent = `Code: ${code}`;
-                // Démarrer le heartbeat côté invité (détecte si l'hôte disparaît)
-                _startHeartbeat((peerId) => {
-                    returnToInitialLobby("L'hote ne repond plus.");
-                });
-            }
+            if (data.type === 'welcome')         console.log('🎉', data.message);
             if (data.type === 'players-update') {
                 players = data.players;
                 lobbyUI.setPlayers(players);
@@ -804,7 +588,7 @@ document.getElementById('join-confirm-btn').addEventListener('click', async () =
             if (data.type === 'options-sync') {
                 // ✅ Réception de l'état complet des options
                 const opts = data.options;
-                ['base-fields', 'list-remaining', 'use-test-deck', 'enable-debug', 'ext-abbot', 'tiles-abbot', 'ext-large-meeple', 'ext-cathedrals', 'ext-inns', 'tiles-inns-cathedrals', 'ext-builder', 'ext-merchants', 'ext-pig'].forEach(id => {
+                ['base-fields', 'list-remaining', 'use-test-deck', 'enable-debug', 'ext-abbot', 'tiles-abbot'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el && opts[id] !== undefined) el.checked = opts[id];
                 });
@@ -876,19 +660,11 @@ document.getElementById('start-game-btn').addEventListener('click', async () => 
         startType: document.querySelector('input[name="start"]:checked')?.value || 'unique',
         extensions: {
             base:  true,
-            abbot:           document.getElementById('ext-abbot')?.checked          ?? false,
-            largeMeeple:     document.getElementById('ext-large-meeple')?.checked    ?? false,
-            cathedrals:      document.getElementById('ext-cathedrals')?.checked      ?? true,
-            inns:            document.getElementById('ext-inns')?.checked            ?? true,
-            tradersBuilders: document.getElementById('ext-builder')?.checked         ?? false,
-            merchants:       document.getElementById('ext-merchants')?.checked       ?? false,
-            pig:             document.getElementById('ext-pig')?.checked             ?? false
+            abbot: document.getElementById('ext-abbot')?.checked ?? false
         },
         tileGroups: {
             base:  true,
-            abbot:            document.getElementById('tiles-abbot')?.checked             ?? false,
-            inns_cathedrals:  document.getElementById('tiles-inns-cathedrals')?.checked   ?? false,
-            traders_builders: document.getElementById('tiles-traders-builders')?.checked  ?? false,
+            abbot: document.getElementById('tiles-abbot')?.checked ?? false,
             river: document.querySelector('input[name="start"]:checked')?.value === 'river'
         }
     };
@@ -919,7 +695,7 @@ function initializeGameModules() {
     tilePreviewUI.init();
 
     zoneMerger = new ZoneMerger(plateau);
-    scoring    = new Scoring(zoneMerger, gameConfig);
+    scoring    = new Scoring(zoneMerger);
 
     tilePlacement  = new TilePlacement(eventBus, plateau, zoneMerger);
     meeplePlacement = new MeeplePlacement(eventBus, gameState, zoneMerger);
@@ -928,8 +704,6 @@ function initializeGameModules() {
     meepleCursorsUI  = new MeepleCursorsUI(multiplayer, zoneMerger, plateau, gameConfig);
     meepleCursorsUI.init();
     meepleSelectorUI = new MeepleSelectorUI(multiplayer, gameState, gameConfig);
-    meepleSelectorUI.zoneMerger    = zoneMerger;
-    meepleSelectorUI.placedMeeples = placedMeeples;
     meepleDisplayUI  = new MeepleDisplayUI();
     meepleDisplayUI.init();
 
@@ -938,21 +712,12 @@ function initializeGameModules() {
     // ✅ Modules extraits de home.js
     unplaceableManager = new UnplaceableTileManager({
         deck, gameState, tilePreviewUI, gameSync, gameConfig,
-        setRedrawMode: (active) => { waitingToRedraw = active; updateTurnDisplay(); },
-        triggerEndGame: () => {
-            if (deck.remaining() <= 0) {
-                if (gameSync) gameSync.syncTurnEnd();
-                finalScoresManager.computeAndApply(placedMeeples);
-            }
-        }
+        setRedrawMode: (active) => { waitingToRedraw = active; updateTurnDisplay(); }
     });
 
     finalScoresManager = new FinalScoresManager({
-        gameState, scoring, zoneMerger, gameSync, eventBus, updateTurnDisplay, gameConfig
+        gameState, scoring, zoneMerger, gameSync, eventBus, updateTurnDisplay
     });
-    // Afficher la colonne Marchands si l'extension est active
-    const thMerchants = document.getElementById('th-merchants');
-    if (thMerchants) thMerchants.style.display = gameConfig?.extensions?.merchants ? '' : 'none';
 
     console.log('✅ Tous les modules initialisés');
 }
@@ -975,11 +740,8 @@ function attachGameSyncCallbacks() {
         eventBus,
         getPlacedMeeples: () => placedMeeples,
         onRemoteUndo:     handleRemoteUndo,
-        onFinalScores:    (scores, destroyedTilesCount = 0) => finalScoresManager.receiveFromNetwork(scores, destroyedTilesCount),
-        onTileDestroyed:  (tileId, pName, action, count = 1) => {
-            if (gameState) gameState.destroyedTilesCount = (gameState.destroyedTilesCount || 0) + count;
-            unplaceableManager.showTileDestroyedModal(tileId, pName, false, action);
-        },
+        onFinalScores:    (scores) => finalScoresManager.receiveFromNetwork(scores),
+        onTileDestroyed:  (tileId, pName, action) => unplaceableManager.showTileDestroyedModal(tileId, pName, false, action),
         onDeckReshuffled: (tiles, idx) => { deck.tiles = tiles; deck.currentIndex = idx; },
         onAbbeRecalled: (x, y, key, playerId, points) => {
             // Retirer visuellement l'Abbé
@@ -1000,64 +762,22 @@ function attachGameSyncCallbacks() {
             eventBus.emit('score-updated');
             updateTurnDisplay();
         },
-        onBonusTurnStarted: (playerId) => {
-            // Un autre joueur démarre son tour bonus — flaguer localement pour le UI
-            if (turnManager) turnManager.isBonusTurn = true;
-            updateTurnDisplay();
-            const player = gameState.players.find(p => p.id === playerId);
-            if (player) {
-                afficherToast(`⭐ Tour bonus pour ${player.name} !`, 'bonus');
-                // Marquer le toast pour fermeture automatique à la fin du tour bonus
-                const _bonusToast = document.getElementById('disconnect-toast');
-                if (_bonusToast) _bonusToast.dataset.isBonusToast = 'true';
-            }
-        },
         updateTurnDisplay,
         poserTuileSync,
-        afficherMessage: (msg) => { afficherToast(msg); }, // ✅ ne plus écraser le tile-preview
     }).attach(isHost);
 }
 
 // ═══════════════════════════════════════════════════════
 // DÉMARRAGE — HÔTE
 // ═══════════════════════════════════════════════════════
-function startGameTimer() {
-    gameTimerStart = Date.now();
-    const el = document.getElementById('game-timer');
-    if (el) el.style.display = '';
-    clearInterval(gameTimerInterval);
-    gameTimerInterval = setInterval(() => {
-        const el = document.getElementById('game-timer');
-        if (!el) return;
-        const elapsed = Math.floor((Date.now() - gameTimerStart) / 1000);
-        const h = Math.floor(elapsed / 3600);
-        const m = Math.floor((elapsed % 3600) / 60);
-        const s = elapsed % 60;
-        el.textContent = h > 0
-            ? `⏱ ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
-            : `⏱ ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    }, 1000);
-}
-
-function stopGameTimer() {
-    clearInterval(gameTimerInterval);
-    gameTimerInterval = null;
-}
-
 async function startGame() {
     console.log('🎮 [HÔTE] Initialisation du jeu...');
-    startGameTimer();
 
     document.getElementById('lobby-page').style.display = 'none';
     document.getElementById('game-page').style.display  = 'flex';
-    history.pushState({ inGame: true }, '');
 
     gameState = new GameState();
     players.forEach(p => gameState.addPlayer(p.id, p.name, p.color, p.isHost));
-    // S'assurer que currentPlayerIndex ne démarre pas sur un spectateur
-    { let a = 0;
-      while (gameState.players[gameState.currentPlayerIndex]?.color === 'spectator' && a++ < gameState.players.length)
-          gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length; }
     // Initialiser le flag Abbé pour chaque joueur
     console.log('🔧 startGame — gameConfig.extensions:', JSON.stringify(gameConfig.extensions));
     if (gameConfig.extensions?.abbot) {
@@ -1066,23 +786,11 @@ async function startGame() {
     } else {
         console.log('ℹ️ [HOST] abbot désactivé');
     }
-    if (gameConfig.extensions?.largeMeeple) {
-        gameState.players.forEach(p => { p.hasLargeMeeple = true; });
-        console.log('✅ [HOST] hasLargeMeeple initialisé');
-    }
-    if (gameConfig.extensions?.tradersBuilders) {
-        gameState.players.forEach(p => { p.hasBuilder = true; });
-        console.log('✅ [HOST] hasBuilder initialisé');
-    }
-    if (gameConfig.extensions?.pig) {
-        gameState.players.forEach(p => { p.hasPig = true; });
-        console.log('✅ [HOST] hasPig initialisé');
-    }
 
     gameSync = new GameSync(multiplayer, gameState, null);
     gameSync.init();
 
-    turnManager = new TurnManager(eventBus, gameState, deck, multiplayer, isHost);
+    turnManager = new TurnManager(eventBus, gameState, deck, multiplayer);
     turnManager.init();
 
     initializeGameModules();
@@ -1112,33 +820,15 @@ async function startGame() {
 // ═══════════════════════════════════════════════════════
 async function startGameForInvite() {
     console.log('🎮 [INVITÉ] Initialisation du jeu...');
-    startGameTimer();
     lobbyUI.hide();
-    history.pushState({ inGame: true }, '');
 
     gameState = new GameState();
     players.forEach(p => gameState.addPlayer(p.id, p.name, p.color, p.isHost));
-    // S'assurer que currentPlayerIndex ne démarre pas sur un spectateur
-    { let a = 0;
-      while (gameState.players[gameState.currentPlayerIndex]?.color === 'spectator' && a++ < gameState.players.length)
-          gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length; }
     if (gameConfig.extensions?.abbot) {
         gameState.players.forEach(p => { p.hasAbbot = true; });
         console.log('✅ [INVITÉ] hasAbbot initialisé pour', gameState.players.map(p => p.id));
     } else {
         console.log('ℹ️ [INVITÉ] extension abbot désactivée — gameConfig:', JSON.stringify(gameConfig.extensions));
-    }
-    if (gameConfig.extensions?.largeMeeple) {
-        gameState.players.forEach(p => { p.hasLargeMeeple = true; });
-        console.log('✅ [INVITÉ] hasLargeMeeple initialisé');
-    }
-    if (gameConfig.extensions?.tradersBuilders) {
-        gameState.players.forEach(p => { p.hasBuilder = true; });
-        console.log('✅ [INVITÉ] hasBuilder initialisé');
-    }
-    if (gameConfig.extensions?.pig) {
-        gameState.players.forEach(p => { p.hasPig = true; });
-        console.log('✅ [INVITÉ] hasPig initialisé');
     }
 
     gameSync = new GameSync(multiplayer, gameState, originalLobbyHandler);
@@ -1174,61 +864,12 @@ function _postStartSetup() {
         ruleRegistry.register('abbot', AbbeRules, gameConfig);
         ruleRegistry.enable('abbot');
     }
-    if (gameConfig.extensions?.largeMeeple || gameConfig.extensions?.cathedrals || gameConfig.extensions?.inns) {
-        ruleRegistry.register('inns', InnsRules, gameConfig);
-        ruleRegistry.enable('inns');
-    }
-    if (gameConfig.extensions?.tradersBuilders || gameConfig.extensions?.pig) {
-        // BuilderRules gère à la fois le bâtisseur et le cochon (extension Marchands & Bâtisseurs)
-        const builderRulesInst = new BuilderRules(eventBus, gameState, zoneMerger, gameConfig);
-        builderRulesInst.setPlacedMeeples(placedMeeples);
-        ruleRegistry.registerInstance('builders', builderRulesInst);
-        ruleRegistry.enable('builders');
-        // Tour bonus bâtisseur
-        if (turnManager) turnManager.builderRules = builderRulesInst;
-        // Marchandises et cochon en fin de partie
-        if (scoring) scoring._builderRules = builderRulesInst;
-    }
 
     document.getElementById('remaining-tiles-btn').style.display =
         gameConfig.showRemainingTiles ? 'block' : 'none';
     document.getElementById('test-modal-btn').style.display =
         gameConfig.enableDebug ? 'block' : 'none';
     document.getElementById('back-to-lobby-btn').style.display = isHost ? 'block' : 'none';
-
-    // Spectateur : masquer les contrôles d'action mais garder la tile preview
-    if (_isSpectator()) {
-        ['end-turn-btn', 'undo-btn', 'mobile-end-turn-btn', 'mobile-undo-btn']
-            .forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.style.display = 'none';
-            });
-        // Masquer les slots de placement mais pas le preview
-        const tileTitle = document.querySelector('#current-tile-container h3');
-        if (tileTitle) tileTitle.style.display = 'none';
-    }
-
-    // Redémarrer le heartbeat avec le handler de jeu (gestion déconnexion en cours de partie)
-    if (multiplayer?.peer) {
-        const handleDisconnect = (peerId) => {
-            if (!isHost) return;
-            players = players.filter(p => p.id !== peerId);
-            if (turnManager) {
-                turnManager.handlePlayerDisconnected(peerId, {
-                    tuileEnMain,
-                    gameSync,
-                    afficherMessage: (msg) => { afficherToast(msg); }, // ✅ ne plus écraser le tile-preview
-                    onPlayerRemoved: (id) => {
-                        players = players.filter(p => p.id !== id);
-                        lobbyUI.setPlayers(players);
-                    }
-                });
-            }
-            if (heartbeatManager) heartbeatManager._timedOut.add(peerId);
-        };
-        multiplayer.onPlayerLeft = handleDisconnect;
-        _startHeartbeat(handleDisconnect);
-    }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1238,22 +879,52 @@ function _postStartSetup() {
 /**
  * Met à jour la barre joueurs mobile
  */
-/**
- * Met à jour le style de la carte mobile du joueur actif selon le tour bonus
- */
-function _updateMobileActiveBonusStyle(isBonusTurn) {
-    if (!isMobile()) return;
-    const currentPlayer = gameState?.getCurrentPlayer();
-    if (!currentPlayer) return;
-    document.querySelectorAll('.mobile-player-card').forEach(card => {
-        card.classList.remove('active-bonus');
-        if (isBonusTurn && card.dataset.playerId === currentPlayer.id) {
-            card.classList.add('active-bonus');
+function updateMobilePlayers() {
+    if (!isMobile() || !gameState) return;
+    const container = document.getElementById('mobile-players-scores');
+    if (!container) return;
+
+    container.innerHTML = '';
+    const currentPlayer = gameState.getCurrentPlayer();
+
+    gameState.players.forEach(player => {
+        const isActive = currentPlayer && player.id === currentPlayer.id;
+        const colorCap = player.color.charAt(0).toUpperCase() + player.color.slice(1);
+
+        const card = document.createElement('div');
+        card.className = 'mobile-player-card' + (isActive ? ' active' : '');
+
+        const name = document.createElement('div');
+        name.className = 'mobile-player-name';
+        name.textContent = player.name;
+        card.appendChild(name);
+
+        const score = document.createElement('div');
+        score.className = 'mobile-player-score';
+        score.textContent = player.score + ' pts';
+        card.appendChild(score);
+
+        const meeplesDiv = document.createElement('div');
+        meeplesDiv.className = 'mobile-player-meeples';
+        for (let i = 0; i < 7; i++) {
+            const img = document.createElement('img');
+            img.src = `./assets/Meeples/${colorCap}/Normal.png`;
+            if (i >= player.meeples) img.classList.add('unavailable');
+            meeplesDiv.appendChild(img);
         }
+        // Abbé (si extension activée)
+        if (gameConfig?.extensions?.abbot) {
+            const abbot = document.createElement('img');
+            abbot.src = `./assets/Meeples/${colorCap}/Abbot.png`;
+            abbot.alt = 'Abbé';
+            abbot.style.marginLeft = '6px';
+            if (!player.hasAbbot) abbot.classList.add('unavailable');
+            meeplesDiv.appendChild(abbot);
+        }
+        card.appendChild(meeplesDiv);
+        container.appendChild(card);
     });
 }
-
-
 
 /**
  * Met à jour la preview de tuile mobile
@@ -1309,23 +980,10 @@ function updateMobileButtons() {
 // FONCTIONS JEU
 // ═══════════════════════════════════════════════════════
 function updateTurnDisplay() {
-    if (!gameState || gameState.players.length === 0) {
-        // Partie pas encore prête : griser le bouton plutôt que laisser le style CSS par défaut
-        isMyTurn = false;
-        const endTurnBtn = document.getElementById('end-turn-btn');
-        if (endTurnBtn) {
-            endTurnBtn.textContent = 'Terminer mon tour';
-            endTurnBtn.disabled = true;
-            endTurnBtn.style.opacity    = '0.5';
-            endTurnBtn.style.cursor     = 'not-allowed';
-            endTurnBtn.style.background = '';
-            endTurnBtn.style.color      = '';
-        }
-        return;
-    }
+    if (!gameState || gameState.players.length === 0) { isMyTurn = true; return; }
 
     const currentPlayer = gameState.getCurrentPlayer();
-    isMyTurn = currentPlayer.id === multiplayer.playerId && !_isSpectator();
+    isMyTurn = currentPlayer.id === multiplayer.playerId;
 
     const endTurnBtn = document.getElementById('end-turn-btn');
     if (endTurnBtn) {
@@ -1363,86 +1021,14 @@ function updateTurnDisplay() {
         undoBtn.style.color      = canUndo ? '#000' : '';
     }
 
-    scorePanelUI?.updateMobile();
+    updateMobilePlayers();
     updateMobileButtons();
-    eventBus.emit('score-updated');
-
-    // Mettre à jour le contour doré si tour bonus
-    const isBonusTurn = turnManager?.isBonusTurn ?? false;
-    if (scorePanelUI) scorePanelUI.onTurnChanged(isBonusTurn);
-    _updateMobileActiveBonusStyle(isBonusTurn);
-
-    // Fermer le toast du tour bonus dès qu'il se termine
-    if (!isBonusTurn) {
-        const toast = document.getElementById('disconnect-toast');
-        if (toast && toast.dataset.isBonusToast === 'true') {
-            toast.style.opacity = '0';
-            setTimeout(() => { if (toast) toast.style.display = 'none'; }, 400);
-            delete toast.dataset.isBonusToast;
-        }
-    }
+        eventBus.emit('score-updated');
 }
 
 function afficherMessage(msg) {
     document.getElementById('tile-preview').innerHTML =
         `<p style="text-align: center; color: white;">${msg}</p>`;
-}
-
-function afficherToast(msg, type = 'error') {
-    const borderColor = type === 'bonus' ? 'gold'
-                      : type === 'success' ? '#2ecc71'
-                      : type === 'info'    ? '#3498db'
-                      :                      '#e74c3c'; // 'error' par défaut
-    let toast = document.getElementById('disconnect-toast');
-    if (!toast) {
-        toast = document.createElement('div');
-        toast.id = 'disconnect-toast';
-        document.body.appendChild(toast);
-    }
-    toast.style.cssText = `
-        position: fixed;
-        top: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(30,30,30,0.92);
-        color: white;
-        padding: 12px 20px 12px 24px;
-        border-radius: 10px;
-        border-left: 4px solid ${borderColor};
-        font-size: 15px;
-        font-weight: bold;
-        z-index: 9999;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        transition: opacity 0.4s;
-    `;
-
-    toast.innerHTML = '';
-
-    const text = document.createElement('span');
-    text.textContent = msg;
-    toast.appendChild(text);
-
-    const close = document.createElement('span');
-    close.textContent = '✕';
-    close.style.cssText = `
-        cursor: pointer;
-        font-size: 14px;
-        opacity: 0.7;
-        flex-shrink: 0;
-    `;
-    close.onmouseenter = () => close.style.opacity = '1';
-    close.onmouseleave = () => close.style.opacity = '0.7';
-    close.onclick = () => {
-        toast.style.opacity = '0';
-        setTimeout(() => { toast.style.display = 'none'; }, 400);
-    };
-    toast.appendChild(close);
-
-    toast.style.opacity = '1';
-    toast.style.display = 'flex';
 }
 
 /**
@@ -1505,9 +1091,6 @@ function poserTuile(x, y, tile, isFirst = false) {
     tuilePosee      = true;
     firstTilePlaced = true;
     lastPlacedTile  = { x, y };
-
-    // Réinitialiser le suivi des tuiles implaçables après chaque placement réussi
-    if (unplaceableManager) unplaceableManager.resetSeenImplacable();
 
     document.querySelectorAll('.slot').forEach(s => s.remove());
     if (tilePreviewUI) tilePreviewUI.showBackside();
@@ -1628,24 +1211,6 @@ function placerMeeple(x, y, position, meepleType) {
         if (player) player.hasAbbot = false;
         eventBus.emit('meeple-count-updated', { playerId: multiplayer.playerId });
     }
-    // Si le grand meeple est posé, il n'est plus disponible
-    if (meepleType === 'Large' || meepleType === 'Large-Farmer') {
-        const player = gameState.players.find(p => p.id === multiplayer.playerId);
-        if (player) player.hasLargeMeeple = false;
-        eventBus.emit('meeple-count-updated', { playerId: multiplayer.playerId });
-    }
-    // Si le bâtisseur est posé, il n'est plus disponible
-    if (meepleType === 'Builder') {
-        const player = gameState.players.find(p => p.id === multiplayer.playerId);
-        if (player) player.hasBuilder = false;
-        eventBus.emit('meeple-count-updated', { playerId: multiplayer.playerId });
-    }
-    // Si le cochon est posé, il n'est plus disponible
-    if (meepleType === 'Pig') {
-        const player = gameState.players.find(p => p.id === multiplayer.playerId);
-        if (player) player.hasPig = false;
-        eventBus.emit('meeple-count-updated', { playerId: multiplayer.playerId });
-    }
 
     if (undoManager && isMyTurn) {
         undoManager.markMeeplePlaced(x, y, position, `${x},${y},${position}`);
@@ -1711,16 +1276,6 @@ function setupEventListeners() {
 
         console.log('⏭️ Fin de tour - calcul des scores et passage au joueur suivant');
 
-        // ⭐ Vérifier le bonus bâtisseur AVANT le scoring
-        // (après scoring le bâtisseur peut être retiré de placedMeeples si zone fermée)
-        let builderBonusTriggered = false;
-        if (gameConfig.extensions?.tradersBuilders && lastPlacedTile) {
-            const builderRulesInst = ruleRegistry.rules?.get('builders');
-            if (builderRulesInst) {
-                builderBonusTriggered = builderRulesInst.checkBonusTrigger(multiplayer.playerId);
-            }
-        }
-
         // Appliquer les points Abbé en attente
         if (pendingAbbePoints) {
             const player = gameState.players.find(p => p.id === pendingAbbePoints.playerId);
@@ -1734,8 +1289,7 @@ function setupEventListeners() {
 
         // Calcul des scores des zones fermées
         if (scoring && zoneMerger) {
-            const newlyClosed = tilePlacement?.newlyClosedZones ?? null;
-            const { scoringResults, meeplesToReturn, goodsResults } = scoring.scoreClosedZones(placedMeeples, multiplayer.playerId, gameState, newlyClosed);
+            const { scoringResults, meeplesToReturn } = scoring.scoreClosedZones(placedMeeples);
 
             if (scoringResults.length > 0) {
                 scoringResults.forEach(({ playerId, points, zoneType }) => {
@@ -1751,23 +1305,11 @@ function setupEventListeners() {
                 meeplesToReturn.forEach(key => {
                     const meeple = placedMeeples[key];
                     if (meeple) {
-                        // Retourner le meeple selon son type
+                        // Si c'est l'Abbé, remettre hasAbbot au lieu d'incrémenter les meeples normaux
                         if (meeple.type === 'Abbot') {
                             const player = gameState.players.find(p => p.id === meeple.playerId);
                             if (player) {
                                 player.hasAbbot = true;
-                                eventBus.emit('meeple-count-updated', { playerId: meeple.playerId });
-                            }
-                        } else if (meeple.type === 'Large' || meeple.type === 'Large-Farmer') {
-                            const player = gameState.players.find(p => p.id === meeple.playerId);
-                            if (player) {
-                                player.hasLargeMeeple = true;
-                                eventBus.emit('meeple-count-updated', { playerId: meeple.playerId });
-                            }
-                        } else if (meeple.type === 'Builder') {
-                            const player = gameState.players.find(p => p.id === meeple.playerId);
-                            if (player) {
-                                player.hasBuilder = true;
                                 eventBus.emit('meeple-count-updated', { playerId: meeple.playerId });
                             }
                         } else {
@@ -1778,7 +1320,7 @@ function setupEventListeners() {
                     }
                 });
 
-                if (gameSync) gameSync.syncScoreUpdate(scoringResults, meeplesToReturn, goodsResults, zoneMerger);
+                if (gameSync) gameSync.syncScoreUpdate(scoringResults, meeplesToReturn);
                 updateTurnDisplay();
             }
         }
@@ -1800,23 +1342,10 @@ function setupEventListeners() {
             return;
         }
 
-        // endTurn() gère le tour bonus (bâtisseur) puis passe au joueur suivant si pas de bonus
+        // ✅ nextPlayer() : passage au joueur suivant + drawTile() si solo
+        // Ensuite syncTurnEnd() broadcaste un gameState déjà à jour pour les invités
         if (turnManager) {
-            const result = turnManager.endTurn(builderBonusTriggered);
-            if (result?.bonusTurnStarted) {
-                // Tour bonus déclenché — un seul message turn-ended avec isBonusTurn=true
-                // (syncBonusTurnStarted supprimé : le toast invité est géré dans onTurnEnded)
-                if (gameSync) gameSync.syncTurnEnd(true);
-                // Réinitialiser la dernière tuile posée pour éviter un faux positif au tour bonus
-                ruleRegistry.rules?.get('builders')?.resetLastPlacedTile?.();
-                turnManager.drawTile();
-                updateTurnDisplay();
-                afficherToast('⭐ Tour bonus ! Votre bâtisseur vous offre un tour supplémentaire.', 'bonus');
-                // Marquer le toast pour pouvoir le fermer automatiquement à la fin du tour bonus
-                const _bonusToast = document.getElementById('disconnect-toast');
-                if (_bonusToast) _bonusToast.dataset.isBonusToast = 'true';
-                return;
-            }
+            turnManager.nextPlayer();
         }
 
         if (gameSync) {
@@ -1925,8 +1454,6 @@ function setupEventListeners() {
             }
 
         } else if (undoneAction.type === 'tile') {
-            // Restaurer l'épingle vers la tuile posée avant ce tour
-            lastPlacedTile = undoneAction.restoredLastPlacedTile ?? null;
             const { x, y } = undoneAction.tile;
             let tileEl = document.querySelector(`.tile[data-pos="${x},${y}"]`);
             if (!tileEl) {
@@ -1969,9 +1496,6 @@ function setupEventListeners() {
         gameState.players.forEach(p => eventBus.emit('meeple-count-updated', { playerId: p.id }));
         eventBus.emit('score-updated');
         updateTurnDisplay();
-        updateMobileTilePreview();
-        scorePanelUI?.updateMobile();
-        updateMobileButtons();
     });
 
     // Tuiles restantes
@@ -1992,7 +1516,6 @@ function setupEventListeners() {
         // Rotation tuile mobile (tap sur la preview)
         document.getElementById('mobile-tile-preview').addEventListener('touchend', (e) => {
             e.preventDefault();
-            if (!isMyTurn) return;
             if (!tuileEnMain || tuilePosee) return;
             tuileEnMain.rotation = (tuileEnMain.rotation + 90) % 360;
             updateMobileTilePreview();
@@ -2005,15 +1528,7 @@ function setupEventListeners() {
         const mobileBtn = (id, fn) => {
             const el = document.getElementById(id);
             if (!el) return;
-            // touchstart vide nécessaire pour que :active CSS fonctionne sur iOS
-            el.addEventListener('touchstart', () => {}, { passive: true });
-            el.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                fn();
-                // Forcer le retrait de l'état actif après l'action
-                el.blur();
-            }, { passive: false });
+            el.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
         };
 
         mobileBtn('mobile-end-turn-btn', () => {
@@ -2092,23 +1607,12 @@ function returnToInitialLobby(message = null) {
 
 function returnToLobby() {
     console.log('🔙 Retour au lobby...');
-    stopGameTimer();
-    const timerEl = document.getElementById('game-timer');
-    if (timerEl) { timerEl.textContent = '⏱ 00:00'; timerEl.style.display = 'none'; }
 
     if (isHost && multiplayer.peer?.open) {
         multiplayer.broadcast({ type: 'return-to-lobby' });
     }
 
     document.getElementById('back-to-lobby-btn').style.display = 'none';
-
-    // Restaurer tous les boutons masqués pour le mode spectateur
-    ['end-turn-btn', 'undo-btn', 'mobile-end-turn-btn', 'mobile-undo-btn'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.style.display = '';
-    });
-    const tileTitle = document.querySelector('#current-tile-container h3');
-    if (tileTitle) tileTitle.style.display = '';
 
     if (unplaceableManager) unplaceableManager.hideUnplaceableBadge();
     document.getElementById('tile-destroyed-modal').style.display = 'none';
@@ -2133,9 +1637,7 @@ function returnToLobby() {
     pendingAbbePoints = null;
 
     ruleRegistry.disable('base');
-    ruleRegistry.disable('abbot');   // no-op si non enregistré
-    ruleRegistry.disable('inns');     // no-op si non enregistré
-    ruleRegistry.disable('builders'); // no-op si non enregistré
+    ruleRegistry.disable('abbot'); // no-op si non enregistré
 
     deck.tiles = []; deck.currentIndex = 0; deck.totalTiles = 0;
     plateau.reset();
@@ -2145,7 +1647,6 @@ function returnToLobby() {
     tuilePosee     = false;
     firstTilePlaced = false;
     zoomLevel      = 1;
-    if (zoomManager) { zoomManager.setZoom(1); }
     placedMeeples  = {};
     lastPlacedTile = null;
     isMyTurn       = false;
@@ -2159,10 +1660,6 @@ function returnToLobby() {
     if (boardEl) boardEl.style.transform = '';
     if (containerEl) { containerEl.scrollLeft = 0; containerEl.scrollTop = 0; }
     zoomLevel = 1;
-    if (zoomManager) { zoomManager.setZoom(1); zoomManager.destroy(); zoomManager = null; }
-    _navigationSetup = false;
-
-    if (heartbeatManager) { heartbeatManager.stop(); heartbeatManager = null; }
 
     lobbyUI.show();
     lobbyUI.reset();
@@ -2175,11 +1672,6 @@ function returnToLobby() {
             players = players.filter(p => p.id !== playerId);
             lobbyUI.setPlayers(players);
             multiplayer.broadcast({ type: 'players-update', players });
-        };
-        lobbyUI.onHostLeave = () => {
-            const invites = players.filter(p => !p.isHost);
-            if (invites.length > 0) multiplayer.broadcast({ type: 'you-are-kicked' });
-            returnToInitialLobby();
         };
     } else {
         lobbyUI.setIsHost(false);
@@ -2199,25 +1691,12 @@ function returnToLobby() {
 // NAVIGATION (zoom + drag)
 // ═══════════════════════════════════════════════════════
 function setupNavigation(container, board) {
-    if (_navigationSetup) return;
-    _navigationSetup = true;
-
-    // ── Zoom : délégué à ZoomManager (throttle RAF, PC + Mobile) ──────────
-    if (zoomManager) zoomManager.destroy();
-    zoomManager = new ZoomManager(container, board, {
-        min:           0.2,
-        max:           3,
-        stepWheel:     0.1,
-        isMobile:      isMobile,
-        initialPC:     1,
-        initialMobile: 0.5,
-    });
-    zoomManager.init();
-    // Synchroniser la variable globale zoomLevel (utilisée ailleurs)
-    Object.defineProperty(window, '_zoomLevelProxy', {
-        get: () => zoomManager.zoomLevel,
-        configurable: true,
-    });
+    // ── PC : zoom molette ─────────────────────────────────────────────────
+    container.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        zoomLevel = Math.max(0.2, Math.min(3, zoomLevel + (e.deltaY > 0 ? -0.1 : 0.1)));
+        board.style.transform = `scale(${zoomLevel})`;
+    }, { passive: false });
 
     // ── PC : drag souris ──────────────────────────────────────────────────
     container.addEventListener('mousedown', (e) => {
@@ -2242,37 +1721,61 @@ function setupNavigation(container, board) {
         container.scrollTop  = scrollTop  - (y - startY) * 2;
     });
 
-    // ── Mobile : drag tactile 1 doigt ─────────────────────────────────────
-    // (le pinch est géré par ZoomManager)
+    // ── Mobile : pinch-to-zoom + drag tactile ─────────────────────────────
     if (isMobile()) {
+        let lastTouchDist   = null;
         let lastTouchX      = null;
         let lastTouchY      = null;
         let touchScrollLeft = 0;
         let touchScrollTop  = 0;
 
         container.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1) {
+            if (e.touches.length === 2) {
+                // Pinch : noter la distance initiale
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                lastTouchDist = Math.hypot(dx, dy);
+            } else if (e.touches.length === 1) {
+                // Drag 1 doigt
                 lastTouchX      = e.touches[0].clientX;
                 lastTouchY      = e.touches[0].clientY;
                 touchScrollLeft = container.scrollLeft;
                 touchScrollTop  = container.scrollTop;
+                lastTouchDist   = null;
             }
         }, { passive: true });
 
         container.addEventListener('touchmove', (e) => {
-            if (e.touches.length === 1 && lastTouchX !== null) {
+            if (e.touches.length === 2 && lastTouchDist !== null) {
+                // Pinch-to-zoom
+                e.preventDefault();
+                const dx   = e.touches[0].clientX - e.touches[1].clientX;
+                const dy   = e.touches[0].clientY - e.touches[1].clientY;
+                const dist = Math.hypot(dx, dy);
+                const delta = (dist - lastTouchDist) * 0.01;
+                zoomLevel = Math.max(0.2, Math.min(3, zoomLevel + delta));
+                board.style.transform = `scale(${zoomLevel})`;
+                lastTouchDist = dist;
+
+            } else if (e.touches.length === 1 && lastTouchX !== null) {
+                // Drag 1 doigt
                 const dx = e.touches[0].clientX - lastTouchX;
                 const dy = e.touches[0].clientY - lastTouchY;
                 container.scrollLeft = touchScrollLeft - dx * 1.5;
                 container.scrollTop  = touchScrollTop  - dy * 1.5;
             }
-        }, { passive: true });
+        }, { passive: false });
 
         container.addEventListener('touchend', (e) => {
+            if (e.touches.length < 2) lastTouchDist = null;
             if (e.touches.length === 0) { lastTouchX = null; lastTouchY = null; }
         }, { passive: true });
     }
 
+    if (isMobile()) {
+        zoomLevel = 0.5;
+        board.style.transform = `scale(${zoomLevel})`;
+    }
     container.scrollLeft = 10400 - container.clientWidth  / 2;
     container.scrollTop  = 10400 - container.clientHeight / 2;
 }

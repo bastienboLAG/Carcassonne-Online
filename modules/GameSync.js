@@ -12,14 +12,13 @@ export class GameSync {
         this.onDeckReceived = null;
         this.onTileRotated = null;
         this.onTilePlaced = null;
-        this.onTurnEnded        = null;
+        this.onTurnEnded = null;
         this.onGameStarted = null;
         this.onTileDrawn = null;
         this.onMeeplePlaced = null;
         this.onScoreUpdate = null;
         this.onTurnUndo = null;
         this.onGameEnded = null;
-        this.onPlayerDisconnected = null;
         this.onTileDestroyed = null;
         this.onDeckReshuffled = null;
     }
@@ -49,7 +48,7 @@ export class GameSync {
         const gameMessages = [
             'game-start', 'tile-rotated', 'tile-placed', 'turn-ended',
             'tile-drawn', 'meeple-placed', 'meeple-count-update', 'score-update',
-            'turn-undo', 'game-ended', 'tile-destroyed', 'deck-reshuffled', 'player-disconnected',
+            'turn-undo', 'game-ended', 'tile-destroyed', 'deck-reshuffled',
             'abbe-recalled', 'abbe-recalled-undo'
             // NOTE: 'return-to-lobby', 'player-order-update' et 'game-starting' 
             //       sont gérés par le lobby handler
@@ -110,15 +109,18 @@ export class GameSync {
     /**
      * Synchroniser la fin du tour
      */
-    syncTurnEnd(isBonusTurn = false) {
-        console.log('⏭️ Sync fin de tour — isBonusTurn:', isBonusTurn);
+    syncTurnEnd() {
+        console.log('⏭️ Sync fin de tour');
 
+        // ✅ turnManager.nextPlayer() est appelé dans home.js AVANT syncTurnEnd(),
+        // donc currentPlayerIndex est déjà à jour ici.
+        // On broadcaste le gameState déjà mis à jour pour que les invités
+        // aient le bon état via receiveTurnEnded().
         this.multiplayer.broadcast({
             type: 'turn-ended',
             playerId: this.multiplayer.playerId,
             nextPlayerIndex: this.gameState.currentPlayerIndex,
-            gameState: this.gameState.serialize(),
-            isBonusTurn: isBonusTurn
+            gameState: this.gameState.serialize()
         });
         
         return true;
@@ -156,16 +158,12 @@ export class GameSync {
     /**
      * Synchroniser la mise à jour des scores
      */
-    syncScoreUpdate(scoringResults, meeplesToReturn, goodsResults = [], zoneMerger = null) {
+    syncScoreUpdate(scoringResults, meeplesToReturn) {
         console.log('💰 Sync score update:', scoringResults);
         this.multiplayer.broadcast({
             type: 'score-update',
-            scoringResults:  scoringResults,
+            scoringResults: scoringResults,
             meeplesToReturn: meeplesToReturn,
-            goodsResults:    goodsResults,
-            // Registry post-scoring : goods déjà vidés, état cohérent pour l'invité
-            zoneRegistry: zoneMerger ? zoneMerger.registry.serialize() : null,
-            tileToZone:   zoneMerger ? Array.from(zoneMerger.tileToZone.entries()) : null,
             playerId: this.multiplayer.playerId
         });
     }
@@ -199,14 +197,13 @@ export class GameSync {
     /**
      * Synchroniser la destruction d'une tuile
      */
-    syncTileDestroyed(tileId, playerName, action, count = 1) {
+    syncTileDestroyed(tileId, playerName, action) {
         console.log('🗑️ Sync tile destroyed:', tileId);
         this.multiplayer.broadcast({
             type: 'tile-destroyed',
             tileId: tileId,
             playerName: playerName,
             action: action,
-            count: count,
             playerId: this.multiplayer.playerId
         });
     }
@@ -227,23 +224,11 @@ export class GameSync {
     /**
      * Synchroniser la fin de partie
      */
-    syncPlayerDisconnected(peerId, playerName, nextPlayerIndex) {
-        console.log('👋 Sync player disconnected:', playerName);
-        this.multiplayer.broadcast({
-            type: 'player-disconnected',
-            peerId,
-            playerName,
-            nextPlayerIndex,
-            playerId: this.multiplayer.playerId
-        });
-    }
-
-    syncGameEnded(detailedScores, destroyedTilesCount = 0) {
+    syncGameEnded(detailedScores) {
         console.log('🏁 Sync game ended:', detailedScores);
         this.multiplayer.broadcast({
             type: 'game-ended',
             scores: detailedScores,
-            destroyedTilesCount: destroyedTilesCount,
             playerId: this.multiplayer.playerId
         });
     }
@@ -293,7 +278,7 @@ export class GameSync {
             case 'turn-ended':
                 if (this.onTurnEnded && data.playerId !== this.multiplayer.playerId) {
                     console.log('⏭️ [SYNC] Fin de tour reçue');
-                    this.onTurnEnded(data.nextPlayerIndex, data.gameState, data.isBonusTurn ?? false);
+                    this.onTurnEnded(data.nextPlayerIndex, data.gameState);
                 }
                 break;
 
@@ -315,13 +300,13 @@ export class GameSync {
             case 'meeple-count-update':
                 if (this.onMeepleCountUpdate) {
                     console.log('🎭 [SYNC] Mise à jour compteur meeples:', data.playerId, data.meeples);
-                    this.onMeepleCountUpdate(data.playerId, data.meeples, data.hasAbbot, data.hasLargeMeeple, data.hasPig);
+                    this.onMeepleCountUpdate(data.playerId, data.meeples, data.hasAbbot);
                 }
                 break;
             case 'score-update':
                 if (this.onScoreUpdate && data.playerId !== this.multiplayer.playerId) {
                     console.log('💰 [SYNC] Mise à jour des scores reçue');
-                    this.onScoreUpdate(data.scoringResults, data.meeplesToReturn, data.goodsResults ?? [], data.zoneRegistry ?? null, data.tileToZone ?? null);
+                    this.onScoreUpdate(data.scoringResults, data.meeplesToReturn);
                 }
                 break;
             
@@ -335,21 +320,14 @@ export class GameSync {
             case 'game-ended':
                 if (this.onGameEnded && data.playerId !== this.multiplayer.playerId) {
                     console.log('🏁 [SYNC] Fin de partie reçue');
-                    this.onGameEnded(data.scores, data.destroyedTilesCount ?? 0);
+                    this.onGameEnded(data.scores);
                 }
                 break;
             
-            case 'player-disconnected':
-                if (this.onPlayerDisconnected && data.playerId !== this.multiplayer.playerId) {
-                    console.log('👋 [SYNC] Joueur déconnecté reçu:', data.playerName);
-                    this.onPlayerDisconnected(data.peerId, data.playerName, data.nextPlayerIndex);
-                }
-                break;
-
             case 'tile-destroyed':
                 if (this.onTileDestroyed && data.playerId !== this.multiplayer.playerId) {
                     console.log('🗑️ [SYNC] Tuile détruite reçue:', data.tileId);
-                    this.onTileDestroyed(data.tileId, data.playerName, data.action, data.count ?? 1);
+                    this.onTileDestroyed(data.tileId, data.playerName, data.action);
                 }
                 break;
             

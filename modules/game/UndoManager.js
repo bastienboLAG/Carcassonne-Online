@@ -18,7 +18,6 @@ export class UndoManager {
         this.tilePlacedThisTurn = false;
         this.meeplePlacedThisTurn = false;
         this.lastTilePlaced = null; // {x, y, tile}
-        this.lastPlacedTileBeforeTurn = null; // {x, y} — pour restaurer l'épingle après annulation
         this.lastMeeplePlaced = null; // {x, y, position, key}
 
         // État abbé
@@ -54,12 +53,8 @@ export class UndoManager {
             playerMeeples: this.gameState.players.map(p => ({
                 id: p.id,
                 meeples: p.meeples,
-                hasAbbot: p.hasAbbot,
-                hasLargeMeeple: p.hasLargeMeeple,
-                hasBuilder: p.hasBuilder,
-                hasPig:     p.hasPig
-            })),
-            lastPlacedTile: this.lastPlacedTileBeforeTurn // épingle avant ce tour
+                hasAbbot: p.hasAbbot
+            }))
         };
         
         // Reset état du tour
@@ -98,10 +93,7 @@ export class UndoManager {
             playerMeeples: this.gameState.players.map(p => ({
                 id: p.id,
                 meeples: p.meeples,
-                hasAbbot: p.hasAbbot,
-                hasLargeMeeple: p.hasLargeMeeple,
-                hasBuilder: p.hasBuilder,
-                hasPig:     p.hasPig
+                hasAbbot: p.hasAbbot
             }))
         };
         
@@ -178,8 +170,7 @@ export class UndoManager {
             
             const undoneAction = {
                 type: 'tile',
-                tile: this.lastTilePlaced,
-                restoredLastPlacedTile: this.turnStartSnapshot.lastPlacedTile ?? null
+                tile: this.lastTilePlaced
             };
             
             this.tilePlacedThisTurn = false;
@@ -192,13 +183,6 @@ export class UndoManager {
         // Rien à annuler
         console.log('⚠️ Rien à annuler');
         return null;
-    }
-
-    /**
-     * Mettre à jour la dernière tuile posée avant ce tour (pour restauration après annulation)
-     */
-    setLastPlacedTileBeforeTurn(tile) {
-        this.lastPlacedTileBeforeTurn = tile ? { x: tile.x, y: tile.y } : null;
     }
 
     /**
@@ -252,10 +236,7 @@ export class UndoManager {
             const player = this.gameState.players.find(p => p.id === saved.id);
             if (player) {
                 player.meeples  = saved.meeples;
-                if (saved.hasAbbot       !== undefined) player.hasAbbot       = saved.hasAbbot;
-                if (saved.hasLargeMeeple !== undefined) player.hasLargeMeeple = saved.hasLargeMeeple;
-                if (saved.hasBuilder     !== undefined) player.hasBuilder     = saved.hasBuilder;
-                if (saved.hasPig         !== undefined) player.hasPig         = saved.hasPig;
+                if (saved.hasAbbot !== undefined) player.hasAbbot = saved.hasAbbot;
             }
         });
     }

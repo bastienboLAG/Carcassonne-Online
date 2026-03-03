@@ -17,7 +17,6 @@ export class LobbyUI {
         this.isHost = false;
         this.onKickPlayer  = null; // callback(playerId) — hôte kick un invité
         this.onLeaveGame   = null; // callback() — invité quitte volontairement
-        this.onHostLeave   = null; // callback() — hôte quitte (kick général)
         
         // Éléments DOM
         this.playersListEl = null;
@@ -27,16 +26,15 @@ export class LobbyUI {
         
         // Images des couleurs
         this.colorImages = {
-            'black':     './assets/Meeples/Black/Normal.png',
-            'red':       './assets/Meeples/Red/Normal.png',
-            'pink':      './assets/Meeples/Pink/Normal.png',
-            'green':     './assets/Meeples/Green/Normal.png',
-            'blue':      './assets/Meeples/Blue/Normal.png',
-            'yellow':    './assets/Meeples/Yellow/Normal.png',
-            'spectator': './assets/Meeples/Spectator.png'
+            'black': './assets/Meeples/Black/Normal.png',
+            'red': './assets/Meeples/Red/Normal.png',
+            'pink': './assets/Meeples/Pink/Normal.png',
+            'green': './assets/Meeples/Green/Normal.png',
+            'blue': './assets/Meeples/Blue/Normal.png',
+            'yellow': './assets/Meeples/Yellow/Normal.png'
         };
         
-        this.allColors = ['black', 'red', 'pink', 'green', 'blue', 'yellow', 'spectator'];
+        this.allColors = ['black', 'red', 'pink', 'green', 'blue', 'yellow'];
     }
 
     /**
@@ -147,21 +145,18 @@ export class LobbyUI {
 
             // Croix kick (hôte sur les invités) ou quitter (invité sur soi-même)
             const myId = this.multiplayer?.playerId;
-            const showKick      = this.isHost && !player.isHost;
-            const showHostLeave = this.isHost && player.isHost;
-            const showLeave     = !this.isHost && player.id === myId;
+            const showKick  = this.isHost && !player.isHost;
+            const showLeave = !this.isHost && player.id === myId;
 
-            if (showKick || showLeave || showHostLeave) {
+            if (showKick || showLeave) {
                 const closeBtn = document.createElement('button');
                 closeBtn.className   = 'lobby-kick-btn';
                 closeBtn.textContent = '✕';
                 closeBtn.title       = showKick ? 'Retirer ce joueur' : 'Quitter le salon';
                 closeBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    console.log('🔴 Croix cliquée — showKick:', showKick, 'showLeave:', showLeave, 'showHostLeave:', showHostLeave, 'onHostLeave:', !!this.onHostLeave);
-                    if (showKick && this.onKickPlayer)     this.onKickPlayer(player.id);
-                    if (showLeave && this.onLeaveGame)     this.onLeaveGame();
-                    if (showHostLeave && this.onHostLeave) this.onHostLeave();
+                    if (showKick && this.onKickPlayer) this.onKickPlayer(player.id);
+                    if (showLeave && this.onLeaveGame)  this.onLeaveGame();
                 });
                 slot.appendChild(closeBtn);
             }
@@ -207,14 +202,7 @@ export class LobbyUI {
             const color = option.dataset.color;
             const input = option.querySelector('input');
             
-            // spectator peut être choisi par plusieurs joueurs
-            // mais au moins 1 non-spectateur doit exister dans le salon
-            const isTaken = this.takenColors.includes(color) && color !== currentPlayerColor;
-            const isSpectatorColor = color === 'spectator';
-            const nonSpectatorCount = this.players.filter(p => p.color !== 'spectator').length;
-            // Bloquer spectator si le joueur actuel est le seul non-spectateur
-            const wouldLeaveNoPlayer = isSpectatorColor && nonSpectatorCount <= 1 && currentPlayerColor !== 'spectator';
-            if ((isTaken && !isSpectatorColor) || wouldLeaveNoPlayer) {
+            if (this.takenColors.includes(color) && color !== currentPlayerColor) {
                 option.classList.add('disabled');
                 input.disabled = true;
             } else {
@@ -283,7 +271,6 @@ export class LobbyUI {
         this.players       = [];
         this.onKickPlayer  = null;
         this.onLeaveGame   = null;
-        this.onHostLeave   = null;
         this.isHost        = false;
         this.updatePlayersList();
     }

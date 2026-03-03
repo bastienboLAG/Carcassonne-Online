@@ -58,33 +58,6 @@ export class Deck {
             }
         }
 
-        // ── Groupe Inns & Cathedrals (optionnel) ────────────────────────
-        if (tileGroups.inns_cathedrals) {
-            const innIds = ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18'];
-            for (const id of innIds) {
-                try {
-                    const res  = await fetch(`./data/Inns_Cathedrals/${id}.json`);
-                    const data = await res.json();
-                    normalTiles.push(data);
-                } catch (e) {
-                    console.error(`Erreur tuile Inns_Cathedrals/${id}:`, e);
-                }
-            }
-        }
-
-        if (tileGroups.traders_builders) {
-            const traderIds = ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24'];
-            for (const id of traderIds) {
-                try {
-                    const res  = await fetch(`./data/Traders_Builders/${id}.json`);
-                    const data = await res.json();
-                    normalTiles.push(data);
-                } catch (e) {
-                    console.error(`Erreur tuile Traders_Builders/${id}:`, e);
-                }
-            }
-        }
-
         // ── Calcul du total ─────────────────────────────────────────────
         const allTileData = [...riverTiles, ...normalTiles];
         if (testMode) {
@@ -132,11 +105,15 @@ export class Deck {
             console.log(`🌊 Mode rivière : ${riverDeck.length} tuiles river + ${normalDeck.length} tuiles normales`);
 
         } else if (testMode) {
-            // Mode test : seulement base-02, base-03, base-24
-            const testIds = ['base-02', 'base-03', 'base-24'];
-            this.tiles = testIds.map(id => normalDeck.find(t => t.id === id)).filter(Boolean);
-            this.totalTiles = this.tiles.length;
-            console.log('🧪 Mode test implaçable : ' + this.tiles.map(t => t.id).join(', '));
+            this._shuffleArray(normalDeck);
+            // Forcer base-04 en première position en mode test
+            const index04 = normalDeck.findIndex(t => t.id === 'base-04');
+            if (index04 !== -1) {
+                const tile04 = normalDeck.splice(index04, 1)[0];
+                normalDeck.unshift(tile04);
+            }
+            this.tiles = normalDeck;
+            console.log('🧪 Mode test : ordre aléatoire (' + this.tiles.length + ' tuiles)');
 
         } else {
             // Tuile unique : shuffle + base-04 en premier

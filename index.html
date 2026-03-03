@@ -16,7 +16,7 @@
             <!-- Choix du pseudo -->
             <div class="pseudo-section">
                 <label for="pseudo-input">Votre pseudo :</label>
-                <input type="text" id="pseudo-input" placeholder="Entrez votre pseudo" maxlength="15">
+                <input type="text" id="pseudo-input" placeholder="Entrez votre pseudo" maxlength="20">
             </div>
             
             <!-- Boutons multijoueur -->
@@ -70,10 +70,6 @@
                             <input type="radio" name="color" value="yellow">
                             <img src="./assets/Meeples/Yellow/Normal.png" class="meeple-img" alt="Yellow">
                         </label>
-                        <label class="color-option color-option--spectator" data-color="spectator">
-                            <input type="radio" name="color" value="spectator">
-                            <img src="./assets/Meeples/Spectator.png" class="meeple-img" alt="Spectateur">
-                        </label>
                     </div>
                 </div>
             </div>
@@ -124,84 +120,31 @@
 
             <div class="config-section extensions-section">
                 <h3>Extensions</h3>
-                <details>
-                    <summary>
-                        <strong>Base</strong>
-                        <input type="checkbox" id="all-base" class="ext-master" title="Tout activer/désactiver">
-                    </summary>
+                <details open>
+                    <summary><strong>Base</strong></summary>
                     <label class="toggle-option">
-                        <input type="checkbox" id="base-fields" checked data-group="all-base">
+                        <input type="checkbox" id="base-fields" checked>
                         <span>Les champs</span>
                     </label>
                 </details>
                 <details>
-                    <summary>
-                        <strong>L'Abbé</strong>
-                        <input type="checkbox" id="all-abbot" class="ext-master" title="Tout activer/désactiver">
-                    </summary>
+                    <summary><strong>L'Abbé</strong></summary>
                     <label class="toggle-option">
-                        <input type="checkbox" id="ext-abbot" data-group="all-abbot">
+                        <input type="checkbox" id="ext-abbot">
                         <span>Meeple Abbé</span>
-                    </label>
-                </details>
-                <details>
-                    <summary>
-                        <strong>Auberges &amp; Cathédrales</strong>
-                        <input type="checkbox" id="all-inns-cathedrals" class="ext-master" title="Tout activer/désactiver">
-                    </summary>
-                    <label class="toggle-option">
-                        <input type="checkbox" id="ext-large-meeple" data-group="all-inns-cathedrals">
-                        <span>Grand Meeple</span>
-                    </label>
-                    <label class="toggle-option">
-                        <input type="checkbox" id="ext-cathedrals" checked data-group="all-inns-cathedrals">
-                        <span>Cathédrales</span>
-                    </label>
-                    <label class="toggle-option">
-                        <input type="checkbox" id="ext-inns" checked data-group="all-inns-cathedrals">
-                        <span>Auberges</span>
-                    </label>
-                </details>
-                <details>
-                    <summary>
-                        <strong>Marchands &amp; Bâtisseurs</strong>
-                        <input type="checkbox" id="all-traders-builders" class="ext-master" title="Tout activer/désactiver">
-                    </summary>
-                    <label class="toggle-option">
-                        <input type="checkbox" id="ext-builder" data-group="all-traders-builders">
-                        <span>Meeple Bâtisseur</span>
-                    </label>
-                    <label class="toggle-option">
-                        <input type="checkbox" id="ext-merchants" data-group="all-traders-builders">
-                        <span>Marchandises</span>
-                    </label>
-                    <label class="toggle-option" id="ext-pig-label">
-                        <input type="checkbox" id="ext-pig" data-group="all-traders-builders">
-                        <span>Meeple Cochon</span>
                     </label>
                 </details>
             </div>
 
             <div class="config-section">
-                <h3>
-                    Tuiles
-                    <input type="checkbox" id="all-tiles" class="ext-master" title="Tout activer/désactiver">
-                </h3>
+                <h3>Tuiles</h3>
                 <label class="toggle-option">
                     <input type="checkbox" id="tiles-base" checked onclick="return false;" style="cursor:default;">
                     <span>Base (72 tuiles) <em style="color:rgba(255,255,255,0.4)">(obligatoires)</em></span>
                 </label>
                 <label class="toggle-option">
-                    <input type="checkbox" id="tiles-abbot" data-group="all-tiles">
+                    <input type="checkbox" id="tiles-abbot">
                     <span>L'Abbé (+8 tuiles)</span>
-                </label>
-                <label class="toggle-option">
-                    <input type="checkbox" id="tiles-inns-cathedrals" data-group="all-tiles">
-                    <span>Auberges &amp; Cathédrales (+18 tuiles)</span>
-                </label>
-                <label class="toggle-option">
-                    <input type="checkbox" id="tiles-traders-builders" data-group="all-tiles">
-                    <span>Marchands &amp; Bâtisseurs (+24 tuiles)</span>
                 </label>
             </div>
 
@@ -226,7 +169,6 @@
             </div>
 
             <div id="tile-counter">Tuiles : 0 / 72</div>
-            <div id="game-timer">⏱ 00:00</div>
             
             <button id="undo-btn" class="undo-btn">Annuler le coup !</button>
             <button id="end-turn-btn">Terminer mon tour</button>
@@ -259,10 +201,8 @@
         
                 <!-- Boutons principaux -->
                 <div id="mobile-actions">
-                    <div class="mobile-main-btns">
-                        <button id="mobile-undo-btn" class="mobile-action-btn undo-btn">Annuler</button>
-                        <button id="mobile-end-turn-btn" class="mobile-action-btn end-turn-btn">Terminer mon tour</button>
-                    </div>
+                    <button id="mobile-undo-btn" class="mobile-action-btn undo-btn">Annuler</button>
+                    <button id="mobile-end-turn-btn" class="mobile-action-btn end-turn-btn">Terminer mon tour</button>
                     <div class="mobile-icon-row">
                         <button id="mobile-recenter-btn" class="mobile-icon-btn" title="Recentrer">🎯</button>
                         <button id="mobile-highlight-btn" class="mobile-icon-btn" title="Dernière tuile">📌</button>
@@ -296,9 +236,7 @@
     <!-- Modale des scores finaux -->
     <div id="final-scores-modal" class="modal" style="display: none;">
         <div class="modal-content final-scores-content">
-            <button id="close-final-scores-btn" class="final-scores-close-btn">✕</button>
             <h2>🏆 Scores finaux</h2>
-            <div id="final-scores-timer" style="text-align:center; font-size:14px; color:#aaa; margin-bottom:8px;"></div>
             <table id="final-scores-table">
                 <thead>
                     <tr>
@@ -307,7 +245,6 @@
                         <th>Routes</th>
                         <th>Abbayes</th>
                         <th>Champs</th>
-                        <th id="th-merchants" style="display:none">Marchandises</th>
                         <th>Total</th>
                     </tr>
                 </thead>
@@ -315,6 +252,7 @@
                     <!-- Rempli dynamiquement -->
                 </tbody>
             </table>
+            <button id="close-final-scores-btn" class="modal-btn confirm">Fermer</button>
         </div>
     </div>
 
