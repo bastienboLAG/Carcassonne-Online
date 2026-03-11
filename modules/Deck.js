@@ -31,7 +31,7 @@ export class Deck {
 
         // ── Groupe Base ─────────────────────────────────────────────────
         const baseIds = testMode
-            ? ['24', '03', '01', '02', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14']
+            ? ['23', '24', '03', '01', '02', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14']
             : Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, '0'));
 
         for (const id of baseIds) {
@@ -54,6 +54,33 @@ export class Deck {
                     normalTiles.push(data);
                 } catch (e) {
                     console.error(`Erreur tuile Abbot/${id}:`, e);
+                }
+            }
+        }
+
+        // ── Groupe Inns & Cathedrals (optionnel) ────────────────────────
+        if (tileGroups.inns_cathedrals) {
+            const innIds = ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18'];
+            for (const id of innIds) {
+                try {
+                    const res  = await fetch(`./data/Inns_Cathedrals/${id}.json`);
+                    const data = await res.json();
+                    normalTiles.push(data);
+                } catch (e) {
+                    console.error(`Erreur tuile Inns_Cathedrals/${id}:`, e);
+                }
+            }
+        }
+
+        if (tileGroups.traders_builders) {
+            const traderIds = ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24'];
+            for (const id of traderIds) {
+                try {
+                    const res  = await fetch(`./data/Traders_Builders/${id}.json`);
+                    const data = await res.json();
+                    normalTiles.push(data);
+                } catch (e) {
+                    console.error(`Erreur tuile Traders_Builders/${id}:`, e);
                 }
             }
         }
@@ -105,15 +132,22 @@ export class Deck {
             console.log(`🌊 Mode rivière : ${riverDeck.length} tuiles river + ${normalDeck.length} tuiles normales`);
 
         } else if (testMode) {
-            this._shuffleArray(normalDeck);
-            // Forcer base-04 en première position en mode test
-            const index04 = normalDeck.findIndex(t => t.id === 'base-04');
-            if (index04 !== -1) {
-                const tile04 = normalDeck.splice(index04, 1)[0];
-                normalDeck.unshift(tile04);
+            // Mode test : deck personnalisé dans l'ordre défini
+            // Charger les tuiles manquantes si besoin (ex: inns sans extension activée)
+            if (!tileGroups.inns_cathedrals) {
+                try {
+                    const res  = await fetch('./data/Inns_Cathedrals/03.json');
+                    const data = await res.json();
+                    normalDeck.push({ id: 'inns_cathedrals-03', zones: data.zones, imagePath: data.image });
+                } catch(e) { console.error('Erreur chargement inns_cathedrals-03:', e); }
             }
-            this.tiles = normalDeck;
-            console.log('🧪 Mode test : ordre aléatoire (' + this.tiles.length + ' tuiles)');
+            const testIds = ['inns_cathedrals-08', 'inns_cathedrals-08', 'inns_cathedrals-08', 'inns_cathedrals-08', 'inns_cathedrals-08', 'inns_cathedrals-08', 'inns_cathedrals-08', 'inns_cathedrals-08', 'inns_cathedrals-08', 'inns_cathedrals-08', 'inns_cathedrals-08', 'inns_cathedrals-08'];
+            this.tiles = testIds.map(id => {
+                const found = normalDeck.find(t => t.id === id);
+                return found ? { ...found } : null;
+            }).filter(Boolean);
+            this.totalTiles = this.tiles.length;
+            console.log('🧪 Mode test custom : ' + this.tiles.map(t => t.id).join(', '));
 
         } else {
             // Tuile unique : shuffle + base-04 en premier

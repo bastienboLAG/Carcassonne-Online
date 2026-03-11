@@ -5,8 +5,49 @@ export class GameState {
     constructor() {
         this.players = []; // Liste des joueurs
         this.currentPlayerIndex = 0; // Index du joueur actuel
+        this.disconnectedPlayers = {}; // { peerId: { player, index, disconnectedAt } }
         this.placedTiles = {}; // Tuiles posées sur le plateau
         this.deck = []; // Pioche (seulement côté hôte)
+        this.destroyedTilesCount = 0; // Compteur global de tuiles détruites
+        this.currentTilePlaced = false; // Le joueur courant a-t-il posé sa tuile ce tour ?
+    }
+
+    /**
+     * Marquer un joueur comme déconnecté (sans le supprimer)
+     */
+    markDisconnected(peerId) {
+        const index = this.players.findIndex(p => p.id === peerId);
+        if (index === -1) return null;
+        const player = { ...this.players[index] };
+        this.disconnectedPlayers[peerId] = {
+            player,
+            index,
+            disconnectedAt: Date.now()
+        };
+        this.players[index].disconnected = true;
+        return { player, index };
+    }
+
+    /**
+     * Reconnecter un joueur (par pseudo)
+     */
+    findDisconnectedByName(name) {
+        return Object.entries(this.disconnectedPlayers).find(
+            ([, data]) => data.player.name === name
+        );
+    }
+
+    reconnectPlayer(oldPeerId, newPeerId) {
+        const entry = this.disconnectedPlayers[oldPeerId];
+        if (!entry) return false;
+        const player = this.players.find(p => p.id === oldPeerId);
+        if (player) {
+            player.id = newPeerId;
+            player.disconnected = false;
+            player.kicked = false;
+        }
+        delete this.disconnectedPlayers[oldPeerId];
+        return true;
     }
 
     /**
@@ -19,12 +60,17 @@ export class GameState {
             color: color,
             score: 0,
             meeples: 7,
-            hasAbbot: false, // Initialisé à false, mis à true si extension Abbé activée
+            hasAbbot:       false, // Initialisé à false, mis à true si extension Abbé activée
+            hasLargeMeeple: false, // Grand meeple (Auberges & Cathédrales)
+            hasBuilder:     false, // Bâtisseur (Marchands & Bâtisseurs)
+            hasPig:         false, // Cochon (Marchands & Bâtisseurs)
+            goods: { cloth: 0, wheat: 0, wine: 0 }, // Jetons marchandises
             scoreDetail: {
                 cities: 0,
                 roads: 0,
                 monasteries: 0,
-                fields: 0
+                fields: 0,
+                goods: 0
             }
         });
     }
@@ -47,7 +93,14 @@ export class GameState {
      * Passer au joueur suivant
      */
     nextPlayer() {
-        this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+        let attempts = 0;
+        do {
+            this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+            attempts++;
+        } while (
+            this.players[this.currentPlayerIndex]?.color === 'spectator' &&
+            attempts < this.players.length
+        );
     }
 
     /**
@@ -65,7 +118,9 @@ export class GameState {
         return {
             players: this.players,
             currentPlayerIndex: this.currentPlayerIndex,
-            placedTiles: this.placedTiles
+            placedTiles: this.placedTiles,
+            disconnectedPlayers: this.disconnectedPlayers,
+            currentTilePlaced: this.currentTilePlaced
         };
     }
 
@@ -80,15 +135,24 @@ export class GameState {
             color: p.color,
             score: p.score || 0,
             meeples: p.meeples ?? 7,
-            hasAbbot: p.hasAbbot ?? false,
+            hasAbbot:       p.hasAbbot       ?? false,
+            hasLargeMeeple: p.hasLargeMeeple ?? false,
+            hasBuilder:     p.hasBuilder     ?? false,
+            hasPig:         p.hasPig         ?? false,
+            goods: p.goods ?? { cloth: 0, wheat: 0, wine: 0 },
             scoreDetail: p.scoreDetail || {
                 cities: 0,
                 roads: 0,
                 monasteries: 0,
-                fields: 0
-            }
+                fields: 0,
+                goods: 0
+            },
+            disconnected: p.disconnected ?? false,
+            kicked:       p.kicked       ?? false
         }));
         this.currentPlayerIndex = data.currentPlayerIndex || 0;
         this.placedTiles = data.placedTiles || {};
+        this.disconnectedPlayers = data.disconnectedPlayers || {};
+        this.currentTilePlaced = data.currentTilePlaced ?? false;
     }
 }

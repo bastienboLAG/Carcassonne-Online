@@ -16,7 +16,7 @@
             <!-- Choix du pseudo -->
             <div class="pseudo-section">
                 <label for="pseudo-input">Votre pseudo :</label>
-                <input type="text" id="pseudo-input" placeholder="Entrez votre pseudo" maxlength="20">
+                <input type="text" id="pseudo-input" placeholder="Entrez votre pseudo" maxlength="15">
             </div>
             
             <!-- Boutons multijoueur -->
@@ -70,6 +70,10 @@
                             <input type="radio" name="color" value="yellow">
                             <img src="./assets/Meeples/Yellow/Normal.png" class="meeple-img" alt="Yellow">
                         </label>
+                        <label class="color-option color-option--spectator" data-color="spectator">
+                            <input type="radio" name="color" value="spectator">
+                            <img src="./assets/Meeples/Spectator.png" class="meeple-img" alt="Spectateur">
+                        </label>
                     </div>
                 </div>
             </div>
@@ -120,31 +124,84 @@
 
             <div class="config-section extensions-section">
                 <h3>Extensions</h3>
-                <details open>
-                    <summary><strong>Base</strong></summary>
+                <details>
+                    <summary>
+                        <strong>Base</strong>
+                        <input type="checkbox" id="all-base" class="ext-master" title="Tout activer/désactiver">
+                    </summary>
                     <label class="toggle-option">
-                        <input type="checkbox" id="base-fields" checked>
+                        <input type="checkbox" id="base-fields" checked data-group="all-base">
                         <span>Les champs</span>
                     </label>
                 </details>
                 <details>
-                    <summary><strong>L'Abbé</strong></summary>
+                    <summary>
+                        <strong>L'Abbé</strong>
+                        <input type="checkbox" id="all-abbot" class="ext-master" title="Tout activer/désactiver">
+                    </summary>
                     <label class="toggle-option">
-                        <input type="checkbox" id="ext-abbot">
+                        <input type="checkbox" id="ext-abbot" data-group="all-abbot">
                         <span>Meeple Abbé</span>
+                    </label>
+                </details>
+                <details>
+                    <summary>
+                        <strong>Auberges &amp; Cathédrales</strong>
+                        <input type="checkbox" id="all-inns-cathedrals" class="ext-master" title="Tout activer/désactiver">
+                    </summary>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-large-meeple" data-group="all-inns-cathedrals">
+                        <span>Grand Meeple</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-cathedrals" checked data-group="all-inns-cathedrals">
+                        <span>Cathédrales</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-inns" checked data-group="all-inns-cathedrals">
+                        <span>Auberges</span>
+                    </label>
+                </details>
+                <details>
+                    <summary>
+                        <strong>Marchands &amp; Bâtisseurs</strong>
+                        <input type="checkbox" id="all-traders-builders" class="ext-master" title="Tout activer/désactiver">
+                    </summary>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-builder" data-group="all-traders-builders">
+                        <span>Meeple Bâtisseur</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-merchants" data-group="all-traders-builders">
+                        <span>Marchandises</span>
+                    </label>
+                    <label class="toggle-option" id="ext-pig-label">
+                        <input type="checkbox" id="ext-pig" data-group="all-traders-builders">
+                        <span>Meeple Cochon</span>
                     </label>
                 </details>
             </div>
 
             <div class="config-section">
-                <h3>Tuiles</h3>
+                <h3>
+                    Tuiles
+                    <input type="checkbox" id="all-tiles" class="ext-master" title="Tout activer/désactiver">
+                </h3>
                 <label class="toggle-option">
                     <input type="checkbox" id="tiles-base" checked onclick="return false;" style="cursor:default;">
                     <span>Base (72 tuiles) <em style="color:rgba(255,255,255,0.4)">(obligatoires)</em></span>
                 </label>
                 <label class="toggle-option">
-                    <input type="checkbox" id="tiles-abbot">
+                    <input type="checkbox" id="tiles-abbot" data-group="all-tiles">
                     <span>L'Abbé (+8 tuiles)</span>
+                </label>
+                <label class="toggle-option">
+                    <input type="checkbox" id="tiles-inns-cathedrals" data-group="all-tiles">
+                    <span>Auberges &amp; Cathédrales (+18 tuiles)</span>
+                </label>
+                <label class="toggle-option">
+                    <input type="checkbox" id="tiles-traders-builders" data-group="all-tiles">
+                    <span>Marchands &amp; Bâtisseurs (+24 tuiles)</span>
                 </label>
             </div>
 
@@ -169,6 +226,7 @@
             </div>
 
             <div id="tile-counter">Tuiles : 0 / 72</div>
+            <div id="game-timer">⏱ 00:00</div>
             
             <button id="undo-btn" class="undo-btn">Annuler le coup !</button>
             <button id="end-turn-btn">Terminer mon tour</button>
@@ -176,10 +234,22 @@
                 <button id="recenter-btn" class="secondary-btn" style="flex: 1;">🎯</button>
                 <button id="highlight-tile-btn" class="secondary-btn" style="flex: 1;">📌</button>
             </div>
-            <button id="remaining-tiles-btn" class="info-btn">Tuiles restantes dans la pioche ?</button>
-            <button id="rules-btn" class="info-btn">Règles de cette partie ?</button>
-            
-            <button id="back-to-lobby-btn" style="display: none; padding: 10px; background: #e74c3c; color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 20px;">← Retour lobby</button>
+            <button id="menu-btn" class="menu-btn">Menu</button>
+
+            <!-- Popover menu -->
+            <div id="game-menu-popover" class="game-menu-popover" style="display:none;">
+                <div class="game-menu-code">
+                    <span id="menu-code-display">Code : —</span>
+                    <button id="menu-copy-code-btn">📋 Copier</button>
+                </div>
+                <hr class="menu-separator">
+                <button id="menu-remaining-btn" class="menu-item-btn">🎴 Tuiles restantes</button>
+                <button id="menu-rules-btn" class="menu-item-btn">📜 Règles de cette partie</button>
+                <hr class="menu-separator menu-lobby-separator" style="display:none;">
+                <button id="back-to-lobby-btn" class="menu-item-btn menu-item-danger" style="display:none;">↩️ Retour lobby</button>
+                <hr class="menu-separator menu-leave-separator" style="display:none;">
+                <button id="menu-leave-btn" class="menu-item-btn menu-item-danger" style="display:none;">🚪 Quitter la partie</button>
+            </div>
         </div>
 
         <div id="board-container">
@@ -197,24 +267,23 @@
                 <div id="mobile-tile-section">
                     <div id="mobile-tile-preview"></div>
                     <div id="mobile-tile-counter">0 / 72</div>
+                    <div id="mobile-game-timer" style="display:none">⏱ 00:00</div>
                 </div>
         
                 <!-- Boutons principaux -->
                 <div id="mobile-actions">
-                    <button id="mobile-undo-btn" class="mobile-action-btn undo-btn">Annuler</button>
-                    <button id="mobile-end-turn-btn" class="mobile-action-btn end-turn-btn">Terminer mon tour</button>
+                    <div class="mobile-main-btns">
+                        <button id="mobile-undo-btn" class="mobile-action-btn undo-btn">Annuler</button>
+                        <button id="mobile-end-turn-btn" class="mobile-action-btn end-turn-btn">Terminer mon tour</button>
+                    </div>
                     <div class="mobile-icon-row">
                         <button id="mobile-recenter-btn" class="mobile-icon-btn" title="Recentrer">🎯</button>
                         <button id="mobile-highlight-btn" class="mobile-icon-btn" title="Dernière tuile">📌</button>
+                        <button id="mobile-menu-btn" class="mobile-icon-btn menu-btn" title="Menu">···</button>
                     </div>
                 </div>
         
                 <!-- Boutons secondaires -->
-                <div id="mobile-secondary">
-                    <button id="mobile-remaining-btn" class="mobile-icon-btn" title="Tuiles restantes">🎴</button>
-                    <button id="mobile-rules-btn" class="mobile-icon-btn" title="Règles">📜</button>
-                    <button id="mobile-lobby-btn" class="mobile-icon-btn" title="Retour lobby" style="display:none;">🏠</button>
-                </div>
             </div>
     </div>
 
@@ -233,10 +302,24 @@
         </div>
     </div>
 
+    <!-- Modale choix joueur / spectateur -->
+    <div id="join-role-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>Comment rejoindre ?</h2>
+            <p>Voulez-vous participer à la partie ou simplement observer ?</p>
+            <div class="modal-buttons">
+                <button id="join-as-player-btn" class="modal-btn confirm">🎮 Joueur</button>
+                <button id="join-as-spectator-btn" class="modal-btn secondary">👁 Spectateur</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modale des scores finaux -->
     <div id="final-scores-modal" class="modal" style="display: none;">
         <div class="modal-content final-scores-content">
+            <button id="close-final-scores-btn" class="final-scores-close-btn">✕</button>
             <h2>🏆 Scores finaux</h2>
+            <div id="final-scores-timer" style="text-align:center; font-size:14px; color:#aaa; margin-bottom:8px;"></div>
             <table id="final-scores-table">
                 <thead>
                     <tr>
@@ -245,6 +328,7 @@
                         <th>Routes</th>
                         <th>Abbayes</th>
                         <th>Champs</th>
+                        <th id="th-merchants" style="display:none">Marchandises</th>
                         <th>Total</th>
                     </tr>
                 </thead>
@@ -252,7 +336,6 @@
                     <!-- Rempli dynamiquement -->
                 </tbody>
             </table>
-            <button id="close-final-scores-btn" class="modal-btn confirm">Fermer</button>
         </div>
     </div>
 
@@ -290,19 +373,89 @@
 
     <script type="module" src="home.js"></script>
 
-    <!-- DEBUG MOBILE - À retirer après debug -->
-    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <!-- Logger maison — intercepte tous les logs/erreurs et permet l'export -->
     <script>
-        eruda.init();
-        setTimeout(() => {
-            const btn = document.querySelector('.eruda-entry-btn');
-            if (btn) {
-                btn.style.left   = '10px';
-                btn.style.right  = 'auto';
-                btn.style.top    = '10px';
-                btn.style.bottom = 'auto';
-            }
-        }, 500);
+        (function() {
+            const _logs = [];
+            const _methods = ['log', 'warn', 'error', 'info', 'debug'];
+            _methods.forEach(method => {
+                const orig = console[method].bind(console);
+                console[method] = function(...args) {
+                    orig(...args);
+                    const line = `[${new Date().toISOString()}] [${method.toUpperCase()}] ` +
+                        args.map(a => {
+                            try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }
+                            catch(e) { return String(a); }
+                        }).join(' ');
+                    _logs.push(line);
+                };
+            });
+
+            window.addEventListener('error', e => {
+                _logs.push(`[${new Date().toISOString()}] [UNCAUGHT] ${e.message} — ${e.filename}:${e.lineno}`);
+            });
+            window.addEventListener('unhandledrejection', e => {
+                _logs.push(`[${new Date().toISOString()}] [PROMISE] ${e.reason}`);
+            });
+
+            window._exportLogs = function() {
+                const blob = new Blob([_logs.join('\n')], { type: 'text/plain' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `carcassonne-logs-${new Date().toISOString().replace(/[:.]/g,'-')}.txt`;
+                a.click();
+            };
+
+            // Bouton flottant draggable
+            window.addEventListener('DOMContentLoaded', () => {
+                const btn = document.createElement('button');
+                btn.textContent = '📥';
+                btn.title = 'Exporter les logs';
+                Object.assign(btn.style, {
+                    position: 'fixed', top: '10px', left: '10px',
+                    zIndex: '99999', width: '40px', height: '40px',
+                    borderRadius: '50%', border: '1px solid #ccc',
+                    background: 'white', color: '#333',
+                    fontSize: '18px', cursor: 'grab',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                    userSelect: 'none', touchAction: 'none',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    lineHeight: '1', padding: '0'
+                });
+                document.body.appendChild(btn);
+
+                // Drag
+                let dragging = false, ox = 0, oy = 0, moved = false;
+                function startDrag(cx, cy) {
+                    dragging = true; moved = false;
+                    ox = cx - btn.getBoundingClientRect().left;
+                    oy = cy - btn.getBoundingClientRect().top;
+                    btn.style.cursor = 'grabbing';
+                }
+                function moveDrag(cx, cy) {
+                    if (!dragging) return;
+                    moved = true;
+                    btn.style.left = Math.max(0, Math.min(window.innerWidth  - 40, cx - ox)) + 'px';
+                    btn.style.top  = Math.max(0, Math.min(window.innerHeight - 40, cy - oy)) + 'px';
+                }
+                function endDrag() {
+                    dragging = false;
+                    btn.style.cursor = 'grab';
+                }
+                btn.addEventListener('mousedown',  e => { e.preventDefault(); startDrag(e.clientX, e.clientY); });
+                window.addEventListener('mousemove', e => moveDrag(e.clientX, e.clientY));
+                window.addEventListener('mouseup',   endDrag);
+                btn.addEventListener('touchstart',  e => { startDrag(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+                window.addEventListener('touchmove', e => { if(dragging) { e.preventDefault(); moveDrag(e.touches[0].clientX, e.touches[0].clientY); } }, { passive: false });
+                window.addEventListener('touchend',  endDrag);
+
+                btn.addEventListener('click', () => {
+                    if (!moved && confirm('Télécharger le fichier de logs ?')) {
+                        window._exportLogs();
+                    }
+                });
+            });
+        })();
     </script>
 </body>
 </html>

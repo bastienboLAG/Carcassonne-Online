@@ -20,6 +20,8 @@ export class ZoneRegistry {
             tiles: [],           // [{x, y, zoneIndex}]
             isComplete: false,
             shields: 0,
+            hasCathedral: false, // Extension Auberges & Cathédrales
+            hasInn: false,       // Extension Auberges & Cathédrales
             adjacentCities: []   // Pour les fields (scoring farmers)
         };
         this.zones.set(id, zone);
@@ -45,7 +47,11 @@ export class ZoneRegistry {
     /**
      * Fusionner deux zones en une seule
      */
-    mergeZones(zoneId1, zoneId2) {
+    /**
+     * @param {Map|null} tileToZone - Si fourni, toutes les entrées pointant vers zoneId2 sont
+     *        remappées vers zoneId1, garantissant la cohérence même si zone2.tiles est incomplet.
+     */
+    mergeZones(zoneId1, zoneId2, tileToZone = null) {
         const zone1 = this.zones.get(zoneId1);
         const zone2 = this.zones.get(zoneId2);
 
@@ -64,6 +70,18 @@ export class ZoneRegistry {
         // Fusionner zone2 dans zone1
         zone1.tiles.push(...zone2.tiles);
         zone1.shields += zone2.shields;
+
+        // Marchandises : calculées à la volée (cf. BuilderRules.distributeGoods), rien à fusionner ici.
+
+        // ✅ Garantie : corriger TOUTES les entrées tileToZone pointant vers zoneId2
+        // (même si zone2.tiles était incomplet avant l'appel)
+        if (tileToZone) {
+            for (const [key, id] of tileToZone) {
+                if (id === zoneId2) {
+                    tileToZone.set(key, zoneId1);
+                }
+            }
+        }
         
         // ✅ Fusionner adjacentCities (éviter les doublons)
         if (zone2.adjacentCities && zone2.adjacentCities.length > 0) {
@@ -156,7 +174,8 @@ export class ZoneRegistry {
      * Désérialiser le registry depuis une sauvegarde
      */
     deserialize(data) {
-        this.zones = new Map(data.zones);
+        // ✅ Deep clone de chaque zone pour éviter les références partagées avec le snapshot
+        this.zones = new Map(data.zones.map(([id, zone]) => [id, JSON.parse(JSON.stringify(zone))]));
         this.nextId = data.nextId;
         this.closedCitiesHistory = [...data.closedCitiesHistory];
     }

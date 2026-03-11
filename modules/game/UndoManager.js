@@ -18,6 +18,7 @@ export class UndoManager {
         this.tilePlacedThisTurn = false;
         this.meeplePlacedThisTurn = false;
         this.lastTilePlaced = null; // {x, y, tile}
+        this.lastPlacedTileBeforeTurn = null; // {x, y} — pour restaurer l'épingle après annulation
         this.lastMeeplePlaced = null; // {x, y, position, key}
 
         // État abbé
@@ -51,10 +52,14 @@ export class UndoManager {
             tileToZone: new Map(this.zoneMerger.tileToZone), // Copie de la map
             placedMeeples: this.deepCopy(placedMeeples),
             playerMeeples: this.gameState.players.map(p => ({
-                id: p.id,
+                id: p.id, name: p.name, color: p.color,
                 meeples: p.meeples,
-                hasAbbot: p.hasAbbot
-            }))
+                hasAbbot: p.hasAbbot,
+                hasLargeMeeple: p.hasLargeMeeple,
+                hasBuilder: p.hasBuilder,
+                hasPig:     p.hasPig
+            })),
+            lastPlacedTile: this.lastPlacedTileBeforeTurn // épingle avant ce tour
         };
         
         // Reset état du tour
@@ -91,9 +96,12 @@ export class UndoManager {
             tileToZone: new Map(this.zoneMerger.tileToZone), // Copie de la map
             placedMeeples: this.deepCopy(placedMeeples),
             playerMeeples: this.gameState.players.map(p => ({
-                id: p.id,
+                id: p.id, name: p.name, color: p.color,
                 meeples: p.meeples,
-                hasAbbot: p.hasAbbot
+                hasAbbot: p.hasAbbot,
+                hasLargeMeeple: p.hasLargeMeeple,
+                hasBuilder: p.hasBuilder,
+                hasPig:     p.hasPig
             }))
         };
         
@@ -170,7 +178,8 @@ export class UndoManager {
             
             const undoneAction = {
                 type: 'tile',
-                tile: this.lastTilePlaced
+                tile: this.lastTilePlaced,
+                restoredLastPlacedTile: this.turnStartSnapshot.lastPlacedTile ?? null
             };
             
             this.tilePlacedThisTurn = false;
@@ -183,6 +192,13 @@ export class UndoManager {
         // Rien à annuler
         console.log('⚠️ Rien à annuler');
         return null;
+    }
+
+    /**
+     * Mettre à jour la dernière tuile posée avant ce tour (pour restauration après annulation)
+     */
+    setLastPlacedTileBeforeTurn(tile) {
+        this.lastPlacedTileBeforeTurn = tile ? { x: tile.x, y: tile.y } : null;
     }
 
     /**
@@ -233,10 +249,15 @@ export class UndoManager {
         
         // Restaurer compteur de meeples des joueurs
         snapshot.playerMeeples.forEach(saved => {
-            const player = this.gameState.players.find(p => p.id === saved.id);
+            // Chercher par id d'abord, puis par nom+couleur (fallback reconnexion : peerId change)
+            const player = this.gameState.players.find(p => p.id === saved.id)
+                        || this.gameState.players.find(p => p.name === saved.name && p.color === saved.color);
             if (player) {
                 player.meeples  = saved.meeples;
-                if (saved.hasAbbot !== undefined) player.hasAbbot = saved.hasAbbot;
+                if (saved.hasAbbot       !== undefined) player.hasAbbot       = saved.hasAbbot;
+                if (saved.hasLargeMeeple !== undefined) player.hasLargeMeeple = saved.hasLargeMeeple;
+                if (saved.hasBuilder     !== undefined) player.hasBuilder     = saved.hasBuilder;
+                if (saved.hasPig         !== undefined) player.hasPig         = saved.hasPig;
             }
         });
     }

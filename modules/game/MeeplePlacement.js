@@ -38,28 +38,82 @@ export class MeeplePlacement {
         // 2. Vérifier que le joueur a des meeples disponibles
         const player = this.gameState.players.find(p => p.id === playerId);
         if (!player) return false;
-        const isAbbot = meepleType === 'Abbot';
+        const isAbbot   = meepleType === 'Abbot';
+        const isLarge   = meepleType === 'Large' || meepleType === 'Large-Farmer';
+        const isBuilder = meepleType === 'Builder';
+        const isPig     = meepleType === 'Pig';
         if (isAbbot && !player.hasAbbot) {
             console.log('❌ Abbé non disponible');
             return false;
         }
-        if (!isAbbot && player.meeples <= 0) {
+        if (isLarge && !player.hasLargeMeeple) {
+            console.log('❌ Grand meeple non disponible');
+            return false;
+        }
+        if (isBuilder && !player.hasBuilder) {
+            console.log('❌ Bâtisseur non disponible');
+            return false;
+        }
+        if (isPig && !player.hasPig) {
+            console.log('❌ Cochon non disponible');
+            return false;
+        }
+        if (!isAbbot && !isLarge && !isBuilder && !isPig && player.meeples <= 0) {
             console.log('❌ Plus de meeples disponibles');
             return false;
         }
         
-        // 3. Vérifier que la zone n'a pas déjà un meeple
+        // 3. Vérifier occupation de la zone
         if (this.zoneMerger) {
             const mergedZone = this.zoneMerger.findMergedZoneForPosition(x, y, position);
             if (mergedZone) {
                 const meeplesInZone = this.zoneMerger.getZoneMeeples(mergedZone, this.placedMeeples);
-                if (meeplesInZone.length > 0) {
-                    console.log('❌ Zone déjà occupée par un meeple');
-                    return false;
+                // Les bâtisseurs ne bloquent pas la zone pour les autres meeples
+                const blockingMeeples = meeplesInZone.filter(m => m.type !== 'Builder');
+
+                if (isBuilder) {
+                    // Le bâtisseur nécessite : zone city/road + meeple normal/grand du joueur dans la zone
+                    const zoneType = mergedZone.type;
+                    if (zoneType !== 'city' && zoneType !== 'road') {
+                        console.log('❌ Bâtisseur uniquement sur city ou road');
+                        return false;
+                    }
+                    const hasOwnMeeple = blockingMeeples.some(m =>
+                        m.playerId === playerId &&
+                        m.type !== 'Farmer' && m.type !== 'Large-Farmer'
+                    );
+                    if (!hasOwnMeeple) {
+                        console.log('❌ Bâtisseur : pas de meeple du joueur dans cette zone');
+                        return false;
+                    }
+                } else if (isPig) {
+                    // Le cochon nécessite : zone field + meeple normal/farmer du joueur dans la zone
+                    // Les cochons et bâtisseurs ne bloquent pas
+                    const fieldMeeples = meeplesInZone.filter(m => m.type !== 'Builder' && m.type !== 'Pig');
+                    if (mergedZone.type !== 'field') {
+                        console.log('❌ Cochon uniquement sur field');
+                        return false;
+                    }
+                    const hasOwnFarmer = fieldMeeples.some(m => m.playerId === playerId);
+                    if (!hasOwnFarmer) {
+                        console.log('❌ Cochon : pas de meeple du joueur dans ce champ');
+                        return false;
+                    }
+                } else {
+                    // Meeple normal : zone ne doit pas contenir d'autres meeples (sauf bâtisseur/cochon)
+                    const realBlocking = meeplesInZone.filter(m => m.type !== 'Builder' && m.type !== 'Pig');
+                    if (realBlocking.length > 0) {
+                        console.log('❌ Zone déjà occupée par un meeple');
+                        return false;
+                    }
                 }
+            } else if (isBuilder) {
+                // Pas de zone fusionnée → zone non connectée → pas de meeple du joueur possible
+                console.log('❌ Bâtisseur : aucune zone fusionnée trouvée');
+                return false;
             }
         }
-        
+
         return true;
     }
 
@@ -95,8 +149,16 @@ export class MeeplePlacement {
             playerId: playerId
         };
         
-        // Décrémenter le compteur (pas pour l'Abbé — géré via hasAbbot dans home.js)
-        if (meepleType !== 'Abbot') {
+        // Décrémenter le compteur selon le type
+        if (meepleType === 'Abbot') {
+            // Abbé géré via hasAbbot dans home.js
+        } else if (meepleType === 'Large' || meepleType === 'Large-Farmer') {
+            // Grand meeple géré via hasLargeMeeple dans home.js
+        } else if (meepleType === 'Builder') {
+            // Bâtisseur géré via hasBuilder dans home.js
+        } else if (meepleType === 'Pig') {
+            // Cochon géré via hasPig dans home.js
+        } else {
             this.decrementMeeples(playerId);
         }
         

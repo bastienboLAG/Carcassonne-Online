@@ -20,11 +20,13 @@ export class MeepleCursorsUI {
      * Faire tourner une position de meeple - COPIE EXACTE de rotatePosition()
      */
     rotatePosition(position, rotation) {
-        if (rotation === 0) return position;
+        // Normaliser en nombre (meeplePosition JSON peut être string)
+        const pos = Number(position);
+        if (rotation === 0) return pos;
         
         // Convertir position en coordonnées (row, col)
-        const row = Math.floor((position - 1) / 5);
-        const col = (position - 1) % 5;
+        const row = Math.floor((pos - 1) / 5);
+        const col = (pos - 1) % 5;
         
         let newRow = row;
         let newCol = col;
@@ -103,10 +105,14 @@ export class MeepleCursorsUI {
         
         // ✅ Vérifier si le joueur a des ressources disponibles (meeples ou abbé)
         const activePlayer = gameState.players.find(p => p.id === this.multiplayer.playerId);
-        const hasMeeples = activePlayer && activePlayer.meeples > 0;
-        const hasAbbot   = activePlayer?.hasAbbot === true;
-        if (!hasMeeples && !hasAbbot) {
-            console.log('❌ Pas de meeples ni d\'abbé disponibles, pas d\'affichage de curseurs');
+        const hasMeeples  = activePlayer && activePlayer.meeples > 0;
+        const hasAbbot    = activePlayer?.hasAbbot       === true;
+        const hasLarge    = activePlayer?.hasLargeMeeple === true && this.config?.extensions?.largeMeeple;
+        const hasBuilder  = activePlayer?.hasBuilder     === true && this.config?.extensions?.tradersBuilders;
+        const hasPig      = activePlayer?.hasPig         === true && this.config?.extensions?.pig;
+        console.log('🔍 [CURSEURS] hasMeeples:', hasMeeples, '— hasAbbot:', hasAbbot, '— hasLarge:', hasLarge, '— hasBuilder:', hasBuilder, '— hasPig:', hasPig);
+        if (!hasMeeples && !hasAbbot && !hasLarge && !hasBuilder && !hasPig) {
+            console.log('❌ Pas de meeples disponibles, pas d\'affichage de curseurs');
             return;
         }
         
@@ -140,17 +146,17 @@ export class MeepleCursorsUI {
                 console.log('🚫 Champs désactivés, pas de curseur field à position', position);
                 return;
             }
-            // Filtrer les zones normales si pas de meeples
-            if (zoneType !== 'garden' && zoneType !== 'abbey' && !hasMeeples) {
-                return;
+            // Filtrer selon le type de zone et les ressources disponibles
+            if (zoneType === 'garden' && !hasAbbot) return;
+            if (zoneType === 'abbey'  && !hasMeeples && !hasAbbot && !hasLarge) return;
+            // city/road : besoin d'au moins un meeple normal, grand ou bâtisseur
+            if (zoneType === 'city' || zoneType === 'road') {
+                if (!hasMeeples && !hasLarge && !hasBuilder) return;
             }
-            // Filtrer les jardins si pas d'abbé
-            if (zoneType === 'garden' && !hasAbbot) {
-                return;
-            }
-            // Filtrer les abbayes si ni meeple normal ni abbé disponible
-            if (zoneType === 'abbey' && !hasMeeples && !hasAbbot) {
-                return;
+            // field : besoin d'au moins un meeple normal, grand ou cochon
+            // (le cochon seul est bloqué plus bas si la zone est vide)
+            if (zoneType === 'field') {
+                if (!hasMeeples && !hasLarge && !hasPig) return;
             }
             
             const key = `${x},${y},${position}`;
@@ -165,18 +171,45 @@ export class MeepleCursorsUI {
                 return;
             }
             
-            // ✅ Vérifier si la zone mergée contient déjà un meeple
+            // ✅ Vérifier l'occupation de la zone
             if (this.zoneMerger) {
-                console.log('🔎 Recherche zone mergée pour position', position);
                 const mergedZone = this.zoneMerger.findMergedZoneForPosition(x, y, position);
-                console.log('📍 Zone mergée trouvée:', mergedZone);
                 if (mergedZone) {
                     const meeplesInZone = this.zoneMerger.getZoneMeeples(mergedZone, placedMeeples);
-                    console.log('🎭 Meeples dans cette zone:', meeplesInZone);
-                    if (meeplesInZone.length > 0) {
-                        console.log('⏭️ Position', position, 'dans une zone avec meeple(s), pas de curseur');
-                        return;
+                    // Les bâtisseurs ne bloquent pas la zone
+                    // Bâtisseurs et cochons ne bloquent pas
+                    const blockingMeeples = meeplesInZone.filter(m => m.type !== 'Builder' && m.type !== 'Pig');
+
+                    if (blockingMeeples.length > 0) {
+                        // Zone occupée
+                        const zoneIsCityOrRoad = zoneType === 'city' || zoneType === 'road';
+                        const zoneIsField      = zoneType === 'field';
+                        const playerHasMeepleHereCity = blockingMeeples.some(
+                            m => m.playerId === activePlayer.id &&
+                                 m.type !== 'Farmer' && m.type !== 'Large-Farmer'
+                        );
+                        const playerHasMeepleHereField = blockingMeeples.some(
+                            m => m.playerId === activePlayer.id
+                        );
+                        if (hasBuilder && zoneIsCityOrRoad && playerHasMeepleHereCity) {
+                            // Curseur bâtisseur uniquement — on laisse passer
+                        } else if (hasPig && zoneIsField && playerHasMeepleHereField) {
+                            // Curseur cochon sur field avec meeple du joueur — on laisse passer
+                        } else {
+                            return; // Zone occupée, pas de curseur
+                        }
+                    } else {
+                        // Zone vide : cochon/bâtisseur ne peuvent pas être posés seuls
+                        // L'abbé peut être posé seul sur abbey
+                        const canPlaceAlone = hasMeeples || hasLarge ||
+                            (zoneType === 'abbey' && hasAbbot);
+                        if (!canPlaceAlone) return;
                     }
+                } else {
+                    // Pas de zone fusionnée
+                    const canPlaceAlone = hasMeeples || hasLarge ||
+                        (zoneType === 'abbey' && hasAbbot);
+                    if (!canPlaceAlone) return;
                 }
             }
             

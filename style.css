@@ -33,13 +33,19 @@ html, body {
     flex-direction: column;
     align-items: center;
     padding: 20px;
-    gap: 20px;
+    gap: 12px;
     border-right: 3px solid #444;
     z-index: 10;
     box-shadow: 4px 0 10px rgba(0,0,0,0.5);
     overflow-y: hidden;
     height: auto;
     max-height: 100vh;
+    position: relative;
+}
+
+#game-ui h2 {
+    margin: 0;
+    font-size: 18px;
 }
 
 #current-tile-container {
@@ -58,6 +64,18 @@ html, body {
     border-radius: 5px;
     width: 100%;
     text-align: center;
+}
+
+#game-timer {
+    font-size: 15px;
+    font-weight: bold;
+    padding: 8px 10px;
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 5px;
+    width: 100%;
+    text-align: center;
+    color: #fff;
+    letter-spacing: 1px;
 }
 
 #board-container {
@@ -387,6 +405,15 @@ button:disabled {
     background: linear-gradient(135deg, #c0392b, #a93226);
 }
 
+.modal-btn.secondary {
+    background: linear-gradient(135deg, #7f8c8d, #636e72);
+    color: white;
+}
+
+.modal-btn.secondary:hover {
+    background: linear-gradient(135deg, #636e72, #535c68);
+}
+
 .error-message {
     color: #e74c3c;
     font-size: 14px;
@@ -508,6 +535,23 @@ button:disabled {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 15px;
+}
+
+.color-option--spectator {
+    grid-column: 1 / -1;
+    border-style: dashed;
+    border-color: rgba(255,255,255,0.2);
+    opacity: 0.75;
+}
+
+.color-option--spectator:hover {
+    opacity: 1;
+}
+
+.color-option--spectator.selected {
+    border-color: gold;
+    border-style: dashed;
+    opacity: 1;
 }
 
 .color-option {
@@ -716,11 +760,61 @@ button:disabled {
     cursor: pointer;
     padding: 5px;
     user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    list-style: none; /* masque la flèche native pour en mettre une custom */
+}
+
+.extensions-section summary::-webkit-details-marker {
+    display: none;
+}
+
+/* Flèche custom via ::before — pointe à droite (fermé), vers le bas (ouvert) */
+.extensions-section summary::before {
+    content: '▶';
+    font-size: 10px;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+    color: rgba(255,255,255,0.6);
+}
+
+.extensions-section details[open] > summary::before {
+    transform: rotate(90deg);
 }
 
 .extensions-section summary:hover {
     color: gold;
 }
+
+.extensions-section summary:hover::before {
+    color: gold;
+}
+
+/* Espace entre le titre et la coche maître */
+.extensions-section summary strong {
+    flex: 1;
+}
+
+/* Coche maître dans les summary */
+.ext-master {
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
+    cursor: pointer;
+    accent-color: gold;
+    flex-shrink: 0;
+    /* Empêche le clic sur la coche de toggle le <details> */
+    position: relative;
+    z-index: 1;
+}
+
+/* Coche maître dans le h3 Tuiles */
+h3 .ext-master {
+    vertical-align: middle;
+    margin-left: 8px;
+}
+
 
 .start-button {
     display: block;
@@ -776,7 +870,7 @@ button:disabled {
     background: #f1c40f;
     color: #000;
     font-weight: bold;
-    width: 80%;
+    width: 100%;
 }
 
 .undo-btn:hover {
@@ -834,6 +928,12 @@ button:disabled {
     background-color: rgba(46, 204, 113, 0.1);
 }
 
+.player-score-card.active-bonus {
+    border-color: gold;
+    background-color: rgba(255, 215, 0, 0.12);
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+}
+
 .player-score-header {
     display: flex;
     align-items: center;
@@ -845,6 +945,14 @@ button:disabled {
     color: #2ecc71;
     font-size: 18px;
     font-weight: bold;
+}
+
+.player-score-header .turn-indicator.bonus {
+    color: gold;
+}
+
+.player-score-header .bonus-star {
+    font-size: 14px;
 }
 
 .player-score-name {
@@ -862,14 +970,12 @@ button:disabled {
 
 .player-meeples-display {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 5px;
     flex-wrap: wrap;
 }
 
 .player-meeples-display img {
-    width: 25px;
-    height: 25px;
     object-fit: contain;
     opacity: 0.9;
 }
@@ -880,8 +986,8 @@ button:disabled {
 }
 
 /* Les 3 boutons principaux ont la même largeur */
-#end-turn-btn, #undo-btn, #recenter-btn {
-    width: 80%;
+#end-turn-btn, #undo-btn {
+    width: 100%;
 }
 
 /* Animations pour highlight de tuile */
@@ -988,9 +1094,29 @@ button:disabled {
     height: 30px;
 }
 
-#close-final-scores-btn {
-    width: 100%;
-    margin-top: 10px;
+.final-scores-close-btn {
+    position: sticky;
+    top: 8px;
+    float: right;
+    z-index: 10;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: background 0.15s;
+    margin-bottom: -28px;
+}
+
+.final-scores-close-btn:hover {
+    background: #c0392b;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1071,6 +1197,14 @@ button:disabled {
         box-shadow: 0 0 8px rgba(46, 204, 113, 0.4);
     }
 
+    .mobile-player-card.active-bonus {
+        border-color: gold;
+        background: rgba(255, 215, 0, 0.15);
+        opacity: 1;
+        transform: scale(1.05);
+        box-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+    }
+
     .mobile-player-name {
         font-size: 11px;
         font-weight: bold;
@@ -1089,13 +1223,14 @@ button:disabled {
 
     .mobile-player-meeples {
         display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
         gap: 2px;
         margin-top: 2px;
     }
 
     .mobile-player-meeples img {
-        width: 12px;
-        height: 12px;
+        width: auto;
     }
 
     .mobile-player-meeples img.unavailable {
@@ -1125,6 +1260,7 @@ button:disabled {
         width: 100%;
         box-sizing: border-box;
         order: 3;
+        position: relative;
     }
 
     /* Section tuile en main */
@@ -1167,6 +1303,12 @@ button:disabled {
         flex: 1;
     }
 
+    .mobile-main-btns {
+        display: flex;
+        flex-direction: row;
+        gap: 4px;
+    }
+
     .mobile-action-btn {
         border: none;
         border-radius: 6px;
@@ -1175,7 +1317,8 @@ button:disabled {
         cursor: pointer;
         padding: 6px 8px;
         text-align: center;
-        width: 100%;
+        flex: 1;
+        min-height: 52px;
     }
 
     .mobile-action-btn.undo-btn {
@@ -1186,7 +1329,6 @@ button:disabled {
     .mobile-action-btn.end-turn-btn {
         background: #2ecc71;
         color: #000;
-        flex: 1;
     }
 
     .mobile-action-btn:disabled {
@@ -1283,4 +1425,99 @@ button:disabled {
         box-shadow: 0 0 14px 5px rgba(200, 0, 175, 0.95),
                     inset 0 0 6px rgba(0,0,0,0.9);
     }
+}
+
+/* ========================================
+   MENU BOUTON + POPOVER
+   ======================================== */
+
+.menu-btn {
+    width: 100%;
+    background: #455a64;
+    color: white;
+    font-weight: bold;
+    padding: 10px 15px;
+    font-size: 14px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+}
+
+.menu-btn:hover {
+    background: #546e7a;
+}
+
+.game-menu-popover {
+    position: fixed;
+    background: #1e2d3d;
+    border: 1px solid #455a64;
+    border-radius: 8px;
+    padding: 12px;
+    z-index: 2000;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.6);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 230px;
+}
+
+
+
+.game-menu-code {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 8px;
+    background: #1a252f;
+    border-radius: 5px;
+    font-size: 13px;
+    color: #ecf0f1;
+}
+
+#menu-copy-code-btn {
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+#menu-copy-code-btn:hover {
+    background: #2980b9;
+}
+
+.menu-separator {
+    border: none;
+    border-top: 1px solid #455a64;
+    margin: 2px 0;
+}
+
+.menu-item-btn {
+    width: 100%;
+    background: #34495e;
+    color: #ecf0f1;
+    border: none;
+    border-radius: 5px;
+    padding: 9px 12px;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.menu-item-btn:hover {
+    background: #415b6e;
+}
+
+.menu-item-danger {
+    background: #c0392b;
+    color: white;
+}
+
+.menu-item-danger:hover {
+    background: #e74c3c;
 }
