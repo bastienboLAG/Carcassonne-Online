@@ -61,11 +61,15 @@ export class MeepleCursorsUI {
             return [];
         }
         
+        const EXCLUDED_ZONE_TYPES = new Set(['dragon', 'volcano', 'portal']);
         const validPositions = [];
         
         // Pour chaque zone, récupérer ses positions et les faire tourner
         tile.zones.forEach((zone, index) => {
             console.log(`  Zone ${index}:`, zone.type, 'meeplePosition:', zone.meeplePosition);
+
+            // Exclure zones spéciales non-scorantes
+            if (EXCLUDED_ZONE_TYPES.has(zone.type)) return;
             
             if (zone.meeplePosition !== undefined && zone.meeplePosition !== null) {
                 // ✅ Gérer à la fois nombre et array
@@ -272,9 +276,12 @@ export class MeepleCursorsUI {
      * Mettre en évidence les Abbés rappelables du joueur courant
      * Appelé en phase 2 si extension Abbé activée et Abbé posé sur le plateau
      */
-    showAbbeRecallTargets(placedMeeples, playerId, onRecall) {
+    showAbbeRecallTargets(placedMeeples, playerId, onRecall, onFairy = null, gameState = null, selectorUI = null) {
         if (!this.config.extensions?.abbot) return;
         this.onAbbeRecall = onRecall;
+        this.onFairy = onFairy;
+        this.gameState = gameState;
+        this.selectorUI = selectorUI;
 
         // Chercher tous les Abbés du joueur courant sur le plateau
         Object.entries(placedMeeples).forEach(([key, meeple]) => {
@@ -318,12 +325,12 @@ export class MeepleCursorsUI {
 
             btn.onclick = (e) => {
                 e.stopPropagation();
-                this._showAbbeRecallModal(x, y, key, meeple, e.clientX, e.clientY);
+                this._openAbbeSelector(x, y, key, meeple, e.clientX, e.clientY);
             };
             btn.addEventListener('touchend', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                this._showAbbeRecallModal(x, y, key, meeple, 
+                this._openAbbeSelector(x, y, key, meeple,
                     e.changedTouches[0].clientX, e.changedTouches[0].clientY);
             }, { passive: false });
 
@@ -333,9 +340,33 @@ export class MeepleCursorsUI {
     }
 
     /**
+     * Ouvrir le sélecteur (ou modale fallback) pour un abbé rappelable
+     */
+    _openAbbeSelector(x, y, key, meeple, clientX, clientY) {
+        if (this.selectorUI) {
+            // Passer la fairyKey courante pour que le sélecteur sache si la fée est déjà là
+            this.selectorUI.currentFairyKey = this.gameState?.fairyState?.meepleKey ?? null;
+            const position = parseInt(key.split(',')[2]);
+            this.selectorUI.show(x, y, position, 'abbe-recall', clientX, clientY,
+                (_sx, _sy, _spos, meepleType) => {
+                    if (meepleType === 'AbbeRecall') {
+                        if (this.onAbbeRecall) this.onAbbeRecall(x, y, key, meeple);
+                    } else if (meepleType === 'Fairy') {
+                        if (this.onFairy) this.onFairy(key);
+                    }
+                }
+            );
+        } else {
+            // Fallback modale si selectorUI non disponible
+            const _fairyCb = (this.onFairy && this.gameState?.fairyState?.meepleKey !== key) ? this.onFairy : null;
+            this._showAbbeRecallModal(x, y, key, meeple, clientX, clientY, _fairyCb);
+        }
+    }
+
+    /**
      * Afficher la mini-modale de rappel de l'Abbé
      */
-    _showAbbeRecallModal(x, y, key, meeple, clientX, clientY) {
+    _showAbbeRecallModal(x, y, key, meeple, clientX, clientY, onFairy = null) {
         // Fermer toute modale existante
         document.querySelectorAll('.abbe-recall-modal').forEach(m => m.remove());
 
@@ -378,6 +409,27 @@ export class MeepleCursorsUI {
         };
         confirmBtn.onclick = confirm;
         confirmBtn.addEventListener('touchend', (e) => { e.preventDefault(); confirm(); }, { passive: false });
+
+        // Bouton fée si disponible
+        if (onFairy) {
+            const fairyBtn = document.createElement('button');
+            fairyBtn.textContent = '🧚 Attacher la Fée';
+            fairyBtn.style.background = 'rgba(255,215,0,0.15)';
+            fairyBtn.style.color   = 'gold';
+            fairyBtn.style.border  = '2px solid gold';
+            fairyBtn.style.borderRadius = '5px';
+            fairyBtn.style.padding = '8px 16px';
+            fairyBtn.style.cursor  = 'pointer';
+            fairyBtn.style.fontWeight = 'bold';
+            fairyBtn.style.fontSize = '14px';
+            const confirmFairy = () => {
+                close();
+                onFairy(key);
+            };
+            fairyBtn.onclick = confirmFairy;
+            fairyBtn.addEventListener('touchend', (e) => { e.preventDefault(); confirmFairy(); }, { passive: false });
+            modal.appendChild(fairyBtn);
+        }
 
         // Fermer si clic ailleurs
         setTimeout(() => {

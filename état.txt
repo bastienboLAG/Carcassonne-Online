@@ -1,1 +1,1 @@
-actuel :	Carcassonne-Online-FIXED 22-02-2026 (bug fix multi)
+actuel :	Carcassonne-Online-FIXED 31-03-2026 (Extension Princesse&Dragon Stable)

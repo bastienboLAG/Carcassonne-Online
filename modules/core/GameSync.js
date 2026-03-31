@@ -7,6 +7,7 @@ export class GameSync {
         this.gameState = gameState;
         this.isHost = multiplayer.isHost;
         this.originalHandler = originalHandler; // Handler du lobby à préserver
+        this.eventBus = null; // Assigné depuis home.js après construction
         
         // Callbacks pour les actions de jeu
         this.onDeckReceived = null;
@@ -59,7 +60,10 @@ export class GameSync {
             'game-paused', 'game-resumed', 'full-state-sync', 'rejoin-accepted', 'rejoin-rejected',
             'abbe-recalled', 'abbe-recalled-undo',
             'turn-end-request', 'unplaceable-confirm', 'unplaceable-redraw', 'unplaceable-handled',
-            'turn-undo-request', 'your-turn', 'tile-placed-request', 'meeple-placed-request'
+            'turn-undo-request', 'your-turn', 'tile-placed-request', 'meeple-placed-request',
+            'dragon-state-update', 'dragon-move-request', 'fairy-placed-sync',
+            'dragon-premature-tile', 'dragon-end-turn-request', 'princess-ejected', 'princess-eject-request',
+            'portal-meeple-placed', 'portal-meeple-request'
             // NOTE: 'return-to-lobby', 'player-order-update' et 'game-starting' 
             //       sont gérés par le lobby handler
         ];
@@ -579,6 +583,41 @@ export class GameSync {
                     this.onGameEnded(data.scores, data.destroyedTilesCount ?? 0);
                 }
                 break;
+
+            case 'dragon-state-update':
+                // Relayé par l'hôte à tous les invités — les invités mettent à jour leur état dragon
+                if (!this.isHost) {
+                    this.eventBus?.emit('network-dragon-state-update', data);
+                }
+                break;
+
+            case 'fairy-placed-sync':
+                // Invité reçoit depuis l'hôte — ou hôte reçoit depuis un invité
+                if (data.ownerId !== this.multiplayer.playerId) {
+                    this.eventBus?.emit('network-fairy-placed', data);
+                }
+                break;
+
+            case 'dragon-premature-tile':
+                // Reçu par les invités : modale info "dragon sans volcan"
+                console.log('🐉 [GAMESYNC] dragon-premature-tile — isHost:', this.isHost, '| eventBus:', !!this.eventBus);
+                if (!this.isHost) {
+                    this.eventBus?.emit('network-dragon-premature', data);
+                }
+                break;
+
+            case 'princess-ejected':
+                if (!this.isHost) {
+                    this.eventBus?.emit('network-princess-ejected', data);
+                }
+                break;
+
+            case 'portal-meeple-placed':
+                // L'hôte a broadcasté un placement via portail — appliquer chez tous sauf l'émetteur
+                if (data.playerId !== this.multiplayer.playerId) {
+                    this.eventBus?.emit('network-portal-meeple-placed', data);
+                }
+                break;
             
             case 'game-paused':
                 if (this.onGamePaused && data.playerId !== this.multiplayer.playerId) {
@@ -620,7 +659,7 @@ export class GameSync {
             case 'tile-destroyed':
                 if (this.onTileDestroyed && data.playerId !== this.multiplayer.playerId) {
                     console.log('🗑️ [SYNC] Tuile détruite reçue:', data.tileId);
-                    this.onTileDestroyed(data.tileId, data.playerName, data.action, data.count ?? 1);
+                    this.onTileDestroyed(data.tileId, data.playerName, data.action, data.count ?? 1, data.playerId);
                 }
                 break;
             

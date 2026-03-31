@@ -55,7 +55,8 @@ export class FinalScoresManager {
                     roads:        playerScore.roads,
                     monasteries:  playerScore.monasteries,
                     fields:       playerScore.fields,
-                    goods:        playerScore.goods ?? 0
+                    goods:        playerScore.goods ?? 0,
+                    fairy:        playerScore.fairy ?? 0
                 };
                 player.goods = playerScore.goodsTokens ?? { cloth: 0, wheat: 0, wine: 0 };
             }
@@ -95,17 +96,43 @@ export class FinalScoresManager {
     _showModalDesktop(detailedScores, modal) {
         const tbody = document.getElementById('final-scores-body');
         tbody.innerHTML = '';
-        document.getElementById('final-scores-table').style.display = '';
+        const table = document.getElementById('final-scores-table');
+        table.style.display = '';
+
+        // Wrapper scroll horizontal
+        let wrapper = table.parentElement;
+        if (!wrapper.classList.contains('scores-table-wrapper')) {
+            wrapper = document.createElement('div');
+            wrapper.className = 'scores-table-wrapper';
+            table.parentNode.insertBefore(wrapper, table);
+            wrapper.appendChild(table);
+        }
+
         const cardsContainer = document.getElementById('final-scores-cards');
         if (cardsContainer) cardsContainer.style.display = 'none';
 
+        const hasMerchants = this.gameConfig?.extensions?.merchants;
+        const hasFairy     = this.gameConfig?.extensions?.fairyScoreTurn
+                          || this.gameConfig?.extensions?.fairyScoreZone;
+
+        // Mettre à jour les en-têtes
+        const thead = table.querySelector('thead tr');
+        thead.innerHTML = `
+            <th>Joueur</th>
+            <th>Villes</th>
+            <th>Routes</th>
+            <th>Abbayes</th>
+            <th>Champs</th>
+            ${hasMerchants ? '<th>March.</th>' : ''}
+            ${hasFairy     ? '<th>Fée</th>' : ''}
+            <th>Total</th>
+        `;
+
         detailedScores.forEach(player => {
-            if (player.color === 'spectator') return; // spectateur exclu du tableau
+            if (player.color === 'spectator') return;
             const row      = document.createElement('tr');
             const colorCap = player.color.charAt(0).toUpperCase() + player.color.slice(1);
-            const imgSrc   = player.color === 'spectator'
-                ? 'assets/Meeples/Spectator.png'
-                : `assets/Meeples/${colorCap}/Normal.png`;
+            const imgSrc   = `assets/Meeples/${colorCap}/Normal.png`;
 
             const nameCell = document.createElement('td');
             nameCell.innerHTML = `
@@ -115,10 +142,11 @@ export class FinalScoresManager {
                 </div>`;
             row.appendChild(nameCell);
 
-            const hasMerchants = this.gameConfig?.extensions?.merchants;
-            const vals = hasMerchants
-                ? [player.cities, player.roads, player.monasteries, player.fields, player.goods ?? 0, player.total]
-                : [player.cities, player.roads, player.monasteries, player.fields, player.total];
+            const vals = [player.cities, player.roads, player.monasteries, player.fields];
+            if (hasMerchants) vals.push(player.goods ?? 0);
+            if (hasFairy)     vals.push(player.fairy ?? 0);
+            vals.push(player.total); // Total toujours en dernier
+
             const totalIdx = vals.length - 1;
             vals.forEach((val, i) => {
                 const td = document.createElement('td');
@@ -136,7 +164,7 @@ export class FinalScoresManager {
             const footerRow = document.createElement('tr');
             footerRow.style.cssText = 'border-top: 2px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.6); font-size: 13px;';
             const td = document.createElement('td');
-            td.colSpan = 6;
+            td.colSpan = 10;
             td.style.textAlign = 'center';
             td.style.padding = '8px 0 4px';
             td.textContent = `🗑️ ${destroyed} tuile${destroyed > 1 ? 's' : ''} détruite${destroyed > 1 ? 's' : ''} durant la partie`;
@@ -168,12 +196,13 @@ export class FinalScoresManager {
         `;
 
         const hasMerchantsMobile = this.gameConfig?.extensions?.merchants;
-        const labels = hasMerchantsMobile
-            ? ['Villes', 'Routes', 'Abbayes', 'Champs', 'Marchandises']
-            : ['Villes', 'Routes', 'Abbayes', 'Champs'];
-        const keys = hasMerchantsMobile
-            ? ['cities', 'roads', 'monasteries', 'fields', 'goods']
-            : ['cities', 'roads', 'monasteries', 'fields'];
+        const hasFairyMobile     = this.gameConfig?.extensions?.fairyScoreTurn
+                                || this.gameConfig?.extensions?.fairyScoreZone;
+
+        const labels = ['Villes', 'Routes', 'Abbayes', 'Champs'];
+        const keys   = ['cities', 'roads', 'monasteries', 'fields'];
+        if (hasMerchantsMobile) { labels.push('Marchandises'); keys.push('goods'); }
+        if (hasFairyMobile)     { labels.push('Fée');        keys.push('fairy'); }
 
         detailedScores.forEach((player, index) => {
             if (player.color === 'spectator') return;
@@ -214,9 +243,10 @@ export class FinalScoresManager {
                 gap: 4px 16px;
             `;
             keys.forEach((key, i) => {
+                const val = player[key] ?? 0;
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex;justify-content:space-between;color:rgba(255,255,255,0.75);font-size:13px;';
-                row.innerHTML = `<span>${labels[i]}</span><span>${player[key]}</span>`;
+                row.innerHTML = `<span>${labels[i]}</span><span>${val}</span>`;
                 details.appendChild(row);
             });
             card.appendChild(details);
@@ -251,6 +281,7 @@ export class FinalScoresManager {
                     monasteries: p.scoreDetail?.monasteries || 0,
                     fields:      p.scoreDetail?.fields      || 0,
                     goods:       p.scoreDetail?.goods       || 0,
+                    fairy:       p.scoreDetail?.fairy       || 0,
                     goodsTokens: p.goods || { cloth: 0, wheat: 0, wine: 0 },
                     total:       p.score
                 }))

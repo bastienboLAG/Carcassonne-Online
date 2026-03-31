@@ -3,12 +3,13 @@
  * Extrait de home.js pour alléger le fichier principal
  */
 export class UnplaceableTileManager {
-    constructor({ deck, gameState, tilePreviewUI, gameSync, gameConfig, setRedrawMode, triggerEndGame }) {
+    constructor({ deck, gameState, tilePreviewUI, gameSync, gameConfig, plateau, setRedrawMode, triggerEndGame }) {
         this.deck           = deck;
         this.gameState      = gameState;
         this.tilePreviewUI  = tilePreviewUI;
         this.gameSync       = gameSync;
         this.gameConfig     = gameConfig;
+        this.plateau        = plateau;
         this.setRedrawMode  = setRedrawMode;
         this.triggerEndGame = triggerEndGame;
 
@@ -79,6 +80,34 @@ export class UnplaceableTileManager {
     }
 
     /**
+     * Badge implaçable spécifique tuile Dragon prématurée (sans volcan).
+     * Identique à showUnplaceableBadge mais avec texte dragon et _dragonMode sur le bouton.
+     */
+    showUnplaceableBadgeDragon(tileId) {
+        const badge      = document.getElementById('unplaceable-badge');
+        const modal      = document.getElementById('unplaceable-modal');
+        const modalText  = document.getElementById('unplaceable-modal-text');
+        const confirmBtn = document.getElementById('unplaceable-confirm-btn');
+        const examineBtn = document.getElementById('unplaceable-examine-btn');
+
+        modalText.textContent =
+            `La tuile "${tileId}" est une tuile Dragon, mais aucun volcan n'a encore été posé sur le plateau. ` +
+            `Elle doit être remélangée dans la pioche.`;
+
+        if (confirmBtn) {
+            confirmBtn.textContent = 'Remettre dans la pioche';
+            confirmBtn._dragonMode = true;
+        }
+        if (examineBtn) examineBtn.style.display = '';
+
+        badge.style.display = 'block';
+        modal.style.display = 'flex';
+
+        badge.onclick = () => { modal.style.display = 'flex'; };
+        examineBtn.onclick = () => { modal.style.display = 'none'; };
+    }
+
+    /**
      * Cacher le badge et la modale implaçable
      */
     hideUnplaceableBadge() {
@@ -99,6 +128,11 @@ export class UnplaceableTileManager {
         if (extraMessage) {
             title.textContent = '🌊 Rivière bloquée';
             text.textContent  = extraMessage;
+        } else if (action === 'dragon-reshuffle') {
+            title.textContent = '🐉 Tuile Dragon remélangée';
+            text.textContent  = isActivePlayer
+                ? `La tuile ${tileId} est une tuile Dragon, mais aucun volcan n'a encore été posé. Elle a été remélangée dans la pioche. Cliquez sur Repiocher pour continuer.`
+                : `La tuile ${tileId} est une tuile Dragon, mais aucun volcan n'a encore été posé. Elle a été remélangée dans la pioche. ${playerName} va repiocher.`;
         } else if (action === 'reshuffle') {
             title.textContent = '🎲 Tuile remélangée';
             text.textContent  = isActivePlayer
@@ -128,7 +162,7 @@ export class UnplaceableTileManager {
      * Vérifier si toutes les tuiles rivière restantes (sauf river-12) ont été vues comme implaçables
      * Si oui, déclencher la destruction en chaîne
      */
-    _checkRiverAllImplacable(currentTileId, gameSync) {
+    _checkRiverAllImplacable(currentTileId, gameSync, activePeerId = null) {
         const idx = this.deck.currentIndex - 1;
 
         // À la première alerte, capturer les IDs des tuiles rivière restantes (sans river-12)
@@ -173,12 +207,17 @@ export class UnplaceableTileManager {
                 ? `La rivière était complètement bloquée. ${count} tuile(s) rivière ont été détruites. River-12 (embouchure) va maintenant être piochée.`
                 : `La rivière était complètement bloquée. ${count} tuile(s) rivière ont été détruites. ${playerName} va piocher l'embouchure.`;
 
-        this.showTileDestroyedModal('?', playerName, true, 'destroy', true, msg(true));
+        this.showTileDestroyedModal('?', playerName, !activePeerId, 'destroy', true, msg(!activePeerId));
+        // Invité actif : syncUnplaceableHandled en premier pour que waitingToRedraw soit set
+        if (gameSync && activePeerId) {
+            gameSync.syncUnplaceableHandled('?', playerName, 'destroy', true, activePeerId);
+        }
         if (gameSync) gameSync.syncTileDestroyed(`[${count} tuiles rivière]`, playerName, 'destroy', count);
 
         this._seenImplacableRiver.clear();
         this._riverTilesToTest = null;
-        this.setRedrawMode(true);
+        // setRedrawMode uniquement si c'est le tour de l'hôte (activePeerId = null)
+        if (!activePeerId) this.setRedrawMode(true);
         return true;
     }
 
@@ -246,11 +285,18 @@ export class UnplaceableTileManager {
      * Retourne { tileId, playerName, action, isRiver, extraMessage } pour que l'appelant gère l'affichage
      * Retourne null si un cas spécial a déjà tout géré (river-12, chain destroy, end game)
      */
-    handleConfirm(tuileEnMain, gameSync) {
+    handleConfirm(tuileEnMain, gameSync, activePeerId = null) {
         const currentPlayer = this.gameState?.getCurrentPlayer();
         const tileId        = tuileEnMain?.id || '?';
         const playerName    = currentPlayer?.name || '?';
-        const action        = this.gameConfig?.unplaceableAction || 'destroy';
+
+        // Tuile dragon sans volcan → toujours remélangée, texte spécifique modale 2
+        const isDragonPremature = tuileEnMain?.zones?.some(z => z.type === 'dragon') &&
+                                  !Object.values(this.plateau?.placedTiles ?? {}).some(
+                                      t => t?.zones?.some(z => z.type === 'volcano')
+                                  );
+        const action        = isDragonPremature ? 'reshuffle' : (this.gameConfig?.unplaceableAction || 'destroy');
+        const displayAction = isDragonPremature ? 'dragon-reshuffle' : action;
 
         this.hideUnplaceableBadge();
 
@@ -266,8 +312,9 @@ export class UnplaceableTileManager {
                     console.log('🌊 river-12 implaçable — détruite, fin de rivière');
                     this._destroyTileAtIndex(idx);
                     if (gameSync) gameSync.syncDeckReshuffle(this.deck.tiles, this.deck.currentIndex);
-                    const msg = `L'embouchure (river-12) était impossible à placer et a été détruite. La rivière se termine sans embouchure. Cliquez sur Repiocher pour continuer avec les tuiles normales.`;
-                    this.showTileDestroyedModal(tileId, playerName, true, 'destroy', true, msg);
+                    const isLocalActive = !activePeerId; // hôte joue lui-même
+                    const msg = `L'embouchure (river-12) était impossible à placer et a été détruite. La rivière se termine sans embouchure. ${isLocalActive ? 'Cliquez sur Repiocher pour continuer avec les tuiles normales.' : `${playerName} va repiocher avec les tuiles normales.`}`;
+                    this.showTileDestroyedModal(tileId, playerName, isLocalActive, 'destroy', true, msg);
                     if (gameSync) gameSync.syncTileDestroyed(tileId, playerName, 'destroy');
                     this._seenImplacableRiver.clear();
                     this._riverTilesToTest = null;
@@ -275,8 +322,7 @@ export class UnplaceableTileManager {
                     return { tileId, playerName, action: 'destroy', isRiver: true, special: true };
                 }
 
-                if (this._checkRiverAllImplacable(tileId, gameSync)) return null;
-
+                if (this._checkRiverAllImplacable(tileId, gameSync, activePeerId)) return null;
                 console.log('🌊 Tuile rivière implaçable — remélange dans la rivière');
                 const sub = this.deck.tiles.slice(idx, 11);
                 for (let i = sub.length - 1; i > 0; i--) {
@@ -308,11 +354,12 @@ export class UnplaceableTileManager {
             if (isRiver) {
                 if (tuileEnMain.id === 'river-12') {
                     console.log('🌊 river-12 implaçable — détruite, fin de rivière');
-                    const msg = `L'embouchure (river-12) était impossible à placer et a été détruite. La rivière se termine sans embouchure. Cliquez sur Repiocher pour continuer avec les tuiles normales.`;
+                    const isLocalActive = !activePeerId;
+                    const msg = `L'embouchure (river-12) était impossible à placer et a été détruite. La rivière se termine sans embouchure. ${isLocalActive ? 'Cliquez sur Repiocher pour continuer avec les tuiles normales.' : `${playerName} va repiocher avec les tuiles normales.`}`;
                     this._destroyTileAtIndex(idx);
                     this.deck.currentIndex--;
                     if (gameSync) gameSync.syncDeckReshuffle(this.deck.tiles, this.deck.currentIndex);
-                    this.showTileDestroyedModal(tileId, playerName, true, 'destroy', true, msg);
+                    this.showTileDestroyedModal(tileId, playerName, isLocalActive, 'destroy', true, msg);
                     if (gameSync) gameSync.syncTileDestroyed(tileId, playerName, 'destroy');
                     this._seenImplacableRiver.clear();
                     this._riverTilesToTest = null;
@@ -329,6 +376,26 @@ export class UnplaceableTileManager {
         }
 
         // Cas normal : retourner les infos pour que l'appelant gère l'affichage
-        return { tileId, playerName, action, isRiver };
+        return { tileId, playerName, action: displayAction, isRiver };
+    }
+
+    /**
+     * Abonner les listeners réseau liés aux tuiles implaçables/dragon prématuré.
+     * Appelé une fois après instanciation depuis home.js.
+     */
+    initNetworkListeners(eventBus, getIsHost, getMultiplayer) {
+        // Invités : modale dragon prématuré
+        // - joueur actif : badge + modale 1 pour confirmer le remélange
+        // - autres invités : modale info seulement
+        eventBus.on('network-dragon-premature', (data) => {
+            if (getIsHost()) return;
+            const isActivePlayer = data.playerId === getMultiplayer().playerId;
+            console.log('🐉 [INVITÉ] network-dragon-premature — data.playerId:', data.playerId, '| isActivePlayer:', isActivePlayer);
+            if (isActivePlayer) {
+                this.showUnplaceableBadgeDragon(data.tileId);
+            } else {
+                this.showTileDestroyedModal(data.tileId, data.playerName, false, 'dragon-reshuffle', false);
+            }
+        });
     }
 }

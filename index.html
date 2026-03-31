@@ -180,11 +180,40 @@
                         <span>Meeple Cochon</span>
                     </label>
                 </details>
+                <details>
+                    <summary>
+                        <strong>Princesse &amp; Dragon</strong>
+                        <input type="checkbox" id="all-dragon" class="ext-master" title="Tout activer/désactiver">
+                    </summary>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-dragon" data-group="all-dragon">
+                        <span>Dragon</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-princess" data-group="all-dragon">
+                        <span>Princesse</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-portal" data-group="all-dragon">
+                        <span>Portail Magique</span>
+                    </label>
+                    <label class="toggle-option" id="ext-fairy-protection-label">
+                        <input type="checkbox" id="ext-fairy-protection" data-group="all-dragon">
+                        <span>Protection de la Fée</span>
+                    </label>
+                    <label class="toggle-option" id="ext-fairy-score-turn-label">
+                        <input type="checkbox" id="ext-fairy-score-turn" data-group="all-dragon">
+                        <span>Points bonus début de tour (Fée)</span>
+                    </label>
+                    <label class="toggle-option" id="ext-fairy-score-zone-label">
+                        <input type="checkbox" id="ext-fairy-score-zone" data-group="all-dragon">
+                        <span>Points bonus fermeture de zone (Fée)</span>
+                    </label>
+                </details>
             </div>
 
-            <div class="config-section">
-                <h3>
-                    Tuiles
+            <div class="config-section extensions-section">
+                <h3>Tuiles <span id="tiles-count" style="font-weight:normal;font-size:0.85em;color:rgba(255,255,255,0.6)">(72 tuiles)</span>
                     <input type="checkbox" id="all-tiles" class="ext-master" title="Tout activer/désactiver">
                 </h3>
                 <label class="toggle-option">
@@ -202,6 +231,10 @@
                 <label class="toggle-option">
                     <input type="checkbox" id="tiles-traders-builders" data-group="all-tiles">
                     <span>Marchands &amp; Bâtisseurs (+24 tuiles)</span>
+                </label>
+                <label class="toggle-option">
+                    <input type="checkbox" id="tiles-dragon" data-group="all-tiles">
+                    <span>Princesse &amp; Dragon (+29 tuiles)</span>
                 </label>
             </div>
 
@@ -328,7 +361,6 @@
                         <th>Routes</th>
                         <th>Abbayes</th>
                         <th>Champs</th>
-                        <th id="th-merchants" style="display:none">Marchandises</th>
                         <th>Total</th>
                     </tr>
                 </thead>

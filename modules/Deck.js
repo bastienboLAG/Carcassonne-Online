@@ -15,75 +15,41 @@ export class Deck {
         const riverTiles = [];
         const normalTiles = [];
 
+        // ── Chargement parallèle d'un groupe de tuiles ─────────────────
+        const _loadGroup = async (folder, ids) => {
+            const results = await Promise.allSettled(
+                ids.map(id => fetch(`./data/${folder}/${id}.json`).then(r => r.json()))
+            );
+            return results
+                .filter(r => r.status === 'fulfilled')
+                .map(r => r.value);
+        };
+
         // ── Groupe River (chargé en premier si activé) ─────────────────
         if (startType === 'river') {
-            const riverIds = ['01','02','03','04','05','06','07','08','09','10','11','12'];
-            for (const id of riverIds) {
-                try {
-                    const res  = await fetch(`./data/River/${id}.json`);
-                    const data = await res.json();
-                    riverTiles.push(data);
-                } catch (e) {
-                    console.error(`Erreur tuile River/${id}:`, e);
-                }
-            }
+            const ids = ['01','02','03','04','05','06','07','08','09','10','11','12'];
+            riverTiles.push(...await _loadGroup('River', ids));
         }
 
         // ── Groupe Base ─────────────────────────────────────────────────
         const baseIds = testMode
             ? ['23', '24', '03', '01', '02', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14']
             : Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, '0'));
+        normalTiles.push(...await _loadGroup('Base', baseIds));
 
-        for (const id of baseIds) {
-            try {
-                const res  = await fetch(`./data/Base/${id}.json`);
-                const data = await res.json();
-                normalTiles.push(data);
-            } catch (e) {
-                console.error(`Erreur tuile Base/${id}:`, e);
-            }
-        }
+        // ── Groupes optionnels — tous lancés en parallèle ───────────────
+        const optionalFetches = [];
+        if (tileGroups.abbot)
+            optionalFetches.push(_loadGroup('Abbot', ['01','02','03','04','05','06','07','08']));
+        if (tileGroups.inns_cathedrals)
+            optionalFetches.push(_loadGroup('Inns_Cathedrals', ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18']));
+        if (tileGroups.traders_builders)
+            optionalFetches.push(_loadGroup('Traders_Builders', ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24']));
+        if (tileGroups.dragon)
+            optionalFetches.push(_loadGroup('Dragon', ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24','25','26','27','28','29']));
 
-        // ── Groupe Abbot (optionnel) ────────────────────────────────────
-        if (tileGroups.abbot) {
-            const abbotIds = ['01','02','03','04','05','06','07','08'];
-            for (const id of abbotIds) {
-                try {
-                    const res  = await fetch(`./data/Abbot/${id}.json`);
-                    const data = await res.json();
-                    normalTiles.push(data);
-                } catch (e) {
-                    console.error(`Erreur tuile Abbot/${id}:`, e);
-                }
-            }
-        }
-
-        // ── Groupe Inns & Cathedrals (optionnel) ────────────────────────
-        if (tileGroups.inns_cathedrals) {
-            const innIds = ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18'];
-            for (const id of innIds) {
-                try {
-                    const res  = await fetch(`./data/Inns_Cathedrals/${id}.json`);
-                    const data = await res.json();
-                    normalTiles.push(data);
-                } catch (e) {
-                    console.error(`Erreur tuile Inns_Cathedrals/${id}:`, e);
-                }
-            }
-        }
-
-        if (tileGroups.traders_builders) {
-            const traderIds = ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24'];
-            for (const id of traderIds) {
-                try {
-                    const res  = await fetch(`./data/Traders_Builders/${id}.json`);
-                    const data = await res.json();
-                    normalTiles.push(data);
-                } catch (e) {
-                    console.error(`Erreur tuile Traders_Builders/${id}:`, e);
-                }
-            }
-        }
+        const optionalResults = await Promise.all(optionalFetches);
+        optionalResults.forEach(group => normalTiles.push(...group));
 
         // ── Calcul du total ─────────────────────────────────────────────
         const allTileData = [...riverTiles, ...normalTiles];
@@ -118,7 +84,21 @@ export class Deck {
         }
 
         // ── Ordre / mélange ──────────────────────────────────────────────
-        if (startType === 'river') {
+        if (startType === 'river' && testMode) {
+            // River + test : ordre forcé pour reproduire un blocage total
+            // 01(source) → 07-06-10-05-02-03-04-08-09-11 → 12(embouchure)
+            const riverTestOrder = [
+                'river-01','river-07','river-06','river-10','river-05',
+                'river-02','river-03','river-04','river-08','river-09',
+                'river-11','river-12'
+            ];
+            const orderedRiver = riverTestOrder.map(id => riverDeck.find(t => t.id === id)).filter(Boolean);
+            this._shuffleArray(normalDeck);
+            this.tiles = [...orderedRiver, ...normalDeck];
+            this.totalTiles = this.tiles.length;
+            console.log(`🌊 [TEST] Mode rivière ordre forcé : ${orderedRiver.map(t => t.id).join(' → ')}`);
+
+        } else if (startType === 'river') {
             // River : source fixe, 2-11 shufflées, embouchure fixe
             const source      = riverDeck.find(t => t.id === 'river-01');
             const embouchure  = riverDeck.find(t => t.id === 'river-12');
@@ -141,7 +121,7 @@ export class Deck {
                     normalDeck.push({ id: 'inns_cathedrals-03', zones: data.zones, imagePath: data.image });
                 } catch(e) { console.error('Erreur chargement inns_cathedrals-03:', e); }
             }
-            const testIds = ['base-24', 'base-03', 'base-04', 'base-10', 'base-11', 'base-15', 'base-16'];
+            const testIds = ['dragon-23', 'dragon-09', 'dragon-22', 'dragon-25', 'dragon-01', 'dragon-21', 'dragon-19', 'dragon-29', 'base-04'];
             this.tiles = testIds.map(id => {
                 const found = normalDeck.find(t => t.id === id);
                 return found ? { ...found } : null;
@@ -161,6 +141,48 @@ export class Deck {
         }
 
         console.log(`📦 Deck chargé: ${this.tiles.length} tuiles (total: ${this.totalTiles})`);
+    }
+
+    /**
+     * Vérifie si une tuile contient une zone dragon (déclencheur phase dragon).
+     * @param {object} tile
+     * @returns {boolean}
+     */
+    _tileHasDragonZone(tile) {
+        return tile?.zones?.some(z => z.type === 'dragon') ?? false;
+    }
+
+    /**
+     * Appelé par l'hôte quand une tuile dragon est piochée sans volcan actif.
+     * Remet la tuile dans la pioche à une position aléatoire et la mélange.
+     * Pioche la suivante et la retourne (ne contient plus de zone dragon garantie
+     * car un seul reshuf suffit — si 2 dragons consécutifs, on reshuf à nouveau
+     * jusqu'à tomber sur une tuile non-dragon).
+     * @returns {object|null} la prochaine tuile valide, ou null si pioche vide
+     */
+    reshuffleDragonTile() {
+        // La tuile dragon est à currentIndex - 1 (vient d'être piochée)
+        const dragonTileIndex = this.currentIndex - 1;
+        const dragonTile = this.tiles[dragonTileIndex];
+
+        // Retirer la tuile dragon du deck (on va la réinsérer)
+        this.tiles.splice(dragonTileIndex, 1);
+        this.currentIndex--;  // on recule car on a retiré avant currentIndex
+
+        // Insérer à une position aléatoire APRÈS currentIndex
+        const remaining = this.tiles.length - this.currentIndex;
+        if (remaining === 0) {
+            // Plus rien derrière, remettre quand même (pioche "vide" dans la pratique)
+            this.tiles.push(dragonTile);
+        } else {
+            const insertAt = this.currentIndex + Math.floor(Math.random() * remaining);
+            this.tiles.splice(insertAt, 0, dragonTile);
+        }
+
+        console.log(`🐉 [Deck] Tuile dragon remélangée à l'index ${this.currentIndex + Math.floor(Math.random() * remaining)}`);
+
+        // Piocher la prochaine tuile (peut aussi être dragon — l'appelant doit reboucler)
+        return this.draw();
     }
 
     _shuffleArray(arr) {

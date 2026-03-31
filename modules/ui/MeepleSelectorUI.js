@@ -1,4 +1,4 @@
-import { getMeepleSize } from './MeepleConfig.js';
+import { getMeepleSize } from '../MeepleConfig.js';
 
 /**
  * MeepleSelectorUI - Gère le sélecteur de type de meeple
@@ -139,6 +139,27 @@ export class MeepleSelectorUI {
                     { type: 'Abbot', image: `./assets/Meeples/${this.getPlayerColor()}/Abbot.png` }
                 ];
             }
+        } else if (zoneType === 'fairy-attach') {
+            // Fée — toujours disponible (peut être posée ou volée à un autre joueur)
+            meepleTypes = [
+                { type: 'Fairy', image: `./assets/Meeples/Fairy.png` }
+            ];
+        } else if (zoneType === 'dragon-move') {
+            // Déplacement dragon — une seule option
+            meepleTypes = [
+                { type: 'Dragon', image: `./assets/Meeples/Dragon.png` }
+            ];
+        } else if (zoneType === 'abbe-recall') {
+            // Rappel abbé : image abbé avec ↩️ centré + fée si fée active et abbé pas déjà lié
+            const _fairyActiveForAbbe = this.config?.extensions?.fairyProtection
+                                     || this.config?.extensions?.fairyScoreTurn
+                                     || this.config?.extensions?.fairyScoreZone;
+            meepleTypes = [
+                { type: 'AbbeRecall', image: `./assets/Meeples/${this.getPlayerColor()}/Abbot.png`, overlay: '↩️' }
+            ];
+            if (_fairyActiveForAbbe && this.currentFairyKey !== `${x},${y},${position}`) {
+                meepleTypes.push({ type: 'Fairy', image: `./assets/Meeples/Fairy.png` });
+            }
         } else if (zoneType === 'abbey') {
             // Abbey → Normal (si dispo) + Abbé (si dispo) + Large (si dispo)
             if (player?.meeples > 0) {
@@ -173,8 +194,29 @@ export class MeepleSelectorUI {
             img.style.width  = width;
             img.style.height = height;
             img.style.display = 'block';
-            
-            option.appendChild(img);
+
+            if (meeple.overlay) {
+                // Wrapper relatif pour superposer l'emoji
+                option.style.position = 'relative';
+                const wrapper = document.createElement('div');
+                wrapper.style.position = 'relative';
+                wrapper.style.display  = 'inline-block';
+                wrapper.appendChild(img);
+                const badge = document.createElement('span');
+                badge.textContent = meeple.overlay;
+                badge.style.position  = 'absolute';
+                badge.style.top       = '50%';
+                badge.style.left      = '50%';
+                badge.style.transform = 'translate(-50%, -50%)';
+                badge.style.fontSize  = '11px';
+                badge.style.lineHeight = '1';
+                badge.style.pointerEvents = 'none';
+                badge.style.textShadow = '0 0 3px rgba(0,0,0,0.8)';
+                wrapper.appendChild(badge);
+                option.appendChild(wrapper);
+            } else {
+                option.appendChild(img);
+            }
             
             option.onmouseenter = () => {
                 option.style.background = 'rgba(255, 215, 0, 0.2)';
@@ -213,6 +255,72 @@ export class MeepleSelectorUI {
     hide() {
         const selector = document.getElementById('meeple-selector');
         if (selector) selector.remove();
+    }
+
+    /**
+     * Sélecteur pour le portail magique — mêmes types que normal sauf Bâtisseur/Cochon interdits.
+     */
+    showPortal(x, y, position, zoneType, mouseX, mouseY, onMeepleSelected) {
+        const player = this.gameState.players.find(p => p.id === this.multiplayer.playerId);
+        if (!player) return;
+
+        const colorCap = this.getPlayerColor();
+        const meepleTypes = [];
+
+        // Meeple normal
+        if ((player.meeples ?? 0) > 0) {
+            if (zoneType === 'field') {
+                meepleTypes.push({ type: 'Farmer', image: `./assets/Meeples/${colorCap}/Farmer.png` });
+            } else {
+                meepleTypes.push({ type: 'Normal', image: `./assets/Meeples/${colorCap}/Normal.png` });
+            }
+        }
+        // Grand meeple
+        if (player.hasLargeMeeple && this.config?.extensions?.largeMeeple) {
+            if (zoneType === 'field') {
+                meepleTypes.push({ type: 'Large-Farmer', image: `./assets/Meeples/${colorCap}/Large-Farmer.png` });
+            } else {
+                meepleTypes.push({ type: 'Large', image: `./assets/Meeples/${colorCap}/Large.png` });
+            }
+        }
+        // Abbé uniquement sur abbey/garden
+        if (player.hasAbbot && this.config?.extensions?.abbot && (zoneType === 'abbey' || zoneType === 'garden')) {
+            meepleTypes.push({ type: 'Abbot', image: `./assets/Meeples/${colorCap}/Abbot.png` });
+        }
+        // Bâtisseur et Cochon interdits via portail
+
+        if (meepleTypes.length === 0) return;
+
+        const selector = document.createElement('div');
+        selector.id = 'meeple-selector';
+        selector.style.cssText = `position:fixed;left:${mouseX}px;top:${mouseY - 80}px;transform:translateX(-50%);z-index:1000;display:flex;align-items:flex-end;gap:0;padding:2px;background:rgba(44,62,80,0.5);border-radius:8px;border:2px solid #8e44ad;box-shadow:0 4px 20px rgba(0,0,0,0.5);`;
+
+        meepleTypes.forEach(({ type, image }) => {
+            const option = document.createElement('div');
+            option.style.cssText = 'cursor:pointer;padding:4px;border-radius:5px;';
+            const img = document.createElement('img');
+            const cfg = { Normal: 0.44, Farmer: 0.44, Large: 0.44, 'Large-Farmer': 0.44, Abbot: 0.44 };
+            const sizes = { Normal: [69,70], Farmer: [70,69], Large: [79,80], 'Large-Farmer': [80,79], Abbot: [62,80] };
+            const s = cfg[type] ?? 0.44;
+            const [w, h] = sizes[type] ?? [69, 70];
+            img.src = image;
+            img.style.cssText = `width:${Math.round(w*s)}px;height:${Math.round(h*s)}px;display:block;`;
+            option.appendChild(img);
+            option.onmouseenter = () => { option.style.background = 'rgba(142,68,173,0.2)'; };
+            option.onmouseleave = () => { option.style.background = 'transparent'; };
+            option.onclick = (e) => {
+                e.stopPropagation();
+                selector.remove();
+                onMeepleSelected(x, y, position, type);
+            };
+            selector.appendChild(option);
+        });
+
+        document.body.appendChild(selector);
+        setTimeout(() => {
+            const close = (e) => { if (!selector.contains(e.target)) { selector.remove(); document.removeEventListener('click', close); } };
+            document.addEventListener('click', close);
+        }, 0);
     }
 
     /**
