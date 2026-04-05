@@ -14,9 +14,16 @@
   "ext_builder": true,
   "ext_merchants": true,
   "ext_pig": true,
+  "ext_dragon": true,
+  "ext_princess": true,
+  "ext_portal": true,
+  "ext_fairy_protection": true,
+  "ext_fairy_score_turn": true,
+  "ext_fairy_score_zone": true,
 
 
   "abbot_tiles": true,
   "inns_cathedrals_tiles": true,
-  "traders_builders_tiles": true
+  "traders_builders_tiles": true,
+  "tiles_dragon": true
 }
