@@ -1,1 +1,1 @@
-actuel :	Carcassonne-Online-FIXED 02-04-2026 (add tuile double Dragon10)
+actuel :	Carcassonne-Online-FIXED 14-04-2026 (bug fixes)
