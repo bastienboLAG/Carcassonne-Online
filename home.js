@@ -1,4 +1,5 @@
 import { Multiplayer }            from './modules/core/Multiplayer.js';
+import { APP_VERSION } from './version.js';
 import { Tile }                   from './modules/Tile.js';
 import { Board }                  from './modules/Board.js';
 import { Deck }                   from './modules/Deck.js';
@@ -87,6 +88,8 @@ const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
 // VARIABLES LOBBY
 // ═══════════════════════════════════════════════════════
 const multiplayer = new Multiplayer();
+multiplayer.appVersion = APP_VERSION;
+multiplayer.appOrigin  = window.location.hostname + window.location.pathname.replace(/\/+$/, '');
 // Callbacks heartbeat assignés dès le départ — heartbeatManager peut être null avant le démarrage
 multiplayer.onHeartbeatPing = () => heartbeatManager?.receivePing();
 multiplayer.onHeartbeatPong = (peerId) => heartbeatManager?.receivePong(peerId);
@@ -551,6 +554,12 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
             console.log('📨 [HÔTE] Reçu:', data);
 
             if (data.type === 'player-info') {
+                // Vérifier compatibilité version + origine
+                const _compat = _checkCompatibility(data.version, data.origin);
+                if (!_compat.ok) {
+                    multiplayer.sendTo(from, { type: 'rejoin-rejected', reason: _compat.reason });
+                    return;
+                }
                 if (!players.find(p => p.id === from)) {
                     const taken    = players.map(p => p.color);
                     const assigned = taken.includes(data.color)
@@ -658,6 +667,19 @@ document.getElementById('join-game-btn').addEventListener('click', () => {
     document.getElementById('join-code-input').focus();
 });
 
+function _checkCompatibility(hostVersion, hostOrigin) {
+    // Version absente = ancienne version sans système de compatibilité → bloquer
+    if (!hostVersion || !hostOrigin) {
+        return { ok: false, reason: `Votre jeu ou celui de l'hôte est trop ancien. Mettez à jour votre jeu.` };
+    }
+    const myOrigin = window.location.hostname + window.location.pathname.replace(/\/+$/, '');
+    const originOk = hostOrigin === myOrigin;
+    const versionOk = hostVersion === APP_VERSION;
+    if (!originOk) return { ok: false, reason: `Source incompatible. Utilisez la même version officielle du jeu.` };
+    if (!versionOk) return { ok: false, reason: `Version incompatible : hôte v${hostVersion}, vous v${APP_VERSION}. Mettez à jour votre jeu.` };
+    return { ok: true };
+}
+
 function _makeJoiner() {
     return new LobbyJoin({
         getMultiplayer:          () => multiplayer,
@@ -677,6 +699,9 @@ function _makeJoiner() {
         startHeartbeat:          (cb) => _startHeartbeat(cb),
         showJoinError,
         showRoleChoiceModal:     _showRoleChoiceModal,
+        checkCompatibility:      _checkCompatibility,
+        getAppVersion:           () => APP_VERSION,
+        getAppOrigin:            () => window.location.hostname + window.location.pathname.replace(/\/+$/, ''),
         returnToLobby,
         returnToInitialLobby,
         startGameForInvite,
@@ -1414,3 +1439,7 @@ initLobbyOptions({
 });
 lobbyUI.init();
 console.log('Page chargée');
+
+// Afficher la version
+const _versionEl = document.getElementById('app-version-display');
+if (_versionEl) _versionEl.textContent = `v.${APP_VERSION}`;

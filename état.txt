@@ -1,1 +1,1 @@
-actuel :	Carcassonne-Online-FIXED 14-04-2026 (bug fixes)
+actuel :	Carcassonne-Online-FIXED 16-04-2026 (add version)

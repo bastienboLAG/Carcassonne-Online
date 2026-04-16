@@ -18,6 +18,21 @@ export class LobbyJoin {
 
                 if (data.type === 'welcome') {
                     console.log('🎉', data.message);
+                    // Vérifier compatibilité version + domaine
+                    if (d.checkCompatibility) {
+                        const result = d.checkCompatibility(data.version, data.origin);
+                        if (!result.ok) {
+                            // Détruire le peer et revenir proprement au lobby initial
+                            try { d.getMultiplayer().peer?.destroy(); } catch(e) {}
+                            d.returnToInitialLobby();
+                            // Afficher l'erreur après le retour (timeout pour laisser le DOM se réinitialiser)
+                            setTimeout(() => {
+                                document.getElementById('join-modal').style.display = 'flex';
+                                d.showJoinError(result.reason);
+                            }, 150);
+                            return;
+                        }
+                    }
                     d.setGameCode(code);
                     document.getElementById('game-code-container').style.display = 'block';
                     document.getElementById('game-code-text').textContent = `Code: ${code}`;
@@ -28,12 +43,12 @@ export class LobbyJoin {
                     clearTimeout(window._pendingPlayerInfoTimer);
                     if (window._isAutoReconnecting) {
                         window._isAutoReconnecting = false;
-                        d.getMultiplayer().broadcast({ type: 'player-info', name: d.getPlayerName(), color: d.getPlayerColor(), isSpectator: false });
+                        d.getMultiplayer().broadcast({ type: 'player-info', name: d.getPlayerName(), color: d.getPlayerColor(), isSpectator: false, version: d.getAppVersion?.(), origin: d.getAppOrigin?.() });
                     } else {
                         window._waitingForRoleChoice = true;
                         d.showRoleChoiceModal((chosenIsSpectator) => {
                             window._waitingForRoleChoice = false;
-                            d.getMultiplayer().broadcast({ type: 'player-info', name: d.getPlayerName(), color: d.getPlayerColor(), isSpectator: chosenIsSpectator });
+                            d.getMultiplayer().broadcast({ type: 'player-info', name: d.getPlayerName(), color: d.getPlayerColor(), isSpectator: chosenIsSpectator, version: d.getAppVersion?.(), origin: d.getAppOrigin?.() });
                         });
                     }
                 }
@@ -140,7 +155,7 @@ export class LobbyJoin {
 
             window._pendingPlayerInfoTimer = setTimeout(() => {
                 if (!window._waitingForRoleChoice) {
-                    d.getMultiplayer().broadcast({ type: 'player-info', name: d.getPlayerName(), color: d.getPlayerColor(), isSpectator });
+                    d.getMultiplayer().broadcast({ type: 'player-info', name: d.getPlayerName(), color: d.getPlayerColor(), isSpectator, version: d.getAppVersion?.(), origin: d.getAppOrigin?.() });
                 }
             }, 500);
 
