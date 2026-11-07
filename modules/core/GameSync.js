@@ -29,6 +29,20 @@ export class GameSync {
         this.onUnplaceableRedraw  = null;
         this.onYourTurn           = null;
         this.onDeckReshuffled = null;
+        // ✨ NOUVEAU — Extension Tour
+        this.onTowerFloorPlaced     = null;
+        this.onTowerCaptureExecuted = null;
+        this.onTowerLockExecuted    = null;
+        // ✨ NOUVEAU — Échange automatique de prisonniers (Extension Tour)
+        this.onPrisonerExchangeResolved = null;
+        this.onPrisonerExchangePending  = null;
+        // ✨ NOUVEAU — Rachat de prisonnier (Extension Tour)
+        this.onPrisonerBuybackExecuted  = null;
+        // ✨ NOUVEAU — Changement d'hôte (voir modules/game/HostMigration.js)
+        this.onHostSnapshot  = null; // invités : snapshot reçu de l'hôte
+        this.onTurnEndSynced = null; // hôte : appelé après chaque syncTurnEnd (pour diffuser le snapshot)
+        this.onHostMoved     = null; // ancien hôte : le nouvel hôte lui annonce le nouveau code
+        this.onPlayerIdRemapped = null; // invités : un joueur est revenu sous un nouvel id réseau
     }
 
     /**
@@ -63,9 +77,19 @@ export class GameSync {
             'turn-undo-request', 'your-turn', 'tile-placed-request', 'meeple-placed-request',
             'dragon-state-update', 'dragon-move-request', 'fairy-placed-sync',
             'dragon-premature-tile', 'dragon-end-turn-request', 'princess-ejected', 'princess-eject-request',
-            'portal-meeple-placed', 'portal-meeple-request'
+            'portal-meeple-placed', 'portal-meeple-request',
+            'tower-floor-placed', 'tower-capture-executed', 'tower-lock-executed', // ✨ NOUVEAU
+            'prisoner-exchange-resolved', 'prisoner-exchange-pending', // ✨ NOUVEAU — Échange auto de prisonniers
+            'prisoner-buyback-executed', // ✨ NOUVEAU — Rachat de prisonnier
+            'host-snapshot', // ✨ NOUVEAU — Snapshot d'état diffusé par l'hôte (changement d'hôte)
+            'host-moved',    // ✨ NOUVEAU — Le nouvel hôte prévient l'ancien (reconnecté) du nouveau code
+            'player-id-remapped' // ✨ NOUVEAU — Un joueur est revenu sous un nouvel id réseau (hôte → invités)
             // NOTE: 'return-to-lobby', 'player-order-update' et 'game-starting' 
             //       sont gérés par le lobby handler
+            // NOTE: 'tower-floor-request', 'tower-capture-request', 'tower-lock-request',
+            //       'prisoner-exchange-choice-request' et 'prisoner-buyback-request'
+            //       (invité → hôte) sont interceptés directement dans
+            //       GameSyncCallbacks._attachHostCallbacks, pas ici.
         ];
         return gameMessages.includes(type);
     }
@@ -151,6 +175,10 @@ export class GameSync {
             isBonusTurn: isBonusTurn,
             nextTileId: nextTileId
         });
+
+        // ✨ NOUVEAU : point de sauvegarde pour le changement d'hôte (la tuile suivante est déjà
+        // piochée à cet instant dans tous les chemins de fin de tour côté hôte)
+        if (this.onTurnEndSynced) this.onTurnEndSynced();
 
         return true;
     }
@@ -387,8 +415,17 @@ export class GameSync {
     /**
      * Envoyer l'état complet à un nouveau joueur/reconnexion (hôte → invité ciblé)
      */
-    syncFullState(targetPeerId, { gameState, deck, plateau, zoneRegistry, tileToZone, placedMeeples, tuileEnMain, tuilePosee, gameConfig, timerElapsed }) {
-        this.multiplayer.sendTo(targetPeerId, {
+    syncFullState(targetPeerId, args) {
+        this.multiplayer.sendTo(targetPeerId, this.buildFullStateMessage(args));
+    }
+
+    /**
+     * ✨ NOUVEAU : construit le paquet d'état complet (factorisé pour être partagé entre
+     * full-state-sync — reconnexion — et host-snapshot — changement d'hôte). Tout champ ajouté
+     * ici est donc automatiquement couvert par les deux mécanismes.
+     */
+    buildFullStateMessage({ gameState, deck, plateau, zoneRegistry, tileToZone, placedMeeples, tuileEnMain, tuilePosee, gameConfig, timerElapsed }) {
+        return {
             type: 'full-state-sync',
             gameState:    gameState.serialize(),
             deck:         { tiles: deck.tiles, currentIndex: deck.currentIndex, totalTiles: deck.totalTiles },
@@ -399,8 +436,24 @@ export class GameSync {
             tuileEnMain:  tuileEnMain ? { id: tuileEnMain.id, rotation: tuileEnMain.rotation } : null,
             tuilePosee:   tuilePosee ?? false,
             gameConfig,
-            timerElapsed: timerElapsed ?? 0
-        });
+            timerElapsed: timerElapsed ?? 0,
+            // ✅ FIX : gameState._pendingPrisonerExchange est transitoire, donc absent de
+            // gameState.serialize() — un client qui recharge sa page pendant qu'un choix
+            // d'échange automatique est en attente perdait cet état localement. Sans le
+            // retransmettre ici, il ne saurait plus qu'un choix est en attente (cf.
+            // TowerUI.restorePendingPrisonerExchangeUI, qui consomme ce champ après un
+            // full-state-sync).
+            pendingPrisonerExchange: gameState._pendingPrisonerExchange ?? null
+        };
+    }
+
+    /**
+     * ✨ NOUVEAU — Changement d'hôte : l'hôte diffuse à tous les invités un snapshot complet
+     * (même contenu qu'un full-state-sync + hostId + candidats à la succession, dans l'ordre).
+     */
+    syncHostSnapshot(message) {
+        message.type = 'host-snapshot';
+        this.multiplayer.broadcast(message);
     }
 
     syncGameEnded(detailedScores, destroyedTilesCount = 0) {
@@ -410,6 +463,74 @@ export class GameSync {
             scores: detailedScores,
             destroyedTilesCount: destroyedTilesCount,
             playerId: this.multiplayer.playerId
+        });
+    }
+
+    /**
+     * ✨ NOUVEAU — Extension Tour : hôte → tous, pose d'étage appliquée
+     */
+    syncTowerFloorPlaced(x, y, height, playerId, towerPieces) {
+        this.multiplayer.broadcast({
+            type: 'tower-floor-placed',
+            x, y, height, playerId, towerPieces
+        });
+    }
+
+    /**
+     * ✨ NOUVEAU — Extension Tour : hôte → tous, capture exécutée
+     */
+    syncTowerCaptureExecuted(meepleKey, playerId, selfCapture, meepleType, ownerId) {
+        this.multiplayer.broadcast({
+            type: 'tower-capture-executed',
+            meepleKey, playerId, selfCapture, meepleType, ownerId
+        });
+    }
+
+    /**
+     * ✨ NOUVEAU — Extension Tour : hôte → tous, verrouillage exécuté
+     */
+    syncTowerLockExecuted(x, y, playerId, meepleType, color, meeples, hasLargeMeeple) {
+        this.multiplayer.broadcast({
+            type: 'tower-lock-executed',
+            x, y, playerId, meepleType, color, meeples, hasLargeMeeple
+        });
+    }
+
+    /**
+     * ✨ NOUVEAU — Échange automatique de prisonniers (Extension Tour) : hôte → tous,
+     * échange résolu (résolution immédiate sans ambiguïté, ou après un choix du joueur concerné)
+     * ✅ FIX : `freshlyCapturedType` transmis en plus — type du meeple que le capturant vient
+     * de prendre et qui doit lui aussi retourner automatiquement à l'adversaire. Sans ce champ,
+     * seul le retour vers le capturant était synchronisé, jamais l'autre sens (cf. TowerUI.js,
+     * applyPrisonerExchangeResolved).
+     */
+    syncPrisonerExchangeResolved(opponentId, chooserId, chosenType, freshlyCapturedType) {
+        this.multiplayer.broadcast({
+            type: 'prisoner-exchange-resolved',
+            opponentId, chooserId, chosenType, freshlyCapturedType
+        });
+    }
+
+    /**
+     * ✨ NOUVEAU — Échange automatique de prisonniers (Extension Tour) : hôte → tous,
+     * choix en attente (plusieurs types de meeples possibles, le joueur concerné doit choisir)
+     * ✅ FIX : `freshlyCapturedType` transmis en plus, conservé côté invités dans
+     * gameState._pendingPrisonerExchange pour être retransmis à la résolution du choix.
+     */
+    syncPrisonerExchangePending(opponentId, chooserId, availableTypes, freshlyCapturedType) {
+        this.multiplayer.broadcast({
+            type: 'prisoner-exchange-pending',
+            opponentId, chooserId, availableTypes, freshlyCapturedType
+        });
+    }
+
+    /**
+     * ✨ NOUVEAU — Rachat de prisonnier (Extension Tour) : hôte → tous, rachat exécuté
+     */
+    syncPrisonerBuybackExecuted(buyerId, opponentId, meepleType) {
+        this.multiplayer.broadcast({
+            type: 'prisoner-buyback-executed',
+            buyerId, opponentId, meepleType
         });
     }
 
@@ -426,7 +547,11 @@ export class GameSync {
             'tile-drawn',
             'meeple-count-update', 'score-update',
             'tile-destroyed', 'deck-reshuffled', 'abbe-recalled', 'abbe-recalled-undo',
-            'game-ended'
+            'game-ended',
+            // ✅ FIX : pose/vol de la fée par un INVITÉ — topologie en étoile, un invité ne parle
+            // qu'à l'hôte : sans relais, les AUTRES invités gardaient la fée à son ancienne place
+            // (visible dès 3 joueurs). L'émetteur ne reçoit pas son propre message (broadcastExcept).
+            'fairy-placed-sync'
         ];
         if (this.isHost && from && from !== this.multiplayer.playerId && relayTypes.includes(data.type)) {
             console.log(`🔀 [HÔTE] Relais message ${data.type} de ${from} vers les autres`);
@@ -617,6 +742,48 @@ export class GameSync {
                 if (data.playerId !== this.multiplayer.playerId) {
                     this.eventBus?.emit('network-portal-meeple-placed', data);
                 }
+                break;
+
+            // ✨ NOUVEAU — Extension Tour
+            case 'tower-floor-placed':
+                if (this.onTowerFloorPlaced) this.onTowerFloorPlaced(data);
+                break;
+
+            case 'tower-capture-executed':
+                if (this.onTowerCaptureExecuted) this.onTowerCaptureExecuted(data);
+                break;
+
+            case 'tower-lock-executed':
+                if (this.onTowerLockExecuted) this.onTowerLockExecuted(data);
+                break;
+
+            // ✨ NOUVEAU — Échange automatique de prisonniers (Extension Tour)
+            case 'prisoner-exchange-resolved':
+                if (this.onPrisonerExchangeResolved) this.onPrisonerExchangeResolved(data);
+                break;
+
+            case 'prisoner-exchange-pending':
+                if (this.onPrisonerExchangePending) this.onPrisonerExchangePending(data);
+                break;
+
+            // ✨ NOUVEAU — Rachat de prisonnier (Extension Tour)
+            case 'prisoner-buyback-executed':
+                if (this.onPrisonerBuybackExecuted) this.onPrisonerBuybackExecuted(data);
+                break;
+
+            // ✨ NOUVEAU — Changement d'hôte : snapshot reçu par les invités
+            case 'host-snapshot':
+                if (!this.isHost && this.onHostSnapshot) this.onHostSnapshot(data);
+                break;
+
+            // ✨ NOUVEAU — Remplacement d'un id de joueur (reconnexion sous un nouvel id), côté invités
+            case 'player-id-remapped':
+                if (!this.isHost && this.onPlayerIdRemapped) this.onPlayerIdRemapped(data.oldId, data.newId);
+                break;
+
+            // ✨ NOUVEAU — Changement d'hôte : reçu par l'ANCIEN hôte (qui se croit encore hôte)
+            case 'host-moved':
+                if (this.isHost && this.onHostMoved) this.onHostMoved(data, from);
                 break;
             
             case 'game-paused':

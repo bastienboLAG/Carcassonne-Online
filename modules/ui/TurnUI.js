@@ -132,7 +132,10 @@ export function updateMobileButtons() {
 
 export function updateTurnDisplay() {
     const gameState = _gs();
-    if (!gameState || gameState.players.length === 0) {
+    // ✅ FIX : `!gameState.getCurrentPlayer()` ajouté — si currentPlayerIndex pointe hors du tableau des
+    // joueurs (ex. players-update raccourci après la fin de partie), getCurrentPlayer() renvoie undefined
+    // et `currentPlayer.id` plus bas levait un TypeError. On retombe sur l'état « pas de tour en cours ».
+    if (!gameState || gameState.players.length === 0 || !gameState.getCurrentPlayer()) {
         _deps.setIsMyTurn(false);
         const endTurnBtn = document.getElementById('end-turn-btn');
         if (endTurnBtn) {
@@ -154,6 +157,14 @@ export function updateTurnDisplay() {
     const undoManager        = _deps.getUndoManager();
     const tuilePosee         = _deps.getTuilePosee();
     const waitingToRedraw    = _deps.getWaitingToRedraw();
+
+    // ✨ NOUVEAU : fin de partie RESTAURÉE (reconnexion après l'écran des scores, via full-state-sync) →
+    // ouvrir la modale des scores automatiquement, une seule fois. Les chemins normaux
+    // (computeAndApply / receiveFromNetwork) ouvrent eux-mêmes la modale et posent autoModalDone.
+    if (finalScoresManager?.gameEnded && !finalScoresManager.autoModalDone) {
+        finalScoresManager.autoModalDone = true;
+        finalScoresManager.showModal(finalScoresManager.finalScoresData);
+    }
 
     const endTurnBtn = document.getElementById('end-turn-btn');
     if (endTurnBtn) {

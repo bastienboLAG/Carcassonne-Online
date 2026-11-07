@@ -15,6 +15,10 @@ export class LobbyJoin {
         try {
             const lobbyHandler = (data, from) => {
                 console.log('📨 [INVITÉ] Reçu:', data);
+                // ✅ FIX : un invité promu hôte garde ce handler au bas de sa chaîne réseau — il
+                // ne doit réagir à AUCUN message destiné aux invités (game-in-progress → modale
+                // « Comment rejoindre ? », return-to-lobby → sortie de la partie, etc.)
+                if (d.getMultiplayer().isHost) return;
 
                 if (data.type === 'welcome') {
                     console.log('🎉', data.message);
@@ -33,27 +37,45 @@ export class LobbyJoin {
                             return;
                         }
                     }
+                    // ✨ NOUVEAU : en partie (reconnexion, changement d'hôte), le welcome du (nouvel)
+                    // hôte ne doit ni remettre l'ancien code saisi ni remplacer le heartbeat de
+                    // jeu par celui du lobby (qui renverrait au lobby en cas de silence).
+                    if (d.getTurnManager()) return;
                     d.setGameCode(code);
                     document.getElementById('game-code-container').style.display = 'block';
                     document.getElementById('game-code-text').textContent = `Code: ${code}`;
-                    d.startHeartbeat(() => d.returnToInitialLobby("L'hote ne repond plus."));
+                    // ✨ NOUVEAU : hôte muet au salon → reprise par un invité (HostMigration) ; à défaut
+                    // d'invité éligible, HostMigration renvoie lui-même au lobby initial
+                    d.startHeartbeat(() => {
+                        if (d.onLobbyHostLost) d.onLobbyHostLost();
+                        else d.returnToInitialLobby("L'hote ne repond plus.");
+                    });
                 }
 
                 if (data.type === 'game-in-progress') {
                     clearTimeout(window._pendingPlayerInfoTimer);
                     if (window._isAutoReconnecting) {
                         window._isAutoReconnecting = false;
-                        d.getMultiplayer().broadcast({ type: 'player-info', name: d.getPlayerName(), color: d.getPlayerColor(), isSpectator: false, version: d.getAppVersion?.(), origin: d.getAppOrigin?.() });
+                        // ✅ FIX : auparavant isSpectator était toujours false ici — un spectateur qui se
+                        // reconnectait était traité comme un NOUVEAU JOUEUR (« Partie complète » → refus)
+                        // et restait bloqué sur la modale de reconnexion.
+                        d.getMultiplayer().broadcast({ type: 'player-info', name: d.getPlayerName(), color: d.getPlayerColor(), isSpectator: d.getPlayerColor() === 'spectator', version: d.getAppVersion?.(), origin: d.getAppOrigin?.() });
                     } else {
                         window._waitingForRoleChoice = true;
+                        // ✨ NOUVEAU : partie complète (6 joueurs) → seule l'option « Spectateur » est proposée,
+                        // SAUF si le pseudo saisi correspond à une place réservée (joueur qui revient après
+                        // un rechargement de page : il doit pouvoir reprendre sa place — CAS 3 côté hôte).
+                        const _reserved = data.reservedNames ?? [];
+                        const _playerDisabled = !!data.full && !_reserved.includes(d.getPlayerName());
                         d.showRoleChoiceModal((chosenIsSpectator) => {
                             window._waitingForRoleChoice = false;
                             d.getMultiplayer().broadcast({ type: 'player-info', name: d.getPlayerName(), color: d.getPlayerColor(), isSpectator: chosenIsSpectator, version: d.getAppVersion?.(), origin: d.getAppOrigin?.() });
-                        });
+                        }, { playerDisabled: _playerDisabled });
                     }
                 }
 
                 if (data.type === 'players-update') {
+                    d.onLobbyHostHello?.(); // ✨ NOUVEAU : confirmation du nouvel hôte du salon (HostMigration)
                     if (d.getTurnManager()) return; // en partie : géré par le handler de jeu
                     d.setPlayers(data.players);
                     d.getLobbyUI().setPlayers(data.players);
@@ -94,10 +116,13 @@ export class LobbyJoin {
 
                 if (data.type === 'options-sync') {
                     const opts = data.options;
+                    // ✅ FIX : 'tiles-tower' et 'ext-tower' manquaient dans cette liste (un invité qui
+                    // rejoignait ne recevait pas l'état de l'extension Tour) ; ✨ NOUVEAU : 'ext-ransom'
                     ['base-fields','list-remaining','use-test-deck','enable-debug','ext-abbot','tiles-abbot',
                      'ext-large-meeple','ext-cathedrals','ext-inns','tiles-inns-cathedrals','tiles-traders-builders',
                      'ext-builder','ext-merchants','ext-pig','tiles-dragon','ext-dragon','ext-princess','ext-portal',
-                     'ext-fairy-protection','ext-fairy-score-turn','ext-fairy-score-zone'].forEach(id => {
+                     'ext-fairy-protection','ext-fairy-score-turn','ext-fairy-score-zone',
+                     'tiles-tower','ext-tower','ext-ransom'].forEach(id => {
                         const el = document.getElementById(id);
                         if (el && opts[id] !== undefined) el.checked = opts[id];
                     });
@@ -134,6 +159,11 @@ export class LobbyJoin {
                     d.returnToInitialLobby(data.reason || 'Impossible de rejoindre la partie.');
                 }
 
+                // ✨ NOUVEAU : l'hôte quitte le salon et désigne ses successeurs
+                if (data.type === 'lobby-host-transfer') {
+                    d.onLobbyHostTransfer?.(data);
+                }
+
                 if (data.type === 'you-are-kicked') {
                     d.returnToInitialLobby('Vous avez été retiré du salon.');
                 }
@@ -146,6 +176,8 @@ export class LobbyJoin {
 
             d.setOriginalLobbyHandler(lobbyHandler);
             d.getMultiplayer().onDataReceived = lobbyHandler;
+            // ✨ NOUVEAU : fermeture de la connexion à l'hôte au salon → reprise (HostMigration)
+            d.getMultiplayer().onHostDisconnected = () => d.onLobbyHostLost?.();
 
             await d.getMultiplayer().joinGame(code);
             document.getElementById('join-modal').style.display = 'none';

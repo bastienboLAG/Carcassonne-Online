@@ -1,9 +1,15 @@
 /**
  * MeepleActionsUI — UI des actions meeple sur le plateau
- * (rappel abbé, fée, princesse, portail magique)
+ * (rappel abbé, fée, princesse, portail magique, tour)
  *
  * Dépendances injectées via initMeepleActionsUI()
  */
+
+import {
+    clearTowerCursors, showTowerCursors, showPendingTowerCaptureIfAny,
+    applyFloorPlaced, applyCaptureExecuted, applyLockExecuted,
+    getTowerLockMeepleAnchor, // ✅ FIX — positionnement du curseur fée sur un garde de tour
+} from '../game/TowerUI.js'; // ✨ NOUVEAU
 
 let _deps = null;
 
@@ -23,6 +29,7 @@ function _isMyTurn()      { return _deps.getIsMyTurn(); }
 
 export function showMeepleActionCursors() {
     document.querySelectorAll('.meeple-action-cursor, .meeple-action-overlay').forEach(el => el.remove());
+    clearTowerCursors(); // ✨ NOUVEAU
 
     const gameState = _gs();
     const multiplayer = _mp();
@@ -36,6 +43,11 @@ export function showMeepleActionCursors() {
     if (!gameState || !_deps.getMeepleCursorsUI()) return;
     const boardEl = document.getElementById('board');
     if (!boardEl) return;
+
+    // ✨ NOUVEAU — Extension Tour : indépendant des autres actions ci-dessous,
+    // toujours évalué (pose d'étage + capture en attente éventuelle)
+    showTowerCursors();
+    showPendingTowerCaptureIfAny();
 
     const currentFairyKey   = gameState.fairyState?.meepleKey ?? null;
     const pendingPrincess   = gameState._pendingPrincessTile ?? null;
@@ -60,6 +72,9 @@ export function showMeepleActionCursors() {
      || gameConfig?.extensions?.fairyScoreZone
     );
     if (_fairyEnabled && !undoManager?.meeplePlacedThisTurn) {
+        // ✅ FIX : getFairyTargets inclut désormais aussi un éventuel garde du joueur
+        // verrouillant une tour (clé spéciale "tower-lock:x,y"), en plus des meeples
+        // classiques de placedMeeples — cf. DragonRules.getFairyTargets.
         const fairyTargets = dragonRules.getFairyTargets(multiplayer.playerId);
         fairyTargets.forEach(({ key, meeple }) => {
             if (key === currentFairyKey) return;
@@ -93,15 +108,38 @@ export function showMeepleActionCursors() {
     }
 
     Object.entries(actionsByKey).forEach(([key, actions]) => {
-        const meeple = placedMeeples[key];
+        // ✅ FIX : une cible "tower-lock:x,y" désigne un garde verrouillant une tour —
+        // absent de placedMeeples, résolu depuis gameState.extraState.towers, et positionné
+        // via l'ancrage déjà calculé pour ce pion (TowerUI.getTowerLockMeepleAnchor) au lieu
+        // du calcul en grille 5×5 utilisé pour un meeple classique posé sur une tuile.
+        const isTowerLockEntry = key.startsWith('tower-lock:');
+        let meeple = placedMeeples[key];
+        if (isTowerLockEntry) {
+            const coords = key.slice('tower-lock:'.length);
+            const tower  = gameState.extraState.towers[coords];
+            if (tower?.lockedBy) {
+                meeple = { type: tower.lockMeepleType, color: tower.lockMeepleColor, playerId: tower.lockedBy };
+            }
+        }
         const isPortalEntry = actions.some(a => a.type === 'portal' && a.isPortalZone);
         if (!meeple && !isPortalEntry) return;
-        const parts   = key.split(',');
-        const mx      = Number(parts[0]), my = Number(parts[1]), mp = Number(parts[2]);
-        const row     = Math.floor((mp - 1) / 5);
-        const col     = (mp - 1) % 5;
-        const offsetX = 20.8 + col * 41.6;
-        const offsetY = 20.8 + row * 41.6;
+
+        let mx, my, offsetX, offsetY;
+        if (isTowerLockEntry) {
+            const coords = key.slice('tower-lock:'.length);
+            [mx, my] = coords.split(',').map(Number);
+            const anchor = getTowerLockMeepleAnchor(mx, my);
+            offsetX = anchor.left;
+            offsetY = anchor.top;
+        } else {
+            const parts = key.split(',');
+            mx = Number(parts[0]); my = Number(parts[1]);
+            const mp = Number(parts[2]);
+            const row = Math.floor((mp - 1) / 5);
+            const col = (mp - 1) % 5;
+            offsetX = 20.8 + col * 41.6;
+            offsetY = 20.8 + row * 41.6;
+        }
 
         const overlay = document.createElement('div');
         overlay.className        = 'meeple-action-overlay';
@@ -216,6 +254,7 @@ export function clearFairyCursors() {
 export function hideAllCursors() {
     _deps.getMeepleCursorsUI()?.hideCursors();
     clearFairyCursors();
+    clearTowerCursors(); // ✨ NOUVEAU
 }
 
 export function showFairyTargets() {
@@ -577,9 +616,30 @@ export function placerMeeple(x, y, position, meepleType) {
     hideAllCursors();
 }
 
-// ── Listeners réseau (portail & princesse) ─────────────────────────────────
+// ── Listeners réseau (portail, princesse, tour) ─────────────────────────────
+
+// ✅ FIX : garde contre la ré-installation. `initNetworkMeepleListeners` est appelée à
+// chaque démarrage de partie (GameStarter.postStartSetup), mais `eventBus` est un
+// singleton créé une seule fois dans home.js et jamais recréé au retour lobby. Sans
+// cette garde, chaque redémarrage de partie ajoutait un NOUVEAU listener sans jamais
+// retirer les précédents : après N parties, un événement réseau (ex: capture Tour)
+// déclenchait applyCaptureExecuted() N fois côté client qui le reçoit, dupliquant
+// l'entrée dans gameState.extraState.prisoners à chaque itération — uniquement visible côté
+// invité, car gs.onTowerCaptureExecuted (et les équivalents Princesse/Portail) ne
+// réémettent ces événements que si `!isHost` (l'hôte applique directement, sans
+// passer par l'event bus, donc jamais concerné par ce doublon).
+// Les callbacks ci-dessous lisent `_deps` dynamiquement à l'appel (pas de closure figée
+// sur l'ancienne partie), donc une seule installation suffit pour toute la durée de vie
+// de l'app : initMeepleActionsUI()/initTowerUI() rafraîchissent `_deps` à chaque partie.
+let _networkListenersInstalled = false;
 
 export function initNetworkMeepleListeners(eventBus) {
+    if (_networkListenersInstalled) {
+        console.log('⚠️ [MeepleActionsUI] Listeners réseau déjà installés, skip');
+        return;
+    }
+    _networkListenersInstalled = true;
+
     // Portail Magique : réception d'un placement via portail
     eventBus.on('network-portal-meeple-placed', (data) => {
         // L'hôte a déjà appliqué le placement via portal-meeple-request — ignorer
@@ -651,5 +711,18 @@ export function initNetworkMeepleListeners(eventBus) {
 
         eventBus.emit('meeple-count-updated', {});
         eventBus.emit('score-updated');
+    });
+
+    // ✨ NOUVEAU — Extension Tour : pose d'étage et capture reçues du réseau (invités)
+    eventBus.on('network-tower-floor-placed', (data) => {
+        applyFloorPlaced(data.x, data.y, data.height, data.playerId, data.towerPieces);
+    });
+    eventBus.on('network-tower-capture-executed', (data) => {
+        applyCaptureExecuted(data.meepleKey, data.playerId, data.selfCapture, data.meepleType, data.ownerId);
+        eventBus.emit('score-updated');
+    });
+    eventBus.on('network-tower-lock-executed', (data) => {
+        applyLockExecuted(data.x, data.y, data.playerId, data.meepleType, data.color, data.meeples, data.hasLargeMeeple);
+        eventBus.emit('meeple-count-updated', { playerId: data.playerId });
     });
 }

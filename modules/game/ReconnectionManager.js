@@ -24,6 +24,9 @@ export class ReconnectionManager {
      * @param {Function} deps.buildPlayersForBroadcast — () => players[]
      * @param {Function} deps.afficherToast      — (msg, type?) => void
      * @param {Function} deps.onGameSyncInit     — () => void  (rebrancher gameSync après reconnexion)
+     * @param {Function} [deps.resolvePendingPrisonerExchange] — ✅ FIX NOUVEAU — (peerId) => void,
+     *        résout automatiquement un échange de prisonniers en attente si le joueur exclu
+     *        est celui qui devait choisir (cf. TowerUI.resolvePendingPrisonerExchangeForPlayer).
      */
     constructor(deps) {
         this.multiplayer             = deps.multiplayer;
@@ -41,7 +44,19 @@ export class ReconnectionManager {
         this._afficherToast          = deps.afficherToast;
         this._onGameSyncInit         = deps.onGameSyncInit;
         this._onReturnToInitialLobby = deps.onReturnToInitialLobby ?? null;
+        // ✅ FIX NOUVEAU — voir doc du constructeur ci-dessus
+        this._resolvePendingPrisonerExchange = deps.resolvePendingPrisonerExchange ?? null;
+        // ✨ NOUVEAU : appelé quand la connexion à l'hôte est perdue (invité). Route vers
+        // HostMigration (changement d'hôte) ; sans ce callback, ancien comportement (reconnexion
+        // en boucle vers le même code).
+        this._onHostLost = deps.onHostLost ?? null;
+        // ✨ NOUVEAU : appelé quand l'hôte constate que C'EST LUI qui est isolé (hors ligne /
+        // serveur de signalisation perdu) au moment où ses invités « se déconnectent ».
+        this._onHostIsolated = deps.onHostIsolated ?? null;
 
+        // ✅ FIX : la pause est un simple drapeau ; la liste des joueurs EN ATTENTE n'est plus mémorisée (un seul
+        // pseudo ne suffisait pas) mais déduite de gameState (_waitingNames) : elle est ainsi identique chez l'hôte et
+        // chez les invités, et la pause ne se lève que lorsque plus personne n'est en attente.
         this.gamePaused         = false;
         this.pauseTimerInterval = null;
         this.pauseTimerEnd      = null;
@@ -56,8 +71,39 @@ export class ReconnectionManager {
 
     // ── Pause ────────────────────────────────────────────────────────────────
 
+    /**
+     * ✅ FIX : joueurs actuellement en attente de reconnexion (déconnectés, ni exclus ni spectateurs), déduits de
+     * gameState — source commune à l'hôte et aux invités (players-update, player-disconnected, full-state).
+     */
+    _waitingPlayers() {
+        const gs = this._gameState;
+        if (!gs) return [];
+        return gs.players
+            .filter(p => p.disconnected && !p.kicked && p.color !== 'spectator')
+            .map(p => ({ name: p.name, color: p.color }));
+    }
+
+    _waitingNames() {
+        return this._waitingPlayers().map(p => p.name);
+    }
+
+    /**
+     * ✅ FIX : à appeler (hôte) dès que la liste des joueurs en attente a pu changer — retour, exclusion,
+     * nouvelle déconnexion. Lève la pause si plus personne n'attend ; sinon redessine la modale chez
+     * l'hôte et la fait redessiner chez les invités (`game-paused` → _showPauseOverlay relit gameState).
+     * À appeler APRÈS le broadcast de players-update : les invités relisent leur état local.
+     */
+    reevaluatePause(reason = 'reconnected') {
+        if (!this._isHost || !this.gamePaused) return;
+        const names = this._waitingNames();
+        if (names.length === 0) { this.resumeGame(reason); return; }
+        this._showPauseOverlay(names[0]);
+        if (this.gameSync) this.gameSync.syncGamePaused(names[0], 0);
+    }
+
     pauseGame(disconnectedName) {
-        if (!this._isHost || this.gamePaused) return;
+        if (!this._isHost) return;
+        if (this.gamePaused) { this.reevaluatePause(); return; } // ✅ FIX : une pause existe déjà → mise à jour de la liste
         this.gamePaused = true;
         if (this.gameSync) this.gameSync.syncGamePaused(disconnectedName, 0);
         this._showPauseOverlay(disconnectedName);
@@ -75,8 +121,8 @@ export class ReconnectionManager {
 
     excludeDisconnectedPlayer(disconnectedName) {
         if (!this._isHost) return;
-        this.gamePaused = false;
-        this._hidePauseOverlay();
+        // ✅ FIX : l'exclusion d'UN joueur ne lève plus la pause : elle est réévaluée plus bas
+        // (reevaluatePause) et reste active tant que d'autres joueurs sont en attente.
 
         const gameState = this._gameState;
         if (gameState) {
@@ -85,6 +131,22 @@ export class ReconnectionManager {
                 const wasCurrentPlayer  = (idx === gameState.currentPlayerIndex);
                 const peerId            = gameState.players[idx].id;
                 const isSpectatorPlayer = gameState.players[idx]?.color === 'spectator';
+
+                // ✅ FIX : aucune tuile ne doit être perdue. Si le joueur exclu n'avait pas encore posé la tuile
+                // de son tour, elle est rejouée par le joueur suivant au lieu d'en piocher une autre (la sienne
+                // disparaissait définitivement du jeu). Capturée AVANT toute mutation de l'état.
+                const tileWasPlaced = !!gameState.currentTilePlaced;
+                const heldTile = (wasCurrentPlayer && !tileWasPlaced)
+                    ? (this._sd?.getCurrentTileForPlayer?.() ?? null)
+                    : null;
+
+                // ✅ FIX NOUVEAU : si le joueur exclu est celui qui devait choisir un
+                // prisonnier à récupérer (échange automatique en attente), résoudre
+                // l'échange à sa place AVANT toute mutation de gameState.players ci-dessous
+                // — sinon plus personne n'aurait de moyen de débloquer cet échange une fois
+                // ce joueur retiré de la partie (cf. TowerUI.resolvePendingPrisonerExchangeForPlayer,
+                // qui applique le prisonnier le plus ancien automatiquement).
+                this._resolvePendingPrisonerExchange?.(peerId);
 
                 if (isSpectatorPlayer) {
                     gameState.players.splice(idx, 1);
@@ -107,13 +169,21 @@ export class ReconnectionManager {
                 this._setPlayers(this._getPlayers().filter(p => p.id !== peerId));
                 this.multiplayer.broadcast({ type: 'players-update', players: this._buildPlayersForBroadcast() });
 
-                if (this.gameSync) this.gameSync.syncGameResumed('timeout');
+                this.reevaluatePause('timeout');
 
                 if (this.turnManager) {
                     this.turnManager.updateTurnState();
                     if (wasCurrentPlayer) {
-                        const _t = this._hostDrawAndSend();
-                        if (_t) this.turnManager.receiveYourTurn(_t.id);
+                        // Le tour recommence pour le joueur suivant : la tuile du tour précédent n'est plus « posée »
+                        gameState.currentTilePlaced = false;
+                        let _t = null;
+                        if (heldTile) {
+                            _t = heldTile; // ✅ FIX : tuile du joueur exclu rejouée telle quelle
+                            this.turnManager.receiveYourTurn(_t.id);
+                        } else {
+                            _t = this._hostDrawAndSend();
+                            if (_t) this.turnManager.receiveYourTurn(_t.id);
+                        }
                         if (this.gameSync) this.gameSync.syncTurnEnd(false, _t?.id ?? null);
                     }
                     this.eventBus.emit('turn-changed', {
@@ -122,13 +192,35 @@ export class ReconnectionManager {
                     });
                 }
             } else {
-                if (this.gameSync) this.gameSync.syncGameResumed('timeout');
+                this.reevaluatePause('timeout');
             }
         }
         this._afficherToast(`👋 ${disconnectedName} a été exclu(e) de la partie.`);
     }
 
     // ── Auto-reconnexion ─────────────────────────────────────────────────────
+
+    /**
+     * ✨ NOUVEAU : point d'entrée unique pour « l'hôte est injoignable » côté invité.
+     */
+    /**
+     * ✨ NOUVEAU : l'hôte lui-même est-il coupé du réseau ? (auquel cas la « déconnexion » de
+     * ses invités n'est qu'un effet de sa propre coupure, pas un départ de leur part)
+     */
+    _isHostIsolated() {
+        const peer = this.multiplayer.peer;
+        // Fenêtre de 25 s après une coupure de l'hôte lui-même (signalisation perdue/rétablie,
+        // événements offline/online) : le heartbeat peut encore « timeout » des invités à cause
+        // de MA coupure, juste après le retour du réseau (timeout 5 s + marge).
+        const recentOutage = Date.now() - (this.multiplayer.lastSelfOutageAt || 0) < 25000;
+        return (typeof navigator !== 'undefined' && navigator.onLine === false)
+            || !!peer?.disconnected || !!peer?.destroyed || recentOutage;
+    }
+
+    _notifyHostLost() {
+        if (this._onHostLost) this._onHostLost();
+        else this.startAutoReconnect();
+    }
 
     startAutoReconnect() {
         this.stopAutoReconnect();
@@ -171,7 +263,7 @@ export class ReconnectionManager {
             this.multiplayer.onHostDisconnected = () => {
                 if (!this._gameState) return;
                 console.log('🔌 Connexion hôte perdue — nouvelle tentative...');
-                this.startAutoReconnect();
+                this._notifyHostLost(); // ✨ NOUVEAU : routé vers HostMigration si disponible
             };
 
         } catch (err) {
@@ -182,7 +274,30 @@ export class ReconnectionManager {
 
     // ── Overlays ─────────────────────────────────────────────────────────────
 
-    _showPauseOverlay(name) {
+    /** Échappe un pseudo avant de l'insérer dans du HTML (les pseudos viennent des autres joueurs). */
+    _esc(text) {
+        return String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    /**
+     * ✅ FIX : (re)dessine la modale de pause. `name` n'est qu'un repli si gameState ne liste encore personne.
+     * Le contenu (joueurs en attente, code de partie) est relu à CHAQUE affichage : voir refreshPauseOverlay.
+     */
+    _showPauseOverlay(name = null) {
+        let entries = this._waitingPlayers();
+        if (entries.length === 0 && name) entries = [{ name, color: null }];
+        if (entries.length === 0) return;
+        const names = entries.map(e => e.name);
+
+        // Pseudo précédé du meeple de sa couleur (si connue)
+        const chip = (e) => {
+            const colorCap = e.color ? e.color.charAt(0).toUpperCase() + e.color.slice(1) : null;
+            const icon = colorCap
+                ? `<img src="./assets/Meeples/${this._esc(colorCap)}/Normal.png" alt="" style="width:20px;height:21px;object-fit:contain;vertical-align:middle;margin-right:4px;">`
+                : '';
+            return `<span style="white-space:nowrap;">${icon}<strong style="color:#fff">${this._esc(e.name)}</strong></span>`;
+        };
+
         let overlay = document.getElementById('pause-overlay');
         if (!overlay) {
             overlay = document.createElement('div');
@@ -195,31 +310,58 @@ export class ReconnectionManager {
             document.body.appendChild(overlay);
         }
 
-        const hostBtn = this._isHost
-            ? `<button id="exclude-player-btn" style="
-                margin-top:20px; padding:10px 24px; font-size:15px; font-weight:bold;
+        const code = this._gameCode;
+        const who = names.length === 1
+            ? `<p style="margin:0 0 8px;color:#aaa;font-size:15px;">${chip(entries[0])} s'est déconnecté(e).</p>`
+            : `<p style="margin:0 0 4px;color:#aaa;font-size:15px;">Joueurs déconnectés :</p>
+               <p style="margin:0 0 8px;font-size:15px;">${entries.map(chip).join(', ')}</p>`;
+        const codeHtml = code
+            ? `<p style="margin:12px 0 0;font-size:13px;color:#aaa;">Code de la partie : <strong style="color:#fff;letter-spacing:2px;">${this._esc(code)}</strong></p>
+               <button id="pause-copy-code-btn" style="margin-top:8px;padding:6px 14px;font-size:13px;font-weight:bold;background:#3498db;color:#fff;border:none;border-radius:6px;cursor:pointer;">📋 Copier le code</button>`
+            : '';
+        const hostBtns = this._isHost
+            ? names.map((n, i) => `<button class="exclude-player-btn" data-i="${i}" style="
+                display:block; width:100%; margin-top:${i === 0 ? 20 : 10}px; padding:10px 24px; font-size:15px; font-weight:bold;
                 background:#e74c3c; color:#fff; border:none; border-radius:8px; cursor:pointer;">
-                Continuer sans ${name}
-              </button>`
+                Continuer sans ${this._esc(n)}
+              </button>`).join('')
             : '';
 
         overlay.innerHTML = `
             <div style="background:rgba(30,40,55,0.97);border-radius:16px;padding:32px 40px;text-align:center;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
                 <div style="font-size:48px;margin-bottom:12px;">⏸</div>
                 <h2 style="margin:0 0 8px;font-size:22px;">Partie en pause</h2>
-                <p style="margin:0 0 8px;color:#aaa;font-size:15px;"><strong style="color:#fff">${name}</strong> s'est déconnecté(e).</p>
+                ${who}
                 <p style="margin:0 0 4px;color:#aaa;font-size:13px;">En attente de reconnexion…</p>
-                ${this._gameCode ? `<p style="margin:12px 0 0;font-size:13px;color:#aaa;">Code de la partie : <strong style="color:#fff;letter-spacing:2px;">${this._gameCode}</strong></p>` : ''}
-                ${hostBtn}
+                ${codeHtml}
+                ${hostBtns}
             </div>
         `;
         overlay.style.display = 'flex';
 
-        if (this._isHost) {
-            document.getElementById('exclude-player-btn')?.addEventListener('click', () => {
-                this.excludeDisconnectedPlayer(name);
+        const copyBtn = overlay.querySelector('#pause-copy-code-btn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', () => {
+                // Code relu au clic (il peut avoir changé depuis l'affichage)
+                navigator.clipboard.writeText(String(this._gameCode)).then(() => {
+                    copyBtn.textContent = '✅ Copié !';
+                    setTimeout(() => { copyBtn.textContent = '📋 Copier le code'; }, 2000);
+                });
             });
         }
+        overlay.querySelectorAll('.exclude-player-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.excludeDisconnectedPlayer(names[Number(btn.dataset.i)]));
+        });
+    }
+
+    /**
+     * ✅ FIX : redessine la modale de pause si elle est affichée. À appeler quand le code de partie change
+     * (HostMigration._finish) : la modale d'un invité était construite avec l'ancien code, avant la fin de
+     * sa reconnexion au nouvel hôte, et n'était jamais redessinée.
+     */
+    refreshPauseOverlay() {
+        const overlay = document.getElementById('pause-overlay');
+        if (overlay && overlay.style.display !== 'none') this._showPauseOverlay();
     }
 
     _hidePauseOverlay() {
@@ -302,19 +444,28 @@ export class ReconnectionManager {
     }
 
     /**
-     * Envoyer l'état complet de la partie à un pair (hôte → invité/reconnecté).
+     * ✨ NOUVEAU : rassemble les arguments du paquet d'état complet (factorisé depuis
+     * sendFullStateTo pour être partagé avec le snapshot de changement d'hôte —
+     * HostMigration.broadcastSnapshot). Le paquet lui-même est construit par
+     * GameSync.buildFullStateMessage.
      */
-    sendFullStateTo(targetPeerId) {
+    collectFullStateArgs() {
         const d = this._sd;
-        if (!this._isHost || !this.gameSync) return;
         const gameState = this._getGameState();
         const _cp = gameState.getCurrentPlayer();
         const _isHostTurn = _cp?.id === this.multiplayer.playerId;
+        // ✅ FIX : pour le tour d'un INVITÉ, getCurrentTileForPlayer() renvoie l'objet brut de la pioche,
+        // qui n'a pas de rotation courante (le full-state partait avec `rotation: null`, donc la tuile
+        // réapparaissait à 0° chez le joueur qui se resynchronise). L'hôte garde un « miroir » de la tuile
+        // de l'invité dans tuileEnMain (tile-drawn + tile-rotated) : on l'utilise s'il s'agit bien de la
+        // même tuile, pour transporter la rotation courante.
+        const _forPlayer = d.getCurrentTileForPlayer();
+        const _mirrored  = d.getTuileEnMain();
+        const _guestTile = (_forPlayer && _mirrored && _mirrored.id === _forPlayer.id) ? _mirrored : _forPlayer;
         const _tuilePayload = _isHostTurn
-            ? (d.getTuileEnMain() ?? (gameState.currentTilePlaced ? null : d.getCurrentTileForPlayer()))
-            : (gameState.currentTilePlaced ? null : d.getCurrentTileForPlayer());
-        console.log('📤 [SYNC] sendFullStateTo', targetPeerId, '— currentPlayer:', _cp?.name, '— tuileEnMain envoyée:', _tuilePayload?.id ?? null, '— currentTilePlaced:', gameState.currentTilePlaced);
-        this.gameSync.syncFullState(targetPeerId, {
+            ? (d.getTuileEnMain() ?? (gameState.currentTilePlaced ? null : _forPlayer))
+            : (gameState.currentTilePlaced ? null : _guestTile);
+        return {
             gameState,
             deck:          d.getDeck(),
             plateau:       d.getPlateau(),
@@ -325,7 +476,44 @@ export class ReconnectionManager {
             tuilePosee:    gameState.currentTilePlaced,
             gameConfig:    d.getGameConfig(),
             timerElapsed:  d.getElapsedSeconds()
-        });
+        };
+    }
+
+    /**
+     * Envoyer l'état complet de la partie à un pair (hôte → invité/reconnecté).
+     */
+    sendFullStateTo(targetPeerId) {
+        if (!this._isHost || !this.gameSync) return;
+        const args = this.collectFullStateArgs();
+        console.log('📤 [SYNC] sendFullStateTo', targetPeerId, '— currentPlayer:', args.gameState.getCurrentPlayer()?.name, '— tuileEnMain envoyée:', args.tuileEnMain?.id ?? null, '— currentTilePlaced:', args.gameState.currentTilePlaced);
+        this.gameSync.syncFullState(targetPeerId, args);
+        // ✅ FIX : `game-paused` est diffusé une seule fois, à la création de la pause. Un invité qui se
+        // (re)connecte ensuite (ex. après un changement d'hôte, où la pause est posée avant que les invités
+        // ne soient connectés) ne la verrait jamais : on la lui renvoie avec son état. Envoyé APRÈS le
+        // full-state pour que l'overlay ne soit pas masqué par la resynchronisation.
+        const _waiting = this.gamePaused ? this._waitingNames() : [];
+        if (_waiting.length > 0) {
+            this.multiplayer.sendTo(targetPeerId, {
+                type: 'game-paused',
+                disconnectedName: _waiting[0],
+                timeoutMs: 0,
+                playerId: this.multiplayer.playerId
+            });
+        }
+    }
+
+    /**
+     * ✨ NOUVEAU : retire du DOM tout ce qu'applyFullStateSync va redessiner (meeples, tours,
+     * dragon, fée, slots, curseurs). Nécessaire quand l'état est appliqué sur une page déjà
+     * en jeu (reconnexion sans rechargement, changement d'hôte) : sans cela, les éléments
+     * existants seraient dupliqués.
+     */
+    _clearBoardDom() {
+        document.querySelectorAll(
+            '.meeple-container, .slot, .meeple-cursors-container, .meeple-action-overlay, ' +
+            '.tower-floor-cursor-overlay, .tower-capture-cursor-overlay, .dragon-move-cursor-overlay, ' +
+            '.dragon-visited-overlay, .abbe-recall-overlay'
+        ).forEach(el => el.remove());
     }
 
     /**
@@ -349,7 +537,17 @@ export class ReconnectionManager {
         d.setTuileEnMain(null);
         d.setTuilePosee(false);
 
+        // ✅ FIX : gameState.deserialize restaure aussi finalScoresData (= partie terminée) et
+        // destroyedTilesCount ; FinalScoresManager.gameEnded en est dérivé, et TurnUI ouvre la modale
+        // des scores automatiquement au updateTurnDisplay() final.
         gameState.deserialize(data.gameState);
+        this._clearBoardDom(); // ✨ NOUVEAU : évite les doublons si la page était déjà en jeu
+
+        // ✅ FIX NOUVEAU : gameState._pendingPrisonerExchange est transitoire, absent de
+        // gameState.deserialize() (non sérialisé, cf. GameState.js). Un client qui recharge
+        // sa page pendant qu'un choix d'échange automatique est en attente perdait cet état
+        // localement ; GameSync.syncFullState le retransmet désormais explicitement.
+        gameState._pendingPrisonerExchange = data.pendingPrisonerExchange ?? null;
 
         deck.tiles        = data.deck.tiles;
         deck.currentIndex = data.deck.currentIndex;
@@ -387,9 +585,26 @@ export class ReconnectionManager {
             if (meepleDisplayUI) meepleDisplayUI.showMeeple(Number(x), Number(y), position, meeple.type, meeple.color);
         }
 
+        // ✅ FIX : la Fée (règles de score) fonctionne sans les tuiles Dragon — elle doit donc être redessinée
+        // à la reconnexion dès qu'une règle Fée est active, et plus seulement si tileGroups.dragon.
+        // Le pion Dragon, lui, reste lié aux tuiles Dragon.
+        const _fairyRuleActive = !!(gameConfig.extensions?.fairyProtection
+            || gameConfig.extensions?.fairyScoreTurn
+            || gameConfig.extensions?.fairyScoreZone);
         if (gameConfig.tileGroups?.dragon) {
-            if (gameState.dragonPos)             d.renderDragonPiece(gameState.dragonPos.x, gameState.dragonPos.y);
+            if (gameState.dragonPos) d.renderDragonPiece(gameState.dragonPos.x, gameState.dragonPos.y);
+        }
+        if (gameConfig.tileGroups?.dragon || _fairyRuleActive) {
             if (gameState.fairyState?.meepleKey) d.renderFairyPiece(gameState.fairyState.meepleKey);
+        }
+
+        // ✅ FIX : les tours et leurs éventuels gardes de verrouillage n'étaient jamais
+        // redessinés à la reconnexion (contrairement au Dragon/Fée ci-dessus), alors que
+        // gameState.extraState.towers est déjà resynchronisé par gameState.deserialize()
+        // plus haut. Un invité qui se reconnectait voyait donc un plateau sans aucune tour,
+        // même quand des tours avaient été posées avant sa déconnexion.
+        if (gameConfig.tileGroups?.tower) {
+            d.renderAllTowersFromState?.();
         }
 
         const tuilePosee = data.tuilePosee ?? false;
@@ -411,6 +626,13 @@ export class ReconnectionManager {
                 meInState.id = this.multiplayer.playerId;
                 d.setPlayerColor(meInState.color); // met à jour playerColor ('spectator' si applicable)
             }
+            // ✨ NOUVEAU : un joueur devenu spectateur sans l'avoir choisi (partie pleine → conversion
+            // automatique par l'hôte) doit aussi le savoir localement, sinon une reconnexion ultérieure
+            // enverrait isSpectator:false (cf. LobbyJoin, game-in-progress). Le test ci-dessus ne le
+            // couvre pas : l'id de l'entrée spectateur est déjà le bon.
+            if (meInState?.color === 'spectator' && d.getPlayerColor() !== 'spectator') {
+                d.setPlayerColor('spectator');
+            }
         }
 
         if (turnManager) turnManager.updateTurnState();
@@ -422,17 +644,33 @@ export class ReconnectionManager {
                 const tuileEnMain = new Tile(td);
                 tuileEnMain.rotation = data.tuileEnMain.rotation || 0;
                 d.setTuileEnMain(tuileEnMain);
-                d.getEventBus().emit('tile-drawn', { tileData: tuileEnMain, fromNetwork: true });
+                // ✅ FIX : `fromFullSync` — ce tile-drawn n'est ni un début de tour « propre »
+                // (isOwnTurnStart faux, car fromNetwork) ni une pioche réseau classique : la tuile
+                // arrive par resynchronisation (changement d'hôte, reconnexion, rechargement).
+                // Sans ce marqueur, home.js ne vérifiait JAMAIS si cette tuile était implaçable
+                // (ni tuile dragon sans volcan) : le joueur restait bloqué sans badge ni modale.
+                d.getEventBus().emit('tile-drawn', { tileData: tuileEnMain, fromNetwork: true, fromFullSync: true });
             }
         }
 
         const _tuilePosee  = tuilePosee;
-        const _tuileEnMain = d.getTuileEnMain();
         requestAnimationFrame(() => {
+            // ✅ FIX : ce callback est suspendu par le navigateur tant que l'onglet est en
+            // arrière-plan (autre onglet, appli mobile au second plan, écran verrouillé…) et ne
+            // s'exécute qu'au retour au premier plan — potentiellement plusieurs tours plus tard.
+            // Auparavant il redessinait l'aperçu avec la tuile CAPTURÉE à l'instant du
+            // full-state-sync (ex: la tuile du tour avorté de l'ancien hôte), écrasant la tuile
+            // réellement en main (état et slots corrects, aperçu faux). On relit donc l'état
+            // courant au moment de l'exécution — jamais de valeurs capturées.
             if (!tilePreviewUI) return;
-            if (_tuilePosee)       tilePreviewUI.showBackside();
-            else if (_tuileEnMain) tilePreviewUI.showTile(_tuileEnMain);
-            else                   tilePreviewUI.showMessage('En attente...');
+            const _liveTuileEnMain = d.getTuileEnMain();
+            const _livePosee       = d.getTurnManager()?.tilePlaced ?? _tuilePosee;
+            // ✅ FIX : partie terminée (scores finaux) → verso, comme chez les joueurs qui ont vécu la fin
+            // en direct. Relu à l'exécution (cf. ci-dessus), jamais capturé.
+            const _liveEnded       = !!this._getGameState()?.finalScoresData;
+            if (_livePosee || _liveEnded) tilePreviewUI.showBackside();
+            else if (_liveTuileEnMain)    tilePreviewUI.showTile(_liveTuileEnMain);
+            else                          tilePreviewUI.showMessage('En attente...');
         });
 
         if (slotsUI) slotsUI.tileAvailable = !tuilePosee && !!d.getTuileEnMain();
@@ -447,7 +685,21 @@ export class ReconnectionManager {
                 currentPlayer: turnManager.getCurrentPlayer()
             });
         }
+        // ✅ FIX : tant que la 1re tuile n'est pas posée (plateau vide), le slot central est le SEUL
+        // endroit où la poser. Il n'était recréé que si le plateau n'était PAS vide (ligne plus
+        // haut) et _clearBoardDom() vient de retirer tous les slots : après un changement d'hôte
+        // (ou une reconnexion) avant la 1re tuile, plus aucun slot n'apparaissait et la partie
+        // était bloquée. Créé ICI, après turn-changed, pour que SlotsUI connaisse déjà le joueur
+        // dont c'est le tour.
+        if (slotsUI && !firstTilePlaced) slotsUI.createCentralSlot();
+
         d.updateTurnDisplay();
+
+        // ✅ FIX NOUVEAU : réafficher la modale d'échange de prisonnier si un choix était en
+        // attente au moment où ce client a rechargé sa page — gameState._pendingPrisonerExchange
+        // vient d'être restauré juste au-dessus depuis data.pendingPrisonerExchange. Ne fait
+        // rien si aucun échange n'est en attente (résolu ou joueur exclu entre-temps).
+        d.restorePendingPrisonerExchangeUI?.();
     }
     /**
      * Installer les handlers réseau en cours de partie :
@@ -461,13 +713,31 @@ export class ReconnectionManager {
 
         if (!multiplayer?.peer) return;
 
-        const handleDisconnect = (peerId) => {
+        // `force` (balayage post-isolement, HostMigration) : ne pas ré-évaluer l'isolement de l'hôte
+        const handleDisconnect = (peerId, force = false) => {
             if (!isHost) return;
             const gameState = this._getGameState();
             if (!gameState) return;
 
             if (d.getVoluntaryLeaves().has(peerId)) {
                 d.getVoluntaryLeaves().delete(peerId);
+                return;
+            }
+
+            // ✅ FIX : idempotent — un joueur déjà marqué déconnecté (ou exclu) n'est pas re-traité. Un même
+            // départ pouvait être signalé deux fois (observé : deux `player-disconnected` à ~2 s d'écart
+            // avant `game-resumed`), ce qui réaffichait « Partie en pause » chez tout le monde.
+            const alreadyGone = gameState.players.find(p => p.id === peerId);
+            if (alreadyGone && (alreadyGone.disconnected || alreadyGone.kicked)) {
+                console.log(`ℹ️ [HOST] Départ de ${alreadyGone.name} déjà traité — ignoré`);
+                return;
+            }
+
+            // ✨ NOUVEAU : si c'est l'hôte qui est isolé, ne marque personne « déconnecté » et
+            // n'affiche pas « Partie en pause » : voir HostMigration.onSelfIsolated.
+            if (!force && this._isHostIsolated()) {
+                console.warn('📵 [HOST] Invité perdu mais je suis moi-même isolé — mode isolement');
+                if (this._onHostIsolated) this._onHostIsolated();
                 return;
             }
 
@@ -490,6 +760,21 @@ export class ReconnectionManager {
             if (!result) return;
             const { player } = result;
             d.afficherToast(`💔 ${player.name} s'est déconnecté.`);
+
+            // ✅ FIX : partie TERMINÉE (scores finaux affichés) → pas de « Partie en pause » (la partie est
+            // finie, l'overlay recouvrait le menu de l'hôte) ni de player-disconnected (qui ferait
+            // afficher la pause chez les invités). Le joueur reste marqué `disconnected` dans gameState
+            // (une reconnexion sur l'écran des scores passe toujours par le CAS 3), mais il est retiré
+            // de `players` — la liste du lobby — pour ne pas réapparaître comme fantôme au retour lobby.
+            if (gameState.finalScoresData) {
+                d.setPlayers(d.getPlayers().filter(p => p.id !== peerId));
+                multiplayer.broadcast({ type: 'players-update', players: d.buildPlayersForBroadcast() });
+                const hmEnd = d.getHeartbeatManager();
+                if (hmEnd) hmEnd._timedOut.add(peerId);
+                d.getEventBus().emit('score-updated');
+                return;
+            }
+
             const gs = d.getGameSync();
             if (gs) gs.syncPlayerDisconnected(peerId, player.name, gameState.currentPlayerIndex);
             const wasCurrent = gameState.players.findIndex(p => p.id === peerId) === gameState.currentPlayerIndex
@@ -505,19 +790,47 @@ export class ReconnectionManager {
         };
 
         multiplayer.onPlayerLeft = handleDisconnect;
-        d.startHeartbeat(handleDisconnect);
+        // ✅ FIX : côté invité, le heartbeat était un no-op en partie (handleDisconnect ignore
+        // les invités) — un hôte gelé sans fermeture de connexion n'était jamais détecté.
+        d.startHeartbeat((peerId) => {
+            if (isHost) { handleDisconnect(peerId); return; }
+            if (peerId === multiplayer.hostPeerId) {
+                console.warn('💔 Heartbeat : l\'hôte ne répond plus');
+                this._notifyHostLost();
+            }
+        });
 
         if (!isHost) {
             multiplayer.onHostDisconnected = () => {
                 if (!this._getGameState()) return;
-                console.log('🔌 Connexion hôte perdue — reconnexion automatique...');
-                d.startAutoReconnect();
+                console.log('🔌 Connexion hôte perdue…');
+                this._notifyHostLost(); // ✨ NOUVEAU : changement d'hôte si un snapshot existe
             };
         }
 
         multiplayer.onPlayerJoined = (playerId) => {
             console.log('👤 Nouveau joueur en cours de partie:', playerId);
-            multiplayer.sendTo(playerId, { type: 'game-in-progress' });
+            // ✅ FIX : seul l'hôte COURANT envoie game-in-progress. Auparavant les invités
+            // l'envoyaient aussi (à l'hôte, qui l'ignorait). Depuis le changement d'hôte, le
+            // handler lobby invité (LobbyJoin) reste au bas de la chaîne du nouvel hôte : il
+            // recevait ce message d'un invité et affichait la modale « Comment rejoindre ? ».
+            // Relu dynamiquement : le rôle peut changer en cours de partie.
+            if (!this._isHost) return;
+
+            // ✨ NOUVEAU : indiquer si la partie est complète (les 6 couleurs de joueur sont prises,
+            // fantômes déconnectés/exclus compris — ils occupent encore leur couleur). Dans ce cas la
+            // modale côté invité ne propose que « Spectateur », sauf pour un pseudo réservé :
+            // `reservedNames` = pseudos des joueurs non spectateurs (un joueur qui revient après un
+            // rechargement de page doit pouvoir reprendre sa place — CAS 3, y compris quand l'hôte ne
+            // l'a pas encore détecté comme déconnecté).
+            const _gs = this._getGameState();
+            const _playerColors = ['black','red','pink','green','blue','yellow'];
+            const _taken = (_gs?.players ?? []).map(p => p.color);
+            const _full  = _playerColors.every(c => _taken.includes(c));
+            const _reservedNames = _full
+                ? (_gs?.players ?? []).filter(p => p.color !== 'spectator').map(p => p.name)
+                : [];
+            multiplayer.sendTo(playerId, { type: 'game-in-progress', full: _full, reservedNames: _reservedNames });
         };
 
         const _prevOnData = multiplayer.onDataReceived;
@@ -526,6 +839,35 @@ export class ReconnectionManager {
                 const gameState = this._getGameState(); if (!gameState) return;
                 const name = data.name;
                 const allPlayerColors = ['black','red','pink','green','blue','yellow'];
+                // ✨ NOUVEAU — CAS 5 : joueur qui revient avec le MÊME id réseau (reconnexion
+                // conservant le peer — ex. rejoindre un nouvel hôte après un changement d'hôte).
+                // Aucun remap d'identité nécessaire : on réactive l'entrée existante.
+                const sameIdEntry = gameState.players.find(p => p.id === from && p.name === name);
+                if (sameIdEntry) {
+                    sameIdEntry.disconnected = false;
+                    sameIdEntry.kicked = false;
+                    delete gameState.disconnectedPlayers[from];
+                    if (!d.getPlayers().find(p => p.id === from)) {
+                        d.getPlayers().push({ id: from, name, color: sameIdEntry.color, isHost: false });
+                    }
+                    const hmSame = d.getHeartbeatManager();
+                    if (hmSame) { hmSame._connectedPeers = multiplayer._connectedPeers; hmSame._lastPong[from] = Date.now(); hmSame._timedOut.delete(from); }
+                    this.sendFullStateTo(from);
+                    d.afficherToast(`✅ ${name} s'est reconnecté !`);
+                    multiplayer.broadcast({ type: 'players-update', players: d.buildPlayersForBroadcast() });
+                    // ✅ FIX : après players-update (les invités relisent leur état) — la pause ne se lève que si
+                    // plus personne n'est en attente, sinon la modale est mise à jour
+                    this.reevaluatePause('reconnected');
+                    d.getEventBus().emit('score-updated');
+                    const spSame = d.getScorePanelUI(); if (spSame) { spSame.update(); spSame.updateMobile(); }
+                    d.updateTurnDisplay();
+                    // ✅ FIX : tout joueur qui (re)vient doit posséder un snapshot de changement d'hôte à jour (sinon,
+                    // si l'hôte tombe avant la fin du tour, il ne peut participer à aucune élection). Différé par
+                    // HostMigration si le tour est déjà entamé (voir broadcastSnapshot).
+                    d.getGameSync()?.onTurnEndSynced?.({ afterJoin: true });
+                    console.log(`🔄 Reconnexion joueur (même id): ${name} (${from})`);
+                    return;
+                }
                 const disconnectedEntry = gameState.findDisconnectedByName(name);
                 const kickedEntry = !disconnectedEntry ? gameState.players.find(p => p.name === name && p.kicked && p.color !== 'spectator') : null;
                 const activeEntry = !disconnectedEntry && !kickedEntry ? gameState.players.find(p => p.name === name && p.id !== from) : null;
@@ -535,7 +877,20 @@ export class ReconnectionManager {
                 const eventBus   = d.getEventBus();
                 const scorePanelUI = d.getScorePanelUI();
 
-                if (!isKnown && !data.isSpectator) {
+                // ✨ NOUVEAU : filet de sécurité « partie complète » — un nouveau joueur inconnu qui
+                // arrive alors que les 6 couleurs sont prises devient spectateur (CAS 2) au lieu d'être
+                // refusé (« Partie complète » → retour seul au lobby). Un joueur connu (reconnexion)
+                // n'est jamais concerné : il réutilise sa propre place.
+                let wantsSpectator = !!data.isSpectator;
+                if (!isKnown && !wantsSpectator) {
+                    const takenAll = gameState.players.map(p => p.color);
+                    if (allPlayerColors.every(c => takenAll.includes(c))) {
+                        wantsSpectator = true;
+                        console.log(`👁 Partie complète — ${name} devient spectateur`);
+                    }
+                }
+
+                if (!isKnown && !wantsSpectator) {
                     // CAS 1 : nouveau joueur inconnu
                     const takenNow    = gameState.players.map(p => p.color);
                     const freePlaying = allPlayerColors.filter(c => !takenNow.includes(c));
@@ -548,6 +903,13 @@ export class ReconnectionManager {
                         if (gameConfig.extensions?.largeMeeple)     newP.hasLargeMeeple = true;
                         if (gameConfig.extensions?.tradersBuilders) newP.hasBuilder     = true;
                         if (gameConfig.extensions?.pig)             newP.hasPig         = true;
+                        // ✅ FIX : un joueur qui rejoint EN COURS de partie arrivait avec 0 pièce de tour.
+                        // Il reçoit le quota FIGÉ au lancement (gameState.towerPiecesQuota), identique à
+                        // celui des joueurs d'origine. Posé AVANT sendFullStateTo ci-dessous pour que le
+                        // nouvel arrivant reçoive la bonne valeur ; les autres invités appliquent la même
+                        // règle localement dans le handler players-update (même quota, aucun champ
+                        // supplémentaire à transporter).
+                        if (gameConfig.extensions?.tower)           newP.towerPieces    = gameState.towerPiecesQuota ?? 0;
                     }
                     d.getPlayers().push({ id: from, name, color: assigned, isHost: false });
                     this.sendFullStateTo(from);
@@ -558,7 +920,7 @@ export class ReconnectionManager {
                     d.afficherToast(`👋 ${name} a rejoint la partie !`);
                     console.log(`👤 Nouveau joueur: ${name}`);
 
-                } else if (!isKnown && data.isSpectator) {
+                } else if (!isKnown && wantsSpectator) {
                     // CAS 2 : nouveau spectateur inconnu
                     gameState.addPlayer(from, name, 'spectator');
                     d.getPlayers().push({ id: from, name, color: 'spectator', isHost: false });
@@ -572,7 +934,7 @@ export class ReconnectionManager {
                     d.afficherToast(`👁 ${name} observe la partie.`);
                     console.log(`👁 Nouveau spectateur: ${name}`);
 
-                } else if (isKnown && !data.isSpectator) {
+                } else if (isKnown && !wantsSpectator) {
                     // CAS 3 : joueur connu qui revient jouer
                     const oldPeerId = reconnectOldPeerId;
                     const specIdx   = gameState.players.findIndex(p => p.name === name && p.color === 'spectator');
@@ -588,12 +950,18 @@ export class ReconnectionManager {
                         if (gsp2) d.getPlayers().push({ id: from, name: gsp2.name, color: gsp2.color, isHost: false });
                     }
                     Object.values(d.getPlacedMeeples()).forEach(m => { if (m.playerId === oldPeerId) m.playerId = from; });
+                    // ✨ NOUVEAU : remap COMPLET de l'ancien id (tours verrouillées, prisonniers, fée,
+                    // échange en attente, snapshots d'annulation, meeples) — voir
+                    // GameState.remapPlayerId. Les autres invités l'appliquent à la réception de
+                    // `player-id-remapped` (diffusé plus bas, après players-update).
+                    d.remapPlayerId?.(oldPeerId, from);
                     const hm = d.getHeartbeatManager();
                     if (hm) { hm._connectedPeers = multiplayer._connectedPeers; hm._lastPong[from] = Date.now(); hm._timedOut.delete(oldPeerId); delete hm._lastPong[oldPeerId]; }
                     this.sendFullStateTo(from);
-                    if (this.gamePaused) d.resumeGame('reconnected');
                     d.afficherToast(`✅ ${name} s'est reconnecté !`);
                     multiplayer.broadcast({ type: 'players-update', players: d.buildPlayersForBroadcast() });
+                    multiplayer.broadcast({ type: 'player-id-remapped', oldId: oldPeerId, newId: from });
+                    this.reevaluatePause('reconnected'); // ✅ FIX : voir CAS 5
                     eventBus.emit('score-updated');
                     if (scorePanelUI) { scorePanelUI.update(); scorePanelUI.updateMobile(); }
                     d.updateTurnDisplay();
@@ -615,12 +983,19 @@ export class ReconnectionManager {
                     d.afficherToast(`👁 ${name} observe la partie.`);
                     console.log(`👁 Retour spectateur: ${name}`);
                 }
+                // ✅ FIX : cas 1 à 4 — snapshot de changement d'hôte à jour pour tous, dont le nouvel arrivant
+                // (voir le cas 5 plus haut et HostMigration.broadcastSnapshot).
+                d.getGameSync()?.onTurnEndSynced?.({ afterJoin: true });
                 return;
             }
 
             if (data.type === 'players-update') {
                 const gameState = this._getGameState(); if (!gameState) return;
                 d.setPlayers(data.players);
+                // ✅ FIX : mémoriser le joueur courant par RÉFÉRENCE d'objet (pas par id : l'id peut être remappé
+                // dans ce même handler) — le filtre ci-dessous retire des joueurs et décale les indices, donc
+                // currentPlayerIndex pouvait pointer hors du tableau (TypeError dans TurnUI) ou sur un autre joueur.
+                const currentPlayerObj = gameState.getCurrentPlayer();
                 const incomingIds = new Set(data.players.map(p => p.id));
                 gameState.players = gameState.players.filter(gp =>
                     incomingIds.has(gp.id) || ((gp.disconnected || gp.kicked) && gp.color !== 'spectator')
@@ -647,10 +1022,28 @@ export class ReconnectionManager {
                                 if (gameConfig.extensions?.largeMeeple)     newP.hasLargeMeeple = true;
                                 if (gameConfig.extensions?.tradersBuilders) newP.hasBuilder     = true;
                                 if (gameConfig.extensions?.pig)             newP.hasPig         = true;
+                                // ✅ FIX : même règle que le CAS 1 côté hôte — le quota figé
+                                // (gameState.towerPiecesQuota, reçu via game-start / full-state-sync /
+                                // turn-ended) est identique chez tous les clients, donc le nouvel arrivant
+                                // reçoit le même stock partout sans transporter towerPieces dans
+                                // players-update. Les spectateurs n'ont pas de pièces (comme au lancement).
+                                if (gameConfig.extensions?.tower && p.color !== 'spectator') newP.towerPieces = gameState.towerPiecesQuota ?? 0;
                             }
                         }
-                    } else if (p.kicked) { existingById.kicked = true; }
+                    } else {
+                        if (p.kicked) existingById.kicked = true;
+                        // ✅ FIX : appliquer aussi l'état « déconnecté » fourni par l'hôte (cf.
+                        // buildPlayersForBroadcast) — y compris pour le remettre à false (CAS 5)
+                        if (p.disconnected !== undefined) existingById.disconnected = !!p.disconnected;
+                    }
                 });
+                // ✅ FIX : recaler currentPlayerIndex sur le joueur courant d'origine (s'il est toujours là),
+                // sinon au minimum le ramener dans les bornes du tableau.
+                if (currentPlayerObj) {
+                    const _idx = gameState.players.indexOf(currentPlayerObj);
+                    if (_idx !== -1) gameState.currentPlayerIndex = _idx;
+                }
+                if (gameState.currentPlayerIndex >= gameState.players.length) gameState.currentPlayerIndex = 0;
                 d.getEventBus().emit('score-updated');
                 const sp = d.getScorePanelUI(); if (sp) sp.updateMobile();
                 d.updateTurnDisplay();

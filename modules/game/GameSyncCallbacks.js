@@ -1,4 +1,10 @@
 import { Tile } from '../Tile.js';
+import {
+    executeAddFloorHost, executeTowerCaptureHost, executeLockHost,
+    applyPrisonerExchangeResolved, applyPrisonerExchangePending, executePrisonerChoiceHost, // ✨ NOUVEAU
+    applyPrisonerBuybackExecuted, executePrisonerBuybackHost, // ✨ NOUVEAU — Rachat de prisonnier
+    checkPendingReciprocalExchange, // ✨ NOUVEAU — Échange automatique différé à la fin du tour
+} from './TowerUI.js';
 
 /**
  * GameSyncCallbacks - Factorise tous les callbacks réseau (hôte et invités)
@@ -8,7 +14,7 @@ export class GameSyncCallbacks {
         gameSync, gameState, deck, turnManager, tilePreviewUI, meepleDisplayUI,
         undoManager, unplaceableManager, scoring, zoneMerger, slotsUI, eventBus,
         plateau, gameConfig, ruleRegistry, scorePanelUI, tilePlacement, dragonRules,
-        finalScoresManager, getPlacedMeeples, getWaitingToRedraw, setWaitingToRedraw,
+        finalScoresManager, remapPlayerId, getPlacedMeeples, getWaitingToRedraw, setWaitingToRedraw,
         onRemoteUndo, onFinalScores, onTileDestroyed, onDeckReshuffled,
         onAbbeRecalled, onAbbeRecalledUndo, onBonusTurnStarted, onUnplaceableHandled,
         onGamePaused, onGameResumed, onFullStateSync,
@@ -25,6 +31,7 @@ export class GameSyncCallbacks {
             undoManager, unplaceableManager: unplaceableManager ?? null, scoring,
             zoneMerger, slotsUI, eventBus, plateau, gameConfig, ruleRegistry,
             scorePanelUI, tilePlacement, dragonRules, finalScoresManager,
+            remapPlayerId,
             getPlacedMeeples, getWaitingToRedraw, setWaitingToRedraw,
             onRemoteUndo, onFinalScores, onTileDestroyed, onDeckReshuffled,
             onAbbeRecalled, onAbbeRecalledUndo,
@@ -56,7 +63,17 @@ export class GameSyncCallbacks {
 
         gs.onTileRotated = (rotation) => {
             const img = document.getElementById('current-tile-img');
-            if (img) { const d = parseInt(img.style.transform.match(/rotate\((\d+)deg\)/)?.[1] || '0'); img.style.transform = `rotate(${d + 90}deg)`; }
+            if (img) {
+                // ✅ FIX : l'image se recale sur la rotation ABSOLUE reçue au lieu d'ajouter 90° à son angle
+                // courant. Un invité qui clique deux fois avant le retour du 1er écho envoie deux fois la
+                // même valeur (ex. 270, 270) : l'état prenait 270 mais l'image recevait +90° deux fois →
+                // affichage faux (jusqu'au prochain tile-drawn). On garde un angle cumulé qui tourne
+                // toujours dans le même sens (animation CSS de 0,3 s : pas de rotation à l'envers) mais
+                // congruent à la valeur reçue ; un message en double (delta = 0) ne fait plus rien.
+                const current = parseInt(img.style.transform.match(/rotate\((\d+)deg\)/)?.[1] || '0');
+                const delta   = (((rotation - current) % 360) + 360) % 360;
+                if (delta !== 0) img.style.transform = `rotate(${current + delta}deg)`;
+            }
             this.eventBus.emit('tile-rotated', { rotation });
         };
 
@@ -202,6 +219,47 @@ export class GameSyncCallbacks {
             this.onDeckReshuffled(tiles, currentIndex);
         };
 
+        // ✨ NOUVEAU — un joueur est revenu sous un nouvel id réseau : l'hôte a déjà remappé chez lui
+        gs.onPlayerIdRemapped = (oldId, newId) => {
+            if (this.isHost) return;
+            this.remapPlayerId?.(oldId, newId);
+        };
+
+        // ✨ NOUVEAU — Extension Tour : reçu par tous (guest ET host via echo, mais host ignore son propre echo)
+        gs.onTowerFloorPlaced = (data) => {
+            if (this.isHost) return; // l'hôte a déjà appliqué localement dans executeAddFloorHost
+            this.eventBus.emit('network-tower-floor-placed', data);
+        };
+        gs.onTowerCaptureExecuted = (data) => {
+            if (this.isHost) return;
+            this.eventBus.emit('network-tower-capture-executed', data);
+        };
+        gs.onTowerLockExecuted = (data) => {
+            if (this.isHost) return;
+            this.eventBus.emit('network-tower-lock-executed', data);
+        };
+
+        // ✨ NOUVEAU — Échange automatique de prisonniers (Extension Tour)
+        // Appliqué directement (pas via eventBus) : TowerUI expose déjà des fonctions
+        // d'application idempotentes utilisables aussi bien côté hôte que côté invités.
+        // ✅ FIX : `data.freshlyCapturedType` désormais transmis à applyPrisonerExchangeResolved/
+        // Pending — sans lui, le meeple fraîchement capturé par le déclencheur de l'échange ne
+        // retournait jamais à l'adversaire côté invités (cf. TowerUI.js pour le détail).
+        gs.onPrisonerExchangeResolved = (data) => {
+            if (this.isHost) return; // l'hôte a déjà appliqué directement dans checkPendingReciprocalExchange
+            applyPrisonerExchangeResolved(data.opponentId, data.chooserId, data.chosenType, data.freshlyCapturedType);
+        };
+        gs.onPrisonerExchangePending = (data) => {
+            if (this.isHost) return;
+            applyPrisonerExchangePending(data.opponentId, data.chooserId, data.availableTypes, data.freshlyCapturedType);
+        };
+
+        // ✨ NOUVEAU — Rachat de prisonnier (Extension Tour)
+        gs.onPrisonerBuybackExecuted = (data) => {
+            if (this.isHost) return; // l'hôte a déjà appliqué directement dans executePrisonerBuybackHost
+            applyPrisonerBuybackExecuted(data.buyerId, data.opponentId, data.meepleType);
+        };
+
         if (isHost) this._attachHostCallbacks(gs);
     }
 
@@ -264,11 +322,27 @@ export class GameSyncCallbacks {
                 zones:          this.zoneMerger.registry.serialize(),
                 tileToZone:     Array.from(this.zoneMerger.tileToZone.entries()),
                 placedMeeples:  JSON.parse(JSON.stringify(pm)),
-                playerMeeples:  this.gameState.players.map(p => ({ id: p.id, meeples: p.meeples, hasAbbot: p.hasAbbot, hasLargeMeeple: p.hasLargeMeeple, hasBuilder: p.hasBuilder, hasPig: p.hasPig })),
+                playerMeeples:  this.gameState.players.map(p => ({
+                    id: p.id, meeples: p.meeples, hasAbbot: p.hasAbbot,
+                    hasLargeMeeple: p.hasLargeMeeple, hasBuilder: p.hasBuilder, hasPig: p.hasPig,
+                    towerPieces: p.towerPieces, // ✨ NOUVEAU
+                    // ✅ FIX : rachat de prisonnier — même raison que turnBuybackUsed juste en
+                    // dessous : transmettre à l'invité le score et le détail "Rachats" déjà
+                    // restaurés par um.undo() ci-dessus, sinon les points gagnés/perdus par le
+                    // rachat annulé restaient acquis chez l'invité qui a demandé l'annulation.
+                    score: p.score, buybacks: p.scoreDetail?.buybacks ?? 0
+                })),
                 fairyState:     JSON.parse(JSON.stringify(this.gameState.fairyState ?? { ownerId: null, meepleKey: null })),
                 dragonPos:      JSON.parse(JSON.stringify(this.gameState.dragonPos ?? null)),
                 dragonPhase:    JSON.parse(JSON.stringify(this.gameState.dragonPhase ?? {})),
-                pendingPortalTile: this.gameState._pendingPortalTile ? JSON.parse(JSON.stringify(this.gameState._pendingPortalTile)) : null
+                pendingPortalTile: this.gameState._pendingPortalTile ? JSON.parse(JSON.stringify(this.gameState._pendingPortalTile)) : null,
+                extraState:     JSON.parse(JSON.stringify(this.gameState.extraState)), // ✨ NOUVEAU
+                // ✅ FIX : rachat de prisonnier — même raison que GameEventSetup._installUndo :
+                // um.undo() ci-dessus a déjà restauré gameState._turnBuybackUsed en cohérence
+                // avec extraState.prisoners ; on transmet cette valeur à l'invité qui a demandé
+                // l'annulation pour qu'il lève lui aussi le blocage "une rançon par tour" si le
+                // rachat annulé en faisait partie.
+                turnBuybackUsed: this.gameState._turnBuybackUsed ?? false
             };
             um.applyLocally(undoneAction);
             if (this.gameSync) this.gameSync.syncUndo(undoneAction);
@@ -360,18 +434,22 @@ export class GameSyncCallbacks {
                 this.dragonRules.onVolcanoPlaced(vx, vy); this.gameState._pendingVolcanoPos = null;
                 this.broadcastDragonState();
             }
+            this.gameState._pendingPrincessTile = null; this.gameState._pendingPortalTile = null;
+            this.gameState._pendingTowerCapture = null; // ✨ NOUVEAU
+            if (this.undoManager) this.undoManager.reset();
+            checkPendingReciprocalExchange(); // ✨ NOUVEAU : échange automatique de prisonniers différé
+                                               // à la fin du tour du capturant (voir TowerUI.js) — même
+                                               // point que undoManager.reset(), l'action n'étant plus
+                                               // annulable à partir d'ici
             if (this.gameConfig.tileGroups?.dragon && this.gameConfig.extensions?.dragon && this.dragonRules && this.gameState._pendingDragonTile) {
                 const { playerIndex } = this.gameState._pendingDragonTile;
-                this.gameState._pendingDragonTile = null; this.gameState._pendingPrincessTile = null; this.gameState._pendingPortalTile = null;
-                if (this.undoManager) this.undoManager.reset();
+                this.gameState._pendingDragonTile = null;
                 const started = this.dragonRules.onDragonTilePlaced(playerIndex);
                 if (started) {
                     this.broadcastDragonState(); this.gameSync.syncDragonPhaseStarted(this.gameState.dragonPhase);
                     this.startDragonTurnUI(); return;
                 }
             }
-            this.gameState._pendingPrincessTile = null; this.gameState._pendingPortalTile = null;
-            if (this.undoManager) this.undoManager.reset();
             if (this.turnManager) this.turnManager.endTurnRemote(isBonusTurn);
             if (isBonusTurn) this.ruleRegistry.rules?.get('builders')?.resetLastPlacedTile?.();
             if (this.deck.remaining() <= 0) { this.gameSync.syncTurnEnd(false, null); this.finalScoresManager.computeAndApply(this.getPlacedMeeples()); return; }
@@ -401,10 +479,25 @@ export class GameSyncCallbacks {
                 else {
                     const conn = gs.multiplayer.connections.find(c => c.peer === playerId);
                     if (conn?.open) conn.send({ type: 'your-turn', tileId: _nextTile.id });
-                    if (this.tilePreviewUI) this.tilePreviewUI.showTile(_nextTile);
+                    // ✅ FIX : l'hôte « reflète » la tuile de l'invité dont c'est le tour (aperçu + slots en
+                    // lecture seule) via l'événement tile-drawn — à un début de tour normal, c'est
+                    // receiveYourTurn qui l'émet (onTurnEndRequest). Ici (repioche après tuile implaçable)
+                    // seul l'aperçu était mis à jour : tuileEnMain et SlotsUI de l'hôte restaient sur
+                    // l'ancienne tuile implaçable (donc aucun slot) jusqu'à ce que l'invité pose puis
+                    // annule sa tuile. `fromNetwork` (sans fromYourTurn) = même chemin que celui d'un
+                    // invité qui reçoit cette pioche : pas de point de fée de début de tour, et
+                    // snapshot d'annulation de l'hôte recalé sur la nouvelle tuile.
+                    this.eventBus.emit('tile-drawn', { tileData: { ..._nextTile, rotation: 0 }, fromNetwork: true });
+                    this.eventBus.emit('deck-updated', { remaining: this.deck.remaining(), total: this.deck.total() });
                 }
             }
             gs._pendingUnplaceableRedraw = null;
+            // ✅ FIX : même raison que le bouton « Repiocher » de l'hôte (GameEventSetup) — la
+            // repioche d'un invité (tuile implaçable / dragon sans volcan) change la tuile en main
+            // et la pioche sans passer par syncTurnEnd : sans cette rediffusion, le snapshot de
+            // changement d'hôte garde l'ancienne tuile et l'ancienne pioche. Hook posé par
+            // HostMigration.install, sans effet si ce pair n'est plus hôte.
+            gs.onTurnEndSynced?.();
         };
 
         gs.multiplayer.onDataReceived = ((prev) => (data, from) => {
@@ -433,6 +526,40 @@ export class GameSyncCallbacks {
                 if (this.meepleDisplayUI) this.meepleDisplayUI.showMeeple(x, y, position, meepleType, pColor);
                 gs.multiplayer.broadcast({ type: 'portal-meeple-placed', x, y, position, meepleType, playerId: fromId, color: pColor });
                 this.eventBus.emit('meeple-count-updated', { playerId: fromId }); return;
+            }
+            // ✨ NOUVEAU — Extension Tour : requêtes invité → hôte
+            if (data.type === 'tower-floor-request') {
+                if (this.gameState.getCurrentPlayer()?.id !== from) { console.warn('⚠️ tower-floor-request rejeté de', from); return; }
+                executeAddFloorHost(data.x, data.y, from);
+                return;
+            }
+            if (data.type === 'tower-capture-request') {
+                if (this.gameState.getCurrentPlayer()?.id !== from) { console.warn('⚠️ tower-capture-request rejeté de', from); return; }
+                executeTowerCaptureHost(data.meepleKey, from);
+                return;
+            }
+            if (data.type === 'tower-lock-request') {
+                if (this.gameState.getCurrentPlayer()?.id !== from) { console.warn('⚠️ tower-lock-request rejeté de', from); return; }
+                executeLockHost(data.x, data.y, from, data.meepleType);
+                return;
+            }
+            // ✨ NOUVEAU — Échange automatique de prisonniers : requête de choix invité → hôte.
+            // Validé contre le joueur choisisseur en attente (pas forcément le joueur actif au
+            // sens strict de gameState.currentPlayerIndex, même si en pratique c'est toujours lui).
+            if (data.type === 'prisoner-exchange-choice-request') {
+                const pending = this.gameState._pendingPrisonerExchange;
+                if (!pending || pending.chooserId !== from) { console.warn('⚠️ prisoner-exchange-choice-request rejeté de', from); return; }
+                executePrisonerChoiceHost(data.chosenType, from);
+                return;
+            }
+            // ✨ NOUVEAU — Rachat de prisonnier : requête invité → hôte. Disponible durant le
+            // tour de l'acheteur uniquement, une fois par tour (double tour inclus) — toute la
+            // validation (score suffisant, prisonnier toujours détenu, pas d'échange en attente,
+            // c'est bien le tour de `from`, pas déjà racheté ce tour-ci) est faite dans
+            // executePrisonerBuybackHost, avec `from` comme identité fiable de l'acheteur.
+            if (data.type === 'prisoner-buyback-request') {
+                executePrisonerBuybackHost(data.opponentId, data.meepleType, from);
+                return;
             }
             if (prev) prev(data, from);
         })(gs.multiplayer.onDataReceived);

@@ -107,17 +107,61 @@ function _updateDragonAvailability() {
     saveLobbyOptions();
 }
 
+// ✨ NOUVEAU : disponibilité de l'extension Tour — dépend uniquement des tuiles Tour
+function _updateTowerAvailability() {
+    const tilesOn = _checked('tiles-tower');
+    const cb    = _id('ext-tower');
+    const label = cb?.closest('label');
+    if (!cb) return;
+    if (!tilesOn) {
+        cb.checked = false; cb.disabled = true;
+        if (label) { label.style.opacity = '0.4'; label.style.pointerEvents = 'none'; }
+    } else {
+        cb.disabled = false;
+        if (label) { label.style.opacity = ''; label.style.pointerEvents = ''; }
+    }
+    // ✨ NOUVEAU : la rançon dépend de la capture (elle-même dépendante des tuiles Tour)
+    _updateRansomAvailability();
+    _updateMasterCheckboxSafe('all-tower');
+    saveLobbyOptions();
+}
+
+// ✨ NOUVEAU : disponibilité de la rançon — dépend de l'option « Capture par les tours »
+// (ext-tower). Sans rançon, les prisonniers ne se libèrent que par échange automatique.
+function _updateRansomAvailability() {
+    const captureOn = _checked('ext-tower');
+    const cb    = _id('ext-ransom');
+    const label = cb?.closest('label');
+    if (!cb) return;
+    if (!captureOn) {
+        cb.checked = false; cb.disabled = true;
+        if (label) { label.style.opacity = '0.4'; label.style.pointerEvents = 'none'; }
+    } else {
+        cb.disabled = false;
+        if (label) { label.style.opacity = ''; label.style.pointerEvents = ''; }
+    }
+    _updateMasterCheckboxSafe('all-tower');
+    saveLobbyOptions();
+}
+
 // ── Coches maîtres ─────────────────────────────────────────────────────────
 
 function _updateAllExtensionsMaster() {
-    const subMasters = ['all-base', 'all-abbot', 'all-inns-cathedrals', 'all-traders-builders', 'all-dragon'];
+    const subMasters = ['all-base', 'all-abbot', 'all-tower', 'all-inns-cathedrals', 'all-traders-builders', 'all-dragon'];
     const master = _id('all-extensions');
     if (!master) return;
-    const checked   = subMasters.filter(id => { const el = _id(id); return el && el.checked && !el.indeterminate; }).length;
-    const unchecked = subMasters.filter(id => { const el = _id(id); return el && !el.checked && !el.indeterminate; }).length;
-    if (checked === subMasters.length) {
+    // ✅ FIX : les sous-maîtres grisés (aucune règle possible, ex. Tour sans tuiles) sont ignorés —
+    // sinon « Extensions » ne pourrait jamais devenir entièrement cochée tant que leurs tuiles sont décochées.
+    const active = subMasters.map(id => _id(id)).filter(el => el && !el.disabled);
+    if (active.length === 0) {
+        master.checked = false; master.indeterminate = false;
+        return;
+    }
+    const checked   = active.filter(el => el.checked && !el.indeterminate).length;
+    const unchecked = active.filter(el => !el.checked && !el.indeterminate).length;
+    if (checked === active.length) {
         master.checked = true; master.indeterminate = false;
-    } else if (unchecked === subMasters.length) {
+    } else if (unchecked === active.length) {
         master.checked = false; master.indeterminate = false;
     } else {
         master.checked = false; master.indeterminate = true;
@@ -127,9 +171,19 @@ function _updateAllExtensionsMaster() {
 function _updateMasterCheckboxSafe(masterId) {
     const master   = _id(masterId);
     if (!master) return;
-    const children = [...document.querySelectorAll(`input[data-group="${masterId}"]`)]
-        .filter(el => !el.disabled);
-    if (children.length === 0) return;
+    const allChildren = [...document.querySelectorAll(`input[data-group="${masterId}"]`)];
+    if (allChildren.length === 0) return;
+    const children = allChildren.filter(el => !el.disabled);
+
+    // ✅ FIX : aucune règle possible (tous les enfants grisés) → la coche maître est elle aussi
+    // grisée et décochée, au lieu de rester cliquable avec un état périmé.
+    if (children.length === 0) {
+        master.checked = false; master.indeterminate = false;
+        master.disabled = true;
+        return;
+    }
+    master.disabled = false;
+
     const checkedCount = children.filter(c => c.checked).length;
     if (checkedCount === 0) {
         master.checked = false; master.indeterminate = false;
@@ -153,12 +207,17 @@ function _onMasterChange(masterId) {
 
         if (checked) {
             // Ordre important : chaque mise à jour de disponibilité débloque
-            // les options dépendantes avant qu'on les coche
+            // les options dépendantes avant qu'on les coche.
+            // ✅ FIX : les tuiles ne sont jamais cochées par les coches maîtres de règles —
+            // seules les règles réellement disponibles sont activées.
             applyGroup('all-base');         // coche "Les champs"
             _updatePigAvailability();       // débloque Cochon si champs actif
             applyGroup('all-traders-builders'); // coche Bâtisseur + Cochon (si dispo)
             _updateMerchantsAvailability(); // débloque Marchands si tuiles TB actives
             applyGroup('all-abbot');
+            applyGroup('all-tower');        // coche la capture si dispo
+            _updateTowerAvailability();     // débloque aussi la rançon si capture cochée
+            applyGroup('all-tower');        // re-coche si maintenant dispo (rançon comprise)
             applyGroup('all-inns-cathedrals'); // Cathédrales/Auberges si tuiles actives
             _updateInnsCthdAvailability();
             applyGroup('all-dragon');       // Dragon/Princesse/Portail si tuiles actives
@@ -166,15 +225,16 @@ function _onMasterChange(masterId) {
             applyGroup('all-dragon');       // re-coche Protection Fée si maintenant dispo
         } else {
             // Décocher : pas de dépendances à respecter, on décoche tout directement
-            ['all-base', 'all-abbot', 'all-inns-cathedrals', 'all-traders-builders', 'all-dragon']
+            ['all-base', 'all-abbot', 'all-tower', 'all-inns-cathedrals', 'all-traders-builders', 'all-dragon']
                 .forEach(applyGroup);
             _updatePigAvailability();
             _updateMerchantsAvailability();
+            _updateTowerAvailability();
             _updateInnsCthdAvailability();
             _updateDragonAvailability();
         }
 
-        ['all-base', 'all-abbot', 'all-inns-cathedrals', 'all-traders-builders', 'all-dragon']
+        ['all-base', 'all-abbot', 'all-tower', 'all-inns-cathedrals', 'all-traders-builders', 'all-dragon']
             .forEach(id => _updateMasterCheckboxSafe(id));
         _updateAllExtensionsMaster();
         saveLobbyOptions();
@@ -183,9 +243,7 @@ function _onMasterChange(masterId) {
 
     if (masterId === 'all-dragon') {
         if (checked) {
-            const tilesDragon = _id('tiles-dragon');
-            if (tilesDragon && !tilesDragon.disabled) tilesDragon.checked = true;
-
+            // ✅ FIX : plus d'activation des tuiles Dragon ici (tuiles indépendantes des règles)
             const extDragon = _id('ext-dragon');
             if (extDragon && !extDragon.disabled) extDragon.checked = true;
 
@@ -193,10 +251,6 @@ function _onMasterChange(masterId) {
 
             document.querySelectorAll(`input[data-group="${masterId}"]`)
                 .forEach(c => { if (!c.disabled) c.checked = true; });
-
-            if (tilesDragon && !tilesDragon.disabled) {
-                tilesDragon.dispatchEvent(new Event('change', { bubbles: true }));
-            }
         } else {
             document.querySelectorAll(`input[data-group="${masterId}"]`)
                 .forEach(c => { c.checked = false; });
@@ -210,12 +264,35 @@ function _onMasterChange(masterId) {
         return;
     }
 
+    // "all-tower" — même schéma que "all-dragon" mais plus simple (pas de sous-dépendances)
+    if (masterId === 'all-tower') {
+        if (checked) {
+            // ✅ FIX : plus d'activation des tuiles Tour ici (tuiles indépendantes des règles)
+            document.querySelectorAll(`input[data-group="${masterId}"]`)
+                .forEach(c => { if (!c.disabled) c.checked = true; });
+            // La rançon n'était pas cochable tant que la capture était décochée —
+            // la débloquer maintenant que la capture est cochée, puis la cocher à son tour
+            _updateRansomAvailability();
+            document.querySelectorAll(`input[data-group="${masterId}"]`)
+                .forEach(c => { if (!c.disabled) c.checked = true; });
+        } else {
+            document.querySelectorAll(`input[data-group="${masterId}"]`)
+                .forEach(c => { c.checked = false; });
+            _updateTowerAvailability();
+        }
+        document.querySelectorAll(`input[data-group="${masterId}"]`)
+            .forEach(c => c.dispatchEvent(new Event('change', { bubbles: true })));
+        saveLobbyOptions();
+        return;
+    }
+
     const children = [...document.querySelectorAll(`input[data-group="${masterId}"]`)]
         .filter(el => !el.disabled);
     children.forEach(c => { c.checked = checked; });
 
     _updatePigAvailability();
     _updateMerchantsAvailability();
+    _updateTowerAvailability();
     _updateInnsCthdAvailability();
     _updateDragonAvailability();
 
@@ -250,6 +327,9 @@ const PRESET_MAP = {
     'ext_fairy_protection':   'ext-fairy-protection',
     'ext_fairy_score_turn':   'ext-fairy-score-turn',
     'ext_fairy_score_zone':   'ext-fairy-score-zone',
+    'tiles_tower':            'tiles-tower', // ✨ NOUVEAU
+    'ext_tower':              'ext-tower',   // ✨ NOUVEAU
+    'ext_ransom':             'ext-ransom',  // ✨ NOUVEAU — rançon (dépend de ext_tower)
 };
 
 export function applyPreset(preset) {
@@ -273,6 +353,7 @@ export function applyPreset(preset) {
     _updatePigAvailability();
     _updateInnsCthdAvailability();
     _updateDragonAvailability();
+    _updateTowerAvailability(); // ✨ NOUVEAU (inclut la dépendance rançon → capture)
 
     // ✅ FIX : recalculer la coche maître globale "all-extensions" après application
     // d'un preset — elle dépend des 5 sous-coches maîtres, pas d'un data-group direct,
@@ -306,6 +387,9 @@ export function saveLobbyOptions() {
         ext_fairy_protection:     _checked('ext-fairy-protection'),
         ext_fairy_score_turn:     _checked('ext-fairy-score-turn'),
         ext_fairy_score_zone:     _checked('ext-fairy-score-zone'),
+        tiles_tower:              _checked('tiles-tower'), // ✨ NOUVEAU
+        ext_tower:                _checked('ext-tower'),   // ✨ NOUVEAU
+        ext_ransom:               _checked('ext-ransom'),  // ✨ NOUVEAU
         unplaceable:              document.querySelector('input[name="unplaceable"]:checked')?.value ?? 'reshuffle',
     };
     localStorage.setItem(LS_KEY, JSON.stringify(state));
@@ -334,6 +418,9 @@ export function syncAllOptions() {
         'ext-fairy-protection':  _checked('ext-fairy-protection'),
         'ext-fairy-score-turn':  _checked('ext-fairy-score-turn'),
         'ext-fairy-score-zone':  _checked('ext-fairy-score-zone'),
+        'tiles-tower':           _checked('tiles-tower'), // ✨ NOUVEAU
+        'ext-tower':             _checked('ext-tower'),   // ✨ NOUVEAU
+        'ext-ransom':            _checked('ext-ransom'),  // ✨ NOUVEAU
         'unplaceable':           document.querySelector('input[name="unplaceable"]:checked')?.value ?? 'reshuffle',
         'start':                 document.querySelector('input[name="start"]:checked')?.value ?? 'unique',
     };
@@ -444,7 +531,7 @@ function loadLobbyOptions() {
 }
 
 export function updateMasterCheckboxes() {
-    const MASTER_IDS = ['all-base', 'all-abbot', 'all-inns-cathedrals', 'all-traders-builders', 'all-dragon', 'all-tiles'];
+    const MASTER_IDS = ['all-base', 'all-abbot', 'all-tower', 'all-inns-cathedrals', 'all-traders-builders', 'all-dragon', 'all-tiles'];
     MASTER_IDS.forEach(_updateMasterCheckboxSafe);
     _updateAllExtensionsMaster();
 }
@@ -457,6 +544,7 @@ function _updateTileCount() {
     if (_checked('tiles-inns-cathedrals')) total += 18;
     if (_checked('tiles-traders-builders'))total += 24;
     if (_checked('tiles-dragon'))          total += 29;
+    if (_checked('tiles-tower'))           total += 18; // ✨ NOUVEAU
     // Rivière : +12 si startType river (radio)
     const startVal = document.querySelector('input[name="start"]:checked')?.value;
     if (startVal === 'river') total += 12;
@@ -468,13 +556,14 @@ export function updateAllAvailability() {
     _updateMerchantsAvailability();
     _updateInnsCthdAvailability();
     _updateDragonAvailability();
+    _updateTowerAvailability(); // ✨ NOUVEAU (inclut la rançon)
     _updateTileCount();
     updateMasterCheckboxes();
 }
 
 // ── Initialisation ─────────────────────────────────────────────────────────
 
-const MASTER_IDS = ['all-extensions', 'all-base', 'all-abbot', 'all-inns-cathedrals', 'all-traders-builders', 'all-dragon', 'all-tiles'];
+const MASTER_IDS = ['all-extensions', 'all-base', 'all-abbot', 'all-tower', 'all-inns-cathedrals', 'all-traders-builders', 'all-dragon', 'all-tiles'];
 
 /**
  * @param {object} deps
@@ -505,6 +594,12 @@ export function initLobbyOptions({ getIsHost, getInLobby, multiplayer }) {
     _id('ext-dragon')?.addEventListener('change', _updateDragonAvailability);
     _updateDragonAvailability();
 
+    // ✨ NOUVEAU : disponibilité Tour
+    _id('tiles-tower')?.addEventListener('change', _updateTowerAvailability);
+    // ✨ NOUVEAU : la rançon dépend de la capture (ext-tower)
+    _id('ext-tower')?.addEventListener('change', _updateRansomAvailability);
+    _updateTowerAvailability();
+
     // Coches maîtres
     MASTER_IDS.forEach(masterId => {
         const master = _id(masterId);
@@ -530,13 +625,13 @@ export function initLobbyOptions({ getIsHost, getInLobby, multiplayer }) {
 
     // Sauvegarde auto à chaque changement
     document.querySelectorAll(
-        '#base-fields, #list-remaining, #use-test-deck, #enable-debug, #ext-abbot, #tiles-abbot, #ext-large-meeple, #ext-cathedrals, #ext-inns, #tiles-inns-cathedrals, #tiles-traders-builders, #ext-builder, #ext-merchants, #ext-pig, #tiles-dragon, #ext-dragon, #ext-princess, #ext-portal, #ext-fairy-protection, #ext-fairy-score-turn, #ext-fairy-score-zone'
+        '#base-fields, #list-remaining, #use-test-deck, #enable-debug, #ext-abbot, #tiles-abbot, #ext-large-meeple, #ext-cathedrals, #ext-inns, #tiles-inns-cathedrals, #tiles-traders-builders, #ext-builder, #ext-merchants, #ext-pig, #tiles-dragon, #ext-dragon, #ext-princess, #ext-portal, #ext-fairy-protection, #ext-fairy-score-turn, #ext-fairy-score-zone, #tiles-tower, #ext-tower, #ext-ransom'
     ).forEach(el => el.addEventListener('change', saveLobbyOptions));
     document.querySelectorAll('input[name="unplaceable"], input[name="start"]')
         .forEach(el => el.addEventListener('change', saveLobbyOptions));
 
     // Compteur de tuiles — mis à jour à chaque changement de tuile ou de départ
-    ['tiles-abbot', 'tiles-inns-cathedrals', 'tiles-traders-builders', 'tiles-dragon'].forEach(id => {
+    ['tiles-abbot', 'tiles-inns-cathedrals', 'tiles-traders-builders', 'tiles-dragon', 'tiles-tower'].forEach(id => {
         _id(id)?.addEventListener('change', _updateTileCount);
     });
     document.querySelectorAll('input[name="start"]')

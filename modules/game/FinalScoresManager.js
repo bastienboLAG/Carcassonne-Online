@@ -1,3 +1,5 @@
+import { stopGameTimer } from './GameTimer.js'; // ✅ FIX : n'était pas importé (le test typeof ci-dessous était toujours faux → chrono jamais arrêté)
+
 /**
  * FinalScoresManager - Gère les scores finaux et la modale associée
  * Extrait de home.js pour alléger le fichier principal
@@ -12,9 +14,20 @@ export class FinalScoresManager {
         this.updateTurnDisplay = updateTurnDisplay;
         this.gameConfig      = gameConfig;
 
-        this.gameEnded       = false;
-        this.finalScoresData = null;
+        // ✨ NOUVEAU : la modale a-t-elle déjà été ouverte automatiquement pour cette fin de partie ?
+        // Posé à true par computeAndApply / receiveFromNetwork (qui l'ouvrent eux-mêmes). Resté à false
+        // pour une fin de partie RESTAURÉE par full-state-sync (reconnexion) : TurnUI.updateTurnDisplay
+        // ouvre alors la modale une seule fois.
+        this.autoModalDone   = false;
     }
+
+    // ✅ FIX : l'état « partie terminée » vit dans gameState.finalScoresData (sérialisé, donc transporté
+    // par full-state-sync / host-snapshot), et non plus dans un champ local de ce manager (recréé à zéro
+    // chez un joueur qui revient). gameEnded et finalScoresData en sont dérivés ; les lecteurs
+    // existants (TurnUI, GameEventSetup) n'ont rien à changer.
+    get finalScoresData() { return this.gameState?.finalScoresData ?? null; }
+    set finalScoresData(v) { if (this.gameState) this.gameState.finalScoresData = v; }
+    get gameEnded() { return !!this.gameState?.finalScoresData; }
 
     /**
      * Calcul et application des scores finaux (appelé par l'hôte)
@@ -25,8 +38,8 @@ export class FinalScoresManager {
         const detailedScores = this.scoring.applyAndGetFinalScores(placedMeeples, this.gameState);
         console.log('💰 Scores finaux détaillés:', detailedScores);
 
-        this.gameEnded       = true;
-        this.finalScoresData = detailedScores;
+        this.finalScoresData = detailedScores; // ✅ FIX : pose gameState.finalScoresData (= partie terminée)
+        this.autoModalDone   = true;
 
         this.eventBus.emit('score-updated');
         this.updateTurnDisplay();
@@ -42,8 +55,8 @@ export class FinalScoresManager {
      */
     receiveFromNetwork(detailedScores, destroyedTilesCount = 0) {
         console.log('🏁 [SYNC] Fin de partie reçue');
-        this.gameEnded       = true;
-        this.finalScoresData = detailedScores;
+        this.finalScoresData = detailedScores; // ✅ FIX : pose gameState.finalScoresData (= partie terminée)
+        this.autoModalDone   = true;
         if (this.gameState) this.gameState.destroyedTilesCount = destroyedTilesCount;
 
         detailedScores.forEach(playerScore => {
@@ -56,7 +69,8 @@ export class FinalScoresManager {
                     monasteries:  playerScore.monasteries,
                     fields:       playerScore.fields,
                     goods:        playerScore.goods ?? 0,
-                    fairy:        playerScore.fairy ?? 0
+                    fairy:        playerScore.fairy ?? 0,
+                    buybacks:     playerScore.buybacks ?? 0 // ✨ NOUVEAU — Rachat de prisonnier
                 };
                 player.goods = playerScore.goodsTokens ?? { cloth: 0, wheat: 0, wine: 0 };
             }
@@ -75,7 +89,9 @@ export class FinalScoresManager {
         const isMobile = window.innerWidth < 768;
 
         // Arrêter le timer de partie et afficher le temps final dans la modale
-        if (typeof stopGameTimer === 'function') stopGameTimer();
+        // ✅ FIX : stopGameTimer est désormais importé. Uniquement si la partie est réellement terminée :
+        // la modale de debug (showDebugModal) peut être ouverte en cours de partie sans figer le chrono.
+        if (this.gameEnded) stopGameTimer();
         const timerEl = document.getElementById('game-timer');
         const timerText = timerEl ? timerEl.textContent : '';
         if (timerEl) timerEl.style.display = 'none';
@@ -114,6 +130,9 @@ export class FinalScoresManager {
         const hasMerchants = this.gameConfig?.extensions?.merchants;
         const hasFairy     = this.gameConfig?.extensions?.fairyScoreTurn
                           || this.gameConfig?.extensions?.fairyScoreZone;
+        // ✨ NOUVEAU — Rachat de prisonnier : colonne affichée uniquement si au moins un
+        // rachat a eu lieu durant la partie (gameState.hasPrisonerBuybacks).
+        const hasBuybacks  = !!this.gameState?.hasPrisonerBuybacks;
 
         // Mettre à jour les en-têtes
         const thead = table.querySelector('thead tr');
@@ -125,6 +144,7 @@ export class FinalScoresManager {
             <th>Champs</th>
             ${hasMerchants ? '<th>March.</th>' : ''}
             ${hasFairy     ? '<th>Fée</th>' : ''}
+            ${hasBuybacks  ? '<th>Rachats</th>' : ''}
             <th>Total</th>
         `;
 
@@ -145,6 +165,7 @@ export class FinalScoresManager {
             const vals = [player.cities, player.roads, player.monasteries, player.fields];
             if (hasMerchants) vals.push(player.goods ?? 0);
             if (hasFairy)     vals.push(player.fairy ?? 0);
+            if (hasBuybacks)  vals.push(player.buybacks ?? 0); // ✨ NOUVEAU
             vals.push(player.total); // Total toujours en dernier
 
             const totalIdx = vals.length - 1;
@@ -198,11 +219,14 @@ export class FinalScoresManager {
         const hasMerchantsMobile = this.gameConfig?.extensions?.merchants;
         const hasFairyMobile     = this.gameConfig?.extensions?.fairyScoreTurn
                                 || this.gameConfig?.extensions?.fairyScoreZone;
+        // ✨ NOUVEAU — Rachat de prisonnier : même condition d'affichage que sur desktop.
+        const hasBuybacksMobile  = !!this.gameState?.hasPrisonerBuybacks;
 
         const labels = ['Villes', 'Routes', 'Abbayes', 'Champs'];
         const keys   = ['cities', 'roads', 'monasteries', 'fields'];
         if (hasMerchantsMobile) { labels.push('Marchandises'); keys.push('goods'); }
         if (hasFairyMobile)     { labels.push('Fée');        keys.push('fairy'); }
+        if (hasBuybacksMobile)  { labels.push('Rachats');    keys.push('buybacks'); } // ✨ NOUVEAU
 
         detailedScores.forEach((player, index) => {
             if (player.color === 'spectator') return;
@@ -282,6 +306,7 @@ export class FinalScoresManager {
                     fields:      p.scoreDetail?.fields      || 0,
                     goods:       p.scoreDetail?.goods       || 0,
                     fairy:       p.scoreDetail?.fairy       || 0,
+                    buybacks:    p.scoreDetail?.buybacks    || 0, // ✨ NOUVEAU — Rachat de prisonnier
                     goodsTokens: p.goods || { cloth: 0, wheat: 0, wine: 0 },
                     total:       p.score
                 }))

@@ -12,6 +12,7 @@ import { UndoManager }         from './UndoManager.js';
 import { UnplaceableTileManager } from './UnplaceableTileManager.js';
 import { FinalScoresManager }  from './FinalScoresManager.js';
 import { DragonRules }         from '../rules/DragonRules.js';
+import { TowerRules }          from '../rules/TowerRules.js'; // ✨ NOUVEAU
 
 /**
  * GameModuleInitializer — Instancie tous les modules de jeu.
@@ -134,11 +135,17 @@ export class GameModuleInitializer {
             showMeepleActionCursors: d.showMeepleActionCursors,
             hideAllCursors:       d.hideAllCursors,
             updateTurnDisplay:    d.updateTurnDisplay,
+            renderAllTowersFromState: d.renderAllTowersFromState, // ✨ NOUVEAU — redessine towers/gardes après une annulation
         });
         d.setUndoManager(undoManager);
 
         // Extension Dragon
-        if (gameConfig.extensions?.dragon || gameConfig.tileGroups?.dragon) {
+        // ✅ FIX : DragonRules porte aussi la logique de la Fée (getFairyTargets, placeFairy). Les règles
+        // de score de la Fée (début de tour / fermeture de zone) doivent fonctionner SANS les tuiles
+        // Dragon ni la règle Dragon : on le crée donc aussi quand l'une d'elles est active. Sans effet de
+        // bord : tout ce qui concerne Dragon/Princesse/Portail reste protégé par tileGroups.dragon && extensions.xxx.
+        if (gameConfig.extensions?.dragon || gameConfig.tileGroups?.dragon
+            || gameConfig.extensions?.fairyScoreTurn || gameConfig.extensions?.fairyScoreZone) {
             const dragonRules = new DragonRules({
                 gameState, plateau: plateau.placedTiles, placedMeeples, eventBus, ruleRegistry
             });
@@ -146,6 +153,15 @@ export class GameModuleInitializer {
             console.log('🐉 [Dragon] DragonRules initialisé');
         } else {
             d.setDragonRules(null);
+        }
+
+        // ✨ NOUVEAU — Extension Tour
+        if (gameConfig.tileGroups?.tower && gameConfig.extensions?.tower) {
+            const towerRules = new TowerRules({ gameState, plateau });
+            d.setTowerRules(towerRules);
+            console.log('🗼 [Tour] TowerRules initialisé');
+        } else {
+            d.setTowerRules(null);
         }
 
         const unplaceableManager = new UnplaceableTileManager({

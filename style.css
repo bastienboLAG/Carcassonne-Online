@@ -1,4 +1,31 @@
 /* style.css */
+
+/* ✨ NOUVEAU : réglages de la barre joueurs mobile (ajustables sans toucher au reste)
+   --mobile-card-min-w : largeur minimale d'une carte joueur ; la rangée défile au-delà.
+                         Mettre 0 pour retrouver l'ancien comportement (cartes compressées, sans défilement).
+   --mobile-bar-h      : hauteur réelle de la barre, mesurée par ScorePanelUI (valeur de repli ci-dessous). */
+:root {
+    --mobile-card-min-w: 56px;
+    --mobile-bar-h: 56px;
+    --mobile-fade-w: 18px; /* largeur de l'estompage des bords de la barre quand elle peut défiler (0 = désactivé) */
+
+    /* ✨ NOUVEAU : fond gris des panels joueurs (PC + mobile) — remplace rgba(0,0,0,0.3), illisible
+       pour le meeple noir sur le plateau noir. Un seul endroit à ajuster pour tester d'autres teintes.
+       Les variantes "active" sont opaques (et non des teintes à 0.1) : une teinte translucide
+       remplacerait le gris et redonnerait un fond quasi transparent sur le plateau. */
+    --score-card-bg:        rgba(93, 109, 126, 0.85);
+    --score-card-border:    rgba(255, 255, 255, 0.2);
+    --score-card-bg-active: rgba(72, 130, 105, 0.88);  /* tour normal (vert) */
+    --score-card-bg-bonus:  rgba(140, 125, 60, 0.88);  /* tour bonus (or) */
+    --score-card-bg-dragon: rgba(140, 70, 50, 0.88);   /* phase dragon (rouge) */
+
+    /* ✨ NOUVEAU : couleurs des checkboxes du lobby (voir bloc « Checkboxes du lobby » plus bas) */
+    --checkbox-on:       #3498db; /* entièrement actif */
+    --checkbox-partial:  gold;    /* partiellement actif (coche maître) — même or que le reste de l'UI */
+    --checkbox-off:      #ffffff; /* inactif */
+    --checkbox-disabled: #6b7782; /* désactivé */
+}
+
 html, body {
     margin: 0;
     padding: 0;
@@ -805,7 +832,8 @@ button:disabled {
     height: 16px;
     min-width: 16px;
     cursor: pointer;
-    accent-color: gold;
+    /* ✨ NOUVEAU : accent-color: gold retiré — la couleur est désormais gérée par le bloc
+       « Checkboxes du lobby » ci-dessous (Opera ignorait accent-color). */
     flex-shrink: 0;
     /* Empêche le clic sur la coche de toggle le <details> */
     position: relative;
@@ -816,6 +844,55 @@ button:disabled {
 h3 .ext-master {
     vertical-align: middle;
     margin-left: 8px;
+}
+
+/* ✨ NOUVEAU — Checkboxes du lobby : redessinées (appearance: none) pour un rendu identique
+   sur tous les navigateurs. Opera ignorait accent-color et affichait ses cases natives en
+   noir et blanc ; les radios, déjà redessinées, n'avaient pas ce problème.
+   Code couleur :
+     blanc  = inactif
+     bleu   = entièrement actif (coche noire)
+     or     = partiellement actif, coches maîtres uniquement (trait noir)
+     gris   = désactivé
+   Les tailles (20px options, 16px coches maîtres) restent définies plus haut.
+   Limité à #lobby-page pour ne pas toucher les cases du panneau debug en jeu. */
+#lobby-page input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    border: 1px solid #888; /* ✨ épaisseur divisée par 2 (2px → 1px) */
+    border-radius: 4px;
+    background-color: var(--checkbox-off);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 100%;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+
+/* Entièrement actif : fond bleu + coche noire (trait plus gras) */
+#lobby-page input[type="checkbox"]:checked {
+    background-color: var(--checkbox-on);
+    border-color: var(--checkbox-on);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.6l3.3 3.3L13 4.6' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Partiellement actif (coche maître) : fond or + trait noir (plus gras) */
+#lobby-page input[type="checkbox"]:indeterminate {
+    background-color: var(--checkbox-partial);
+    border-color: var(--checkbox-partial);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8h9' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+/* Désactivé : gris (la coche noire reste visible si la case est cochée) */
+#lobby-page input[type="checkbox"]:disabled {
+    cursor: default;
+    background-color: var(--checkbox-disabled);
+    border-color: var(--checkbox-disabled);
+}
+
+#lobby-page input[type="checkbox"]:focus-visible {
+    outline: 2px solid gold;
+    outline-offset: 2px;
 }
 
 
@@ -898,7 +975,7 @@ h3 .ext-master {
     position: fixed;
     top: 20px;
     right: 50px;
-    width: 280px;
+    width: 320px;
     max-height: calc(100vh - 40px);
     display: flex;
     flex-direction: column;
@@ -919,27 +996,31 @@ h3 .ext-master {
 }
 
 .player-score-card {
-    background-color: rgba(0, 0, 0, 0.3);
-    border: 2px solid rgba(255, 255, 255, 0.1);
+    /* ✨ NOUVEAU : fond gris (variable --score-card-bg) au lieu de rgba(0,0,0,0.3) — le meeple noir
+       était invisible sur le plateau noir. */
+    background-color: var(--score-card-bg);
+    border: 2px solid var(--score-card-border);
     border-radius: 8px;
     padding: 15px;
     transition: all 0.3s;
 }
 
+/* ✨ NOUVEAU : les états de tour ont désormais un fond opaque teinté (et non plus une teinte à 0.1,
+   qui aurait écrasé le gris et rendu la carte quasi transparente). */
 .player-score-card.active {
     border-color: #2ecc71;
-    background-color: rgba(46, 204, 113, 0.1);
+    background-color: var(--score-card-bg-active);
 }
 
 .player-score-card.active-bonus {
     border-color: gold;
-    background-color: rgba(255, 215, 0, 0.12);
+    background-color: var(--score-card-bg-bonus);
     box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
 }
 
 .player-score-card.active-dragon {
     border-color: #c83200;
-    background-color: rgba(200, 50, 0, 0.12);
+    background-color: var(--score-card-bg-dragon);
     box-shadow: 0 0 10px rgba(200, 50, 0, 0.4);
 }
 
@@ -985,11 +1066,43 @@ h3 .ext-master {
     color: gold;
 }
 
+/* ✨ NOUVEAU : carte cliquable pour déplier/replier le détail (plusieurs peuvent rester ouvertes sur PC) */
+.player-score-card {
+    cursor: pointer;
+}
+
+/* ✨ NOUVEAU : chevron indicateur d'ouverture */
+.player-score-chevron {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    margin-left: 4px;
+    transition: transform 0.15s;
+}
+.player-score-card.open .player-score-chevron {
+    transform: rotate(180deg);
+}
+
+/* ⚠️ Ne touche PAS border-color/background : réservés à l'indicateur de tour
+   (vert=normal, gold=bonus, rouge=dragon). L'ouverture utilise outline. */
+.player-score-card.open {
+    outline: 2px solid rgba(255,255,255,0.35);
+    outline-offset: 2px;
+}
+
 .player-meeples-display {
     display: flex;
-    align-items: flex-end;
-    gap: 5px;
+    flex-direction: column; /* ✨ NOUVEAU : empile les lignes (meeples+spéciaux / marchandises) au lieu d'une seule ligne */
+    gap: 4px;
+}
+
+/* ✨ NOUVEAU : une "ligne" de groupe (meeples+spéciaux, marchandises, ou prison) — flex-wrap à l'intérieur d'elle-même */
+.meeples-row,
+.goods-row,
+.prison-row {
+    display: flex;
     flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
 }
 
 .player-meeples-display img {
@@ -997,9 +1110,32 @@ h3 .ext-master {
     opacity: 0.9;
 }
 
+/* ✅ FIX : contour noir visible SANS opacité globale (elle diluait aussi le contour). Le remplissage
+   reproduit le rendu de l'ancien (opacité 0.15 de blanc sur le gris du panel ≈ gris clair) par une
+   silhouette opaque : brightness(0) puis invert(0.52). Réglages :
+   - remplissage : invert(0.52) (0 = noir, 1 = blanc) ;
+   - contour : alpha 0.4 des 4 drop-shadow (0 = invisible, 1 = noir plein), épaisseur 1px.
+   padding + margin négative : le contour est dessiné hors de l'image et était rogné aux bords ;
+   le padding lui laisse la place, la marge négative annule le décalage de mise en page. */
 .player-meeples-display img.unavailable {
-    opacity: 0.15;
-    filter: grayscale(100%) brightness(3);
+    opacity: 1;
+    filter: brightness(0) invert(0.52)
+            drop-shadow(1px 0 0 rgba(0,0,0,0.4)) drop-shadow(-1px 0 0 rgba(0,0,0,0.4))
+            drop-shadow(0 1px 0 rgba(0,0,0,0.4)) drop-shadow(0 -1px 0 rgba(0,0,0,0.4));
+    padding: 2px;
+    margin: -2px;
+}
+
+/* ✨ NOUVEAU : chip icône + compteur "×N" — remplace la répétition d'icônes par exemplaire */
+.meeple-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+.meeple-chip-count {
+    font-size: 11px;
+    font-weight: bold;
+    color: #ecf0f1;
 }
 
 /* Les 3 boutons principaux ont la même largeur */
@@ -1162,7 +1298,8 @@ h3 .ext-master {
    ═══════════════════════════════════════════════════════ */
 
 #mobile-players-bar,
-#mobile-bottom-bar {
+#mobile-bottom-bar,
+#mobile-player-detail {
     display: none;
 }
 
@@ -1204,11 +1341,39 @@ h3 .ext-master {
         min-height: 0;
     }
 
+    /* ✨ NOUVEAU : rangée défilante à la main (gauche/droite), scrollbar masquée.
+       Padding vertical : l'overflow-x force un clipping vertical — il faut laisser la place à la
+       carte active agrandie (scale 1.05), à son halo et à l'outline de la carte ouverte. */
     #mobile-players-scores {
         display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
+        flex-wrap: nowrap;
+        gap: 3px; /* ✨ NOUVEAU : réduit (6px auparavant) */
         width: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 6px 4px;
+        box-sizing: border-box;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;      /* Firefox */
+        -ms-overflow-style: none;   /* IE/Edge */
+    }
+    #mobile-players-scores::-webkit-scrollbar {
+        display: none;              /* Chrome/Safari */
+    }
+
+    /* ✨ NOUVEAU : estompage du bord côté où il reste des cartes (classes posées par ScorePanelUI._updateScrollFade).
+       Masque (et non dégradé de couleur) : la barre est semi-transparente sur le plateau. */
+    #mobile-players-scores.can-scroll-right {
+        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--mobile-fade-w)), transparent 100%);
+                mask-image: linear-gradient(to right, #000 calc(100% - var(--mobile-fade-w)), transparent 100%);
+    }
+    #mobile-players-scores.can-scroll-left {
+        -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--mobile-fade-w));
+                mask-image: linear-gradient(to right, transparent 0, #000 var(--mobile-fade-w));
+    }
+    #mobile-players-scores.can-scroll-left.can-scroll-right {
+        -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--mobile-fade-w), #000 calc(100% - var(--mobile-fade-w)), transparent 100%);
+                mask-image: linear-gradient(to right, transparent 0, #000 var(--mobile-fade-w), #000 calc(100% - var(--mobile-fade-w)), transparent 100%);
     }
 
     /* Carte joueur mobile */
@@ -1216,20 +1381,27 @@ h3 .ext-master {
         display: flex;
         flex-direction: column;
         align-items: center;
-        background: rgba(0,0,0,0.3);
-        border: 2px solid rgba(255,255,255,0.1);
+        /* ✨ NOUVEAU : fond gris (variable --score-card-bg) au lieu de rgba(0,0,0,0.3) */
+        background: var(--score-card-bg);
+        border: 2px solid var(--score-card-border);
         border-radius: 8px;
-        padding: 4px 8px;
-        min-width: 80px;
-        flex: 1;
+        padding: 4px 6px;
+        /* ✨ NOUVEAU : largeur minimale réglable (--mobile-card-min-w, voir :root). Les cartes
+           s'étirent pour remplir la barre s'il y a de la place, sinon la rangée défile.
+           Avec --mobile-card-min-w: 0 → ancien comportement (cartes compressées). */
+        min-width: var(--mobile-card-min-w);
+        flex: 1 1 var(--mobile-card-min-w);
+        box-sizing: border-box;
         transition: all 0.2s;
-        opacity: 0.7;
+        /* ✨ NOUVEAU : 0.7 → 0.85 — à 0.7 le gris des cartes inactives devenait trop délavé */
+        opacity: 0.85;
         transform: scale(0.95);
+        cursor: pointer; /* ✨ NOUVEAU : la carte est cliquable pour ouvrir/fermer le détail */
     }
 
     .mobile-player-card.active {
         border-color: #2ecc71;
-        background: rgba(46, 204, 113, 0.15);
+        background: var(--score-card-bg-active);
         opacity: 1;
         transform: scale(1.05);
         box-shadow: 0 0 8px rgba(46, 204, 113, 0.4);
@@ -1237,7 +1409,7 @@ h3 .ext-master {
 
     .mobile-player-card.active-bonus {
         border-color: gold;
-        background: rgba(255, 215, 0, 0.15);
+        background: var(--score-card-bg-bonus);
         opacity: 1;
         transform: scale(1.05);
         box-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
@@ -1245,33 +1417,77 @@ h3 .ext-master {
 
     .mobile-player-card.active-dragon {
         border-color: #c83200;
-        background: rgba(200, 50, 0, 0.15);
+        background: var(--score-card-bg-dragon);
         opacity: 1;
         transform: scale(1.05);
         box-shadow: 0 0 8px rgba(200, 50, 0, 0.5);
     }
 
+    /* ✨ NOUVEAU : carte dont le détail est actuellement ouvert.
+       ⚠️ Ne touche PAS border-color/background : ces propriétés sont réservées
+       à l'indicateur de tour (vert=normal, gold=bonus, rouge=dragon) et ne
+       doivent jamais être écrasées par l'état d'ouverture du panel. On utilise
+       outline (propriété distincte) pour ne rien entrer en conflit. */
+    .mobile-player-card.open {
+        opacity: 1;
+        outline: 2px solid rgba(255,255,255,0.55);
+        outline-offset: 2px;
+    }
+
     .mobile-player-name {
+        display: flex; /* ✨ NOUVEAU : ne contient plus que l'icône meeple colorée (le pseudo est dans le détail) */
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+    /* ✨ NOUVEAU : meeple normal coloré, identifie le joueur (seul identifiant sur la carte fermée) */
+    .mobile-player-color-icon {
+        width: 16px;
+        height: 19px;
+        object-fit: contain;
+        flex-shrink: 0;
+    }
+
+    .mobile-player-name-text {
         font-size: 11px;
         font-weight: bold;
         color: white;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        max-width: 80px;
     }
 
     .mobile-player-score {
         font-size: 14px;
         font-weight: bold;
         color: gold;
+        white-space: nowrap;
+    }
+
+    /* ✨ NOUVEAU : compteur de la carte Spectateurs (pas de score doré) */
+    .mobile-player-score.mobile-spectator-count {
+        color: rgba(255,255,255,0.85);
+    }
+
+    /* ✨ NOUVEAU : chevron indiquant l'état ouvert/fermé du détail */
+    .mobile-player-chevron {
+        font-size: 9px;
+        color: rgba(255,255,255,0.5);
+        margin-top: 2px;
+        transition: transform 0.15s;
+        line-height: 1;
+    }
+    .mobile-player-card.open .mobile-player-chevron {
+        transform: rotate(180deg);
     }
 
     .mobile-player-meeples {
         display: flex;
-        flex-wrap: wrap;
-        align-items: flex-end;
-        gap: 2px;
+        flex-direction: column; /* ✨ NOUVEAU : empile les lignes au lieu d'une seule ligne */
+        gap: 3px;
         margin-top: 2px;
     }
 
@@ -1279,9 +1495,75 @@ h3 .ext-master {
         width: auto;
     }
 
+    /* ✅ FIX : même rendu que sur PC (voir commentaire de .player-meeples-display img.unavailable) */
     .mobile-player-meeples img.unavailable {
-        opacity: 0.2;
-        filter: grayscale(100%) brightness(3);
+        opacity: 1;
+        filter: brightness(0) invert(0.52)
+                drop-shadow(1px 0 0 rgba(0,0,0,0.4)) drop-shadow(-1px 0 0 rgba(0,0,0,0.4))
+                drop-shadow(0 1px 0 rgba(0,0,0,0.4)) drop-shadow(0 -1px 0 rgba(0,0,0,0.4));
+        padding: 2px;
+        margin: -2px;
+    }
+
+    /* ✨ NOUVEAU : chip icône + compteur en contexte mobile (même logique que PC) */
+    .mobile-player-meeples .meeple-chip-count {
+        font-size: 10px;
+    }
+
+    /* ✨ NOUVEAU : panel détaillé d'un joueur — détaché de la barre, centré, un seul ouvert à la fois */
+    #mobile-player-detail {
+        display: flex;
+        justify-content: center;
+        position: fixed;
+        /* ✅ FIX : placé sous la barre grâce à sa hauteur réelle (--mobile-bar-h, mesurée par
+           ScorePanelUI). Auparavant 56px en dur : une barre plus haute passait par-dessus le panel. */
+        top: var(--mobile-bar-h, 56px);
+        left: 0;
+        right: 0;
+        z-index: 49;
+        padding: 0 10px;
+        pointer-events: none; /* laisse passer les clics sauf sur le contenu de la carte */
+    }
+    #mobile-player-detail:empty {
+        display: none;
+    }
+    .mobile-player-detail-card {
+        pointer-events: auto;
+        /* ✨ NOUVEAU : gris, comme les cartes (le fond rgba(30,45,60,0.95) rendait le meeple noir
+           peu visible dans le détail) — légèrement plus opaque car il se superpose au plateau */
+        background: rgba(93, 109, 126, 0.96);
+        border: 1px solid rgba(255,255,255,0.25);
+        border-radius: 10px;
+        padding: 8px 12px 10px;
+        max-width: 320px;
+        width: 100%;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    }
+
+    /* ✨ NOUVEAU : en-tête du détail (meeple + pseudo + score) — le pseudo n'est plus sur la carte.
+       Isolé dans cette classe : `display: none;` ci-dessous suffit à le retirer si le rendu déplaît. */
+    .mobile-player-detail-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 6px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid rgba(255,255,255,0.12);
+    }
+    .mobile-player-detail-name {
+        flex: 1;
+        font-size: 13px;
+        font-weight: bold;
+        color: white;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .mobile-player-detail-score {
+        font-size: 13px;
+        font-weight: bold;
+        color: gold;
+        white-space: nowrap;
     }
 
     /* ── Plateau prend tout l'espace restant ───────────── */
@@ -1460,6 +1742,39 @@ h3 .ext-master {
 }
 
 /* ═══════════════════════════════════════════════════════
+   ✅ FIX — LOBBY PC : scrolls indépendants des deux panneaux
+   Avant : la page entière défilait avec un centrage vertical (align-items:center) → quand le
+   panneau de gauche grandissait (liste de joueurs + couleurs après création du groupe), le
+   débordement se répartissait moitié en haut (zone inatteignable par le scroll) : le titre
+   sortait de l'écran. Maintenant : la page du lobby ne défile plus, les deux panneaux sont
+   alignés en haut et chacun défile seul. Le mobile (≤768px) garde son scroll général unique.
+   La règle `body.home-page:has(...)` ne s'applique que tant que le lobby est affiché, pour ne
+   pas modifier la page de jeu (qui réutilise la classe `home-page` sur le body).
+   ═══════════════════════════════════════════════════════ */
+@media (min-width: 769px) {
+    body.home-page:has(> #lobby-page:not([style*="display: none"])) {
+        box-sizing: border-box; /* la hauteur 100% inclut le padding : plus de scroll parasite du body */
+        overflow: hidden;
+    }
+
+    #lobby-page {
+        height: 100%;
+        min-height: 0;
+        padding: 0;             /* le padding de 20px du body suffit comme marge */
+        box-sizing: border-box;
+        align-items: flex-start; /* panneaux collés en haut, plus de centrage vertical */
+        overflow: hidden;        /* plus de scroll général : chaque panneau défile seul */
+    }
+
+    #lobby-page .home-left,
+    #lobby-page .home-right {
+        box-sizing: border-box;
+        max-height: 100%;
+        overflow-y: auto;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════
    ABBÉ — Bouton de rappel sur le plateau
    ═══════════════════════════════════════════════════════ */
 @keyframes abbeRecallPulse {
@@ -1566,4 +1881,150 @@ h3 .ext-master {
 
 .menu-item-danger:hover {
     background: #e74c3c;
+}
+
+/* ═══════════════════════════════════════════════════════
+   ✨ NOUVEAU — Échange automatique de prisonniers (Extension Tour)
+   ═══════════════════════════════════════════════════════ */
+
+/* Voile gris plein écran affiché pendant qu'un joueur choisit lequel de ses
+   meeples récupérer dans le panel adverse. Défini entièrement en inline dans
+   index.html pour la position/couleur/z-index de base ; ici on ne gère que
+   la variation dynamique liée au mode sélection. */
+
+/* Pendant une sélection de prisonnier, on fait passer les conteneurs de score
+   au-dessus du voile gris (900) pour que le panel concerné reste visible et
+   cliquable, tout en laissant le reste de l'interface masqué en dessous. */
+body.prisoner-selection-mode #score-overlay,
+body.prisoner-selection-mode #mobile-players-bar,
+body.prisoner-selection-mode #mobile-player-detail {
+    z-index: 950;
+}
+
+/* Entrée de prisonnier rendue sélectionnable par ScorePanelUI.enablePrisonerSelection().
+   Utilisé aujourd'hui par l'échange automatique de prisonniers ; prévu pour être
+   réutilisé plus tard par le rachat de prisonnier. */
+.prisoner-selectable {
+    cursor: pointer;
+    border-radius: 6px;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.prisoner-selectable:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.85);
+}
+
+/* ✨ NOUVEAU — Masquage/mise en avant des panels pendant l'échange automatique de prisonniers
+   (et réutilisable tel quel pour le rachat de prisonnier, qui utilise le même mécanisme de
+   sélection dans ScorePanelUI). Trois classes posées dynamiquement par ScorePanelUI selon le
+   rôle de chaque panel pendant une sélection :
+   - .prisoner-selection-hidden  → panel d'un joueur non concerné, masqué entièrement
+   - .prisoner-selection-target  → panel du joueur qui détient les prisonniers proposés au choix
+   - .prisoner-selection-chooser → panel du joueur qui choisit (desktop uniquement — sur mobile
+                                    un seul panel est visible à la fois, donc ce cas ne se pose pas) */
+
+.player-score-card.prisoner-selection-hidden,
+.mobile-player-card.prisoner-selection-hidden {
+    display: none !important;
+}
+
+/* Panel cible : garde sa mise en page et son contenu STRICTEMENT identiques (rien n'est masqué
+   ni déplacé). Un calque sombre (0.9, comme le voile plein écran) recouvre tout le panel —
+   nom, score, meeples, prisonniers non concernés — et seuls les prisonniers proposés au choix
+   (.prisoner-selectable) sont remontés au-dessus de ce calque, donc nets et cliquables : c'est
+   le "trou" dans le calque. Toute future ligne ajoutée au panel est automatiquement recouverte. */
+.player-score-card.prisoner-selection-target,
+.mobile-player-card.prisoner-selection-target,
+.mobile-player-detail-card.prisoner-selection-target {
+    position: relative;
+    z-index: 10;
+}
+.player-score-card.prisoner-selection-target::after,
+.mobile-player-card.prisoner-selection-target::after,
+.mobile-player-detail-card.prisoner-selection-target::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+    pointer-events: none;
+    z-index: 5;
+}
+.mobile-player-detail-card.prisoner-selection-target::after {
+    border-radius: 10px;
+}
+.player-score-card.prisoner-selection-target .prisoner-selectable,
+.mobile-player-detail-card.prisoner-selection-target .prisoner-selectable {
+    position: relative;
+    z-index: 10;
+}
+
+/* Panel du joueur qui choisit (desktop uniquement) : reste visible et lisible mais recouvert
+   d'un calque sombre local, pour le distinguer clairement du panel cible sans le masquer. */
+.player-score-card.prisoner-selection-chooser {
+    position: relative;
+    z-index: 10;
+}
+.player-score-card.prisoner-selection-chooser::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    border-radius: 8px;
+    pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════
+   ✨ NOUVEAU — Spectateurs : carte groupée (panel) + bloc du lobby
+   ═══════════════════════════════════════════════════════ */
+
+/* Icône fantôme (cartes, listes de spectateurs) */
+.spectator-ghost-icon {
+    width: 18px;
+    height: 20px;
+    object-fit: contain;
+    flex-shrink: 0;
+    opacity: 0.9;
+}
+
+/* Carte « Spectateur(s) » desktop : replié, pas de marge sous l'en-tête */
+.player-score-card.spectator-card .player-score-header {
+    margin-bottom: 0;
+}
+.player-score-card.spectator-card.open .player-score-header {
+    margin-bottom: 10px;
+}
+
+/* Liste des spectateurs (desktop déplié + détail mobile) */
+.spectator-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.spectator-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #ecf0f1;
+    font-size: 14px;
+}
+.spectator-item span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Lobby : titre + emplacements du bloc Spectateurs (en dernier pour l'emporter sur .player-slot:not(.empty)) */
+.lobby-spectators-title {
+    font-size: 13px;
+    color: #bdc3c7;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 6px;
+}
+.player-slot.spectator-slot {
+    border-style: dashed;
+    border-color: rgba(255,255,255,0.3);
+    opacity: 0.85;
 }

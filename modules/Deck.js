@@ -47,6 +47,9 @@ export class Deck {
             optionalFetches.push(_loadGroup('Traders_Builders', ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24']));
         if (tileGroups.dragon)
             optionalFetches.push(_loadGroup('Dragon', ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24','25','26','27','28','29']));
+        // ✨ NOUVEAU : extension Tour
+        if (tileGroups.tower)
+            optionalFetches.push(_loadGroup('Tower', ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17']));
 
         const optionalResults = await Promise.all(optionalFetches);
         optionalResults.forEach(group => normalTiles.push(...group));
@@ -121,7 +124,7 @@ export class Deck {
                     normalDeck.push({ id: 'inns_cathedrals-03', zones: data.zones, imagePath: data.image });
                 } catch(e) { console.error('Erreur chargement inns_cathedrals-03:', e); }
             }
-            const testIds = ['base-04', 'dragon-22', 'dragon-22', 'dragon-29', 'dragon-18', 'dragon-22'];
+            const testIds = ['base-01', 'base-03', 'tower-01', 'dragon-03', 'dragon-16', 'base-04', 'base-04'];
             this.tiles = testIds.map(id => {
                 const found = normalDeck.find(t => t.id === id);
                 return found ? { ...found } : null;

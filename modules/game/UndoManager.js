@@ -1,3 +1,5 @@
+import { remapExtraStateIds } from '../GameState.js'; // ✨ NOUVEAU
+
 /**
  * UndoManager - Gère l'annulation des actions pendant un tour
  * Permet d'annuler la pose de meeple, puis la pose de tuile
@@ -61,10 +63,32 @@ export class UndoManager {
                 hasAbbot: p.hasAbbot,
                 hasLargeMeeple: p.hasLargeMeeple,
                 hasBuilder: p.hasBuilder,
-                hasPig:     p.hasPig
+                hasPig:     p.hasPig,
+                towerPieces: p.towerPieces, // ✨ NOUVEAU
+                // ✅ FIX : rachat de prisonnier — le score (payé par l'acheteur, encaissé par le
+                // capturant) est la seule mutation de score qui se produit DANS la fenêtre
+                // d'annulation d'un tour (toutes les autres, ex: score de zones fermées, ont
+                // déjà lieu après undoManager.reset(), donc jamais annulables). Sans ces deux
+                // champs, annuler une action postérieure à un rachat rétablissait bien le
+                // prisonnier et le compteur "une rançon par tour", mais laissait les points
+                // gagnés/perdus définitivement acquis.
+                score: p.score,
+                buybacks: p.scoreDetail?.buybacks ?? 0
             })),
             lastPlacedTile: this.lastPlacedTileBeforeTurn, // épingle avant ce tour
-            fairyState: this.deepCopy(this.gameState.fairyState ?? { ownerId: null, meepleKey: null })
+            fairyState: this.deepCopy(this.gameState.fairyState ?? { ownerId: null, meepleKey: null }),
+            // ✨ NOUVEAU : état persistant des extensions (towers/prisoners, et futures
+            // structures — moutons, granges, ponts, forteresses, cf. ARCHITECTURE.md).
+            // Copié en bloc, restauré génériquement par restoreExtraState() — aucune extension
+            // future n'a besoin de toucher ce fichier pour être prise en compte par l'undo.
+            extraState: this.deepCopy(this.gameState.extraState),
+            // ✅ FIX : rachat de prisonnier — le compteur "une rançon par tour" doit suivre le
+            // même cycle de vie que extraState.prisoners (qu'il verrouille). Sans ce champ dans
+            // le snapshot, annuler une tuile/un meeple posé APRÈS un rachat remettait bien le
+            // prisonnier en prison (via extraState ci-dessus) mais laissait _turnBuybackUsed à
+            // true, bloquant tout nouveau rachat pour le reste du tour alors que celui qui
+            // vient d'être annulé n'a plus d'effet.
+            turnBuybackUsed: this.gameState._turnBuybackUsed ?? false
         };
         
         // Reset état du tour
@@ -106,12 +130,20 @@ export class UndoManager {
                 hasAbbot: p.hasAbbot,
                 hasLargeMeeple: p.hasLargeMeeple,
                 hasBuilder: p.hasBuilder,
-                hasPig:     p.hasPig
+                hasPig:     p.hasPig,
+                towerPieces: p.towerPieces, // ✨ NOUVEAU
+                // ✅ FIX : voir saveTurnStart — même raison (rachat de prisonnier annulable)
+                score: p.score,
+                buybacks: p.scoreDetail?.buybacks ?? 0
             })),
             fairyState: this.deepCopy(this.gameState.fairyState ?? { ownerId: null, meepleKey: null }),
             pendingPortalTile: this.gameState._pendingPortalTile
                 ? JSON.parse(JSON.stringify(this.gameState._pendingPortalTile))
-                : null
+                : null,
+            // ✨ NOUVEAU : voir saveTurnStart — même conteneur générique
+            extraState: this.deepCopy(this.gameState.extraState),
+            // ✅ FIX : voir saveTurnStart — même raison
+            turnBuybackUsed: this.gameState._turnBuybackUsed ?? false
         };
         
         this.tilePlacedThisTurn = true;
@@ -145,10 +177,19 @@ export class UndoManager {
             dragonPos:   this.deepCopy(this.gameState.dragonPos),
             dragonPhase: this.deepCopy(this.gameState.dragonPhase),
             fairyState:  this.deepCopy(this.gameState.fairyState ?? { ownerId: null, meepleKey: null }),
+            // ✨ NOUVEAU : un déplacement du dragon peut manger un garde verrouillant une
+            // tour (cf. DragonRules._eatMeeplesAt) — l'annulation doit pouvoir le restaurer.
+            extraState:  this.deepCopy(this.gameState.extraState),
+            // ✅ FIX : voir saveTurnStart — même raison (cohérence avec extraState.prisoners)
+            turnBuybackUsed: this.gameState._turnBuybackUsed ?? false,
             playerMeeples: this.gameState.players.map(p => ({
                 id: p.id, meeples: p.meeples, hasAbbot: p.hasAbbot,
                 hasLargeMeeple: p.hasLargeMeeple, hasBuilder: p.hasBuilder,
-                hasPig: p.hasPig, hasFairy: p.hasFairy
+                hasPig: p.hasPig, hasFairy: p.hasFairy,
+                towerPieces: p.towerPieces, // ✨ NOUVEAU
+                // ✅ FIX : voir saveTurnStart — même raison (rachat de prisonnier annulable)
+                score: p.score,
+                buybacks: p.scoreDetail?.buybacks ?? 0
             }))
         };
         this.dragonMovePlacedThisTurn = true;
@@ -171,10 +212,28 @@ export class UndoManager {
         this.gameState.dragonPhase = this.deepCopy(snap.dragonPhase);
         this.gameState.fairyState  = this.deepCopy(snap.fairyState);
 
+        // ✨ NOUVEAU : restaurer extraState (towers/prisoners — un garde de tour mangé par
+        // le dragon pendant ce déplacement doit être reverrouillé)
+        this.restoreExtraState(snap.extraState);
+
+        // ✅ FIX : voir saveTurnStart — restaurer le compteur de rançon en cohérence avec
+        // extraState.prisoners restauré juste au-dessus.
+        this.gameState._turnBuybackUsed = snap.turnBuybackUsed ?? false;
+
         // Restaurer les meeples des joueurs
+        // ✅ FIX : `buybacks` (score.scoreDetail.buybacks) est un champ séparé, pas une
+        // propriété directe du joueur — on l'extrait avant Object.assign pour éviter de
+        // créer un p.buybacks parasite à côté de p.scoreDetail.buybacks. `score` en revanche
+        // est bien une propriété directe et peut passer par Object.assign normalement.
         snap.playerMeeples.forEach(pm => {
             const p = this.gameState.players.find(pl => pl.id === pm.id);
-            if (p) Object.assign(p, pm);
+            if (!p) return;
+            const { buybacks, ...rest } = pm;
+            Object.assign(p, rest);
+            if (buybacks !== undefined) {
+                p.scoreDetail = p.scoreDetail || {};
+                p.scoreDetail.buybacks = buybacks;
+            }
         });
 
         this.dragonMoveSnapshot = null;
@@ -277,6 +336,25 @@ export class UndoManager {
     }
 
     /**
+     * ✨ NOUVEAU : restaure gameState.extraState de façon générique, sans connaître la liste
+     * des sous-structures qu'il contient (towers, prisoners, et toute future structure
+     * d'extension type moutons/granges/ponts/forteresses — cf. ARCHITECTURE.md, section
+     * "Ajouter une extension avec pièces/état persistant"). Préserve l'identité des objets
+     * (vidage + réassignation) plutôt que de remplacer la référence, par cohérence avec le
+     * traitement de placedMeeples ailleurs dans ce fichier.
+     * @param {object} source - extraState sauvegardé (depuis un snapshot local ou reçu du réseau)
+     */
+    restoreExtraState(source) {
+        if (!source) return;
+        Object.keys(this.gameState.extraState).forEach(subKey => {
+            const target = this.gameState.extraState[subKey];
+            if (!target || typeof target !== 'object') return;
+            Object.keys(target).forEach(k => delete target[k]);
+            Object.assign(target, this.deepCopy(source[subKey] ?? {}));
+        });
+    }
+
+    /**
      * Restaurer un snapshot
      */
     restoreSnapshot(snapshot, placedMeeples) {
@@ -331,6 +409,27 @@ export class UndoManager {
             if (fairyOwner) fairyOwner.hasFairy = true;
         }
 
+        // ✨ NOUVEAU : restaurer extraState (towers/prisoners, et futures structures
+        // d'extension — générique, cf. restoreExtraState).
+        this.restoreExtraState(snapshot.extraState);
+
+        // ✅ FIX : rachat de prisonnier — restaurer le compteur "une rançon par tour" en
+        // cohérence avec extraState.prisoners restauré juste au-dessus. Sans cette ligne,
+        // annuler une action posée après un rachat remettait bien le prisonnier en prison
+        // mais laissait le joueur bloqué (impossible de racheter à nouveau ce tour-ci) alors
+        // que le rachat annulé n'a plus d'effet.
+        this.gameState._turnBuybackUsed = snapshot.turnBuybackUsed ?? false;
+
+        // ✨ NOUVEAU : champs transitoires liés à l'extension Tour, non couverts par
+        // extraState car turn-scoped et jamais sérialisés — doivent être explicitement
+        // réinitialisés ici, sinon une capture/pose d'étage annulée laisserait une
+        // vérification ou une cible de capture fantôme se déclencher plus tard dans le tour.
+        // gameState._freshCaptures peut contenir des entrées obsolètes après restauration ;
+        // c'est sans conséquence, car ScorePanelUI ne peut plus les atteindre (le prisonnier
+        // qu'elles référencent n'existe plus une fois extraState.prisoners restauré ci-dessus).
+        this.gameState._pendingTowerCapture    = null;
+        this.gameState._pendingReciprocalCheck = null;
+
         // Restaurer compteur de meeples des joueurs
         snapshot.playerMeeples.forEach(saved => {
             // Chercher par id d'abord, puis par nom+couleur (fallback reconnexion : peerId change)
@@ -342,6 +441,16 @@ export class UndoManager {
                 if (saved.hasLargeMeeple !== undefined) player.hasLargeMeeple = saved.hasLargeMeeple;
                 if (saved.hasBuilder     !== undefined) player.hasBuilder     = saved.hasBuilder;
                 if (saved.hasPig         !== undefined) player.hasPig         = saved.hasPig;
+                if (saved.towerPieces    !== undefined) player.towerPieces    = saved.towerPieces; // ✨ NOUVEAU
+                // ✅ FIX : rachat de prisonnier — restaurer le score et le détail "Rachats"
+                // (payé par l'acheteur, encaissé par le capturant) exactement comme n'importe
+                // quel autre champ de ce snapshot, sinon les points restent définitivement
+                // acquis/perdus après une annulation qui porte sur une action postérieure.
+                if (saved.score !== undefined) player.score = saved.score;
+                if (saved.buybacks !== undefined) {
+                    player.scoreDetail = player.scoreDetail || {};
+                    player.scoreDetail.buybacks = saved.buybacks;
+                }
             }
         });
     }
@@ -371,6 +480,22 @@ export class UndoManager {
     }
 
     /**
+     * ✨ NOUVEAU : un joueur est revenu sous un nouvel id réseau — remplacer l'ancien id dans les
+     * snapshots d'annulation (sinon restaurer un snapshot réintroduirait l'ancien id dans
+     * extraState, les meeples, la fée…). Voir GameState.remapPlayerId.
+     */
+    remapPlayerId(oldId, newId) {
+        [this.turnStartSnapshot, this.afterTilePlacedSnapshot, this.dragonMoveSnapshot].forEach(snap => {
+            if (!snap) return;
+            remapExtraStateIds(snap.extraState, oldId, newId);
+            if (snap.fairyState?.ownerId === oldId) snap.fairyState.ownerId = newId;
+            (snap.playerMeeples ?? []).forEach(pm => { if (pm.id === oldId) pm.id = newId; });
+            Object.values(snap.placedMeeples ?? {}).forEach(m => { if (m.playerId === oldId) m.playerId = newId; });
+        });
+        if (this.lastAbbeRecalled?.playerId === oldId) this.lastAbbeRecalled.playerId = newId;
+    }
+
+    /**
      * Deep copy d'un objet
      */
     deepCopy(obj) {
@@ -396,6 +521,15 @@ export class UndoManager {
         const gameConfig    = d.getGameConfig();
         const multiplayer   = d.getMultiplayer();
         const plateau       = this.plateau;
+
+        // ✨ NOUVEAU : redessine systématiquement l'état Tour (étages + gardes de
+        // verrouillage) depuis gameState.extraState.towers, qui a déjà été restauré à ce
+        // stade (par restoreSnapshot ou undoDragonMove, appelés avant applyLocally par
+        // undo()/applyRemote()). Plus simple et plus sûr que de traiter chaque branche
+        // ci-dessous séparément — une pose d'étage, une capture, un verrouillage ou un
+        // déplacement dragon ayant mangé un garde peuvent tous avoir eu lieu dans le même
+        // tour qu'une autre action annulée. Coût négligeable si l'extension Tour est inactive.
+        d.renderAllTowersFromState?.();
 
         // Cas dragon : annuler un déplacement dragon
         if (undoneAction.type === 'dragon-move-undo') {
@@ -470,7 +604,8 @@ export class UndoManager {
                 // Undo placement meeple normal : retirer le meeple DOM
                 document.querySelectorAll(`.meeple[data-key="${undoneAction.meeple.key}"]`).forEach(el => el.remove());
             } else {
-                // Undo éjection princesse : re-rendre tous les meeples du snapshot
+                // Undo éjection princesse OU pose d'étage/capture Tour : re-rendre tous les
+                // meeples du snapshot (le pion de tour a déjà été redessiné plus haut)
                 document.querySelectorAll('.meeple').forEach(el => el.remove());
                 Object.entries(placedMeeples).forEach(([key, meeple]) => {
                     const [mx, my, mp] = key.split(',').map(Number);
@@ -589,8 +724,25 @@ export class UndoManager {
                     player.hasLargeMeeple = saved.hasLargeMeeple;
                     player.hasBuilder     = saved.hasBuilder;
                     player.hasPig         = saved.hasPig;
+                    if (saved.towerPieces !== undefined) player.towerPieces = saved.towerPieces; // ✨ NOUVEAU
+                    // ✅ FIX : rachat de prisonnier — voir UndoManager.restoreSnapshot, même
+                    // raison, côté invité cette fois (état reçu de l'hôte via postUndoState).
+                    if (saved.score !== undefined) player.score = saved.score;
+                    if (saved.buybacks !== undefined) {
+                        player.scoreDetail = player.scoreDetail || {};
+                        player.scoreDetail.buybacks = saved.buybacks;
+                    }
                 }
             });
+            // ✨ NOUVEAU : restaurer extraState (towers/prisoners, générique) et les champs
+            // transitoires Tour — même traitement que restoreSnapshot() côté hôte.
+            if (s.extraState) this.restoreExtraState(s.extraState);
+            gameState._pendingTowerCapture    = null;
+            gameState._pendingReciprocalCheck = null;
+            // ✅ FIX : rachat de prisonnier — restaurer le compteur "une rançon par tour" côté
+            // invité, en cohérence avec extraState.prisoners restauré juste au-dessus (même
+            // raison que UndoManager.restoreSnapshot côté hôte).
+            gameState._turnBuybackUsed = s.turnBuybackUsed ?? false;
             // Restaurer et afficher la fée
             if (s.fairyState !== undefined && gameState.fairyState) {
                 gameState.fairyState.ownerId   = s.fairyState.ownerId;

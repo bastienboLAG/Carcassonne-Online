@@ -11,7 +11,7 @@
     <!-- ========== PAGE LOBBY ========== -->
     <div id="lobby-page" class="home-container">
         <div class="home-left">
-            <h1>CARCASSONNE</h1>
+            <h1>⚠️CARCASSONNE⚠️🔨</h1>
             
             <!-- Choix du pseudo -->
             <div class="pseudo-section">
@@ -106,14 +106,9 @@
                             <input type="checkbox" id="list-remaining" checked>
                             <span>Lister les tuiles restantes</span>
                         </label>
-                        <label class="toggle-option">
-                            <input type="checkbox" id="use-test-deck">
-                            <span>Deck de test (15 tuiles)</span>
-                        </label>
-                        <label class="toggle-option">
-                            <input type="checkbox" id="enable-debug">
-                            <span>Mode debug (boutons test)</span>
-                        </label>
+                        <!-- ✨ NOUVEAU (version publique) : cases « Deck de test » (use-test-deck) et « Mode debug »
+                             (enable-debug) retirées. Tout le code qui les lit est tolérant à leur absence
+                             (home.js : testDeck / enableDebug retombent à false). -->
                     </div>
                     <div class="options-col">
                         <h4>Tuile implaçable</h4>
@@ -211,6 +206,23 @@
                         <span>Points bonus fermeture de zone (Fée)</span>
                     </label>
                 </details>
+                <details>
+                    <summary>
+                        <strong>Tour</strong>
+                        <input type="checkbox" id="all-tower" class="ext-master" title="Tout activer/désactiver">
+                    </summary>
+                    <label class="toggle-option">
+                        <input type="checkbox" id="ext-tower" data-group="all-tower">
+                        <span>Capture par les tours</span>
+                    </label>
+                    <!-- ✨ NOUVEAU : rançon — dépend de ext-tower (grisée tant que la capture est décochée).
+                         Décochée : les prisonniers ne se libèrent que par échange automatique.
+                         Le coût (3 pts) doit rester aligné sur PRISONER_BUYBACK_COST (TowerConfig.js). -->
+                    <label class="toggle-option" id="ext-ransom-label">
+                        <input type="checkbox" id="ext-ransom" data-group="all-tower">
+                        <span>Rançon (3 pts)</span>
+                    </label>
+                </details>
             </div>
 
             <div class="config-section extensions-section">
@@ -237,6 +249,10 @@
                     <input type="checkbox" id="tiles-dragon" data-group="all-tiles">
                     <span>Princesse &amp; Dragon (+29 tuiles)</span>
                 </label>
+                <label class="toggle-option">
+                    <input type="checkbox" id="tiles-tower" data-group="all-tiles">
+                    <span>Tour (+18 tuiles)</span>
+                </label>
             </div>
 
             <button id="start-game-btn" class="start-button">Démarrer la partie</button>
@@ -250,6 +266,8 @@
         <div id="mobile-players-bar">
             <div id="mobile-players-scores"></div>
         </div>
+        <!-- ✨ NOUVEAU : panel détaillé d'un joueur (détaché de la barre, centré, un seul ouvert à la fois) -->
+        <div id="mobile-player-detail"></div>
 
         <div id="game-ui">
             <h2>Carcassonne</h2>
@@ -400,6 +418,35 @@
             <p id="tile-destroyed-text"></p>
             <div class="modal-buttons">
                 <button id="tile-destroyed-ok-btn" class="modal-btn confirm">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ✨ NOUVEAU : Modale d'échange automatique de prisonniers (Extension Tour) -->
+    <div id="prisoner-exchange-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>🔄 Échange de prisonniers</h2>
+            <p id="prisoner-exchange-text"></p>
+            <div class="modal-buttons">
+                <button id="prisoner-exchange-choose-btn" class="modal-btn confirm">Choisir</button>
+                <button id="prisoner-exchange-close-btn" class="modal-btn confirm">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ✨ NOUVEAU : Voile gris de sélection de prisonnier (Extension Tour) -->
+    <!-- ✅ FIX : opacité montée de 0.7 à 0.9 — le plateau restait trop visible derrière le voile
+         pendant un choix d'échange automatique de prisonniers. -->
+    <div id="prisoner-selection-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 900;"></div>
+
+    <!-- ✨ NOUVEAU : Modale de confirmation de rachat de prisonnier (Extension Tour) -->
+    <div id="prisoner-buyback-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>🔓 Racheter ce prisonnier ?</h2>
+            <p id="prisoner-buyback-text"></p>
+            <div class="modal-buttons">
+                <button id="prisoner-buyback-confirm-btn" class="modal-btn confirm">Confirmer</button>
+                <button id="prisoner-buyback-cancel-btn" class="modal-btn cancel">Annuler</button>
             </div>
         </div>
     </div>

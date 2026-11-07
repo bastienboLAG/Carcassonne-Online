@@ -149,6 +149,8 @@ export class SlotsUI {
 
     createCentralSlot() {
         console.log('🎯 Création du slot central...');
+        // ✅ FIX : jamais deux slots centraux (resynchronisation d'état, annulation de la 1re tuile)
+        document.querySelectorAll('.slot-central').forEach(s => s.remove());
         const slot = document.createElement('div');
         slot.className        = 'slot slot-central';
         slot.style.gridColumn = 50;
@@ -158,13 +160,17 @@ export class SlotsUI {
             slot.classList.add('slot-readonly');
             slot.style.cursor        = 'default';
             slot.style.pointerEvents = 'none';
-        } else {
-            slot.onclick = () => {
-                if (this.getTileEnMain() && !this.firstTilePlaced && this.onSlotClick) {
-                    this.onSlotClick(50, 50, this.getTileEnMain(), true);
-                }
-            };
         }
+        // ✅ FIX : le gestionnaire de clic est TOUJOURS posé, avec une garde relue au moment du
+        // clic. Auparavant il n'existait que si c'était déjà mon tour à la création : un slot
+        // créé « lecture seule » puis réactivé par onTurnChanged (qui ne change que le style)
+        // restait impossible à cliquer — la première tuile ne pouvait plus être posée.
+        slot.onclick = () => {
+            if (!this.isMyTurn || this.isBlocked) return;
+            if (this.getTileEnMain() && !this.firstTilePlaced && this.onSlotClick) {
+                this.onSlotClick(50, 50, this.getTileEnMain(), true);
+            }
+        };
 
         this.boardElement.appendChild(slot);
         console.log('✅ Slot central ajouté au board');
@@ -188,18 +194,28 @@ export class SlotsUI {
             return;
         }
 
+        // ✅ FIX : une case libre adjacente à plusieurs tuiles posées (ex: schéma en L) était visitée
+        // une fois par voisin, donc un div.slot était créé à chaque fois dans la même cellule — les
+        // fonds semi-transparents s'additionnaient (gris plus intense). Ce Set mémorise les cases
+        // où un slot existe déjà pour n'en créer qu'un seul par case.
+        const createdSlots = new Set();
+
         for (let coord in this.plateau.placedTiles) {
             const [x, y] = coord.split(',').map(Number);
-            this.generateSlotsAround(x, y, tile);
+            this.generateSlotsAround(x, y, tile, createdSlots);
         }
     }
 
-    generateSlotsAround(x, y, tile) {
+    generateSlotsAround(x, y, tile, createdSlots = new Set()) {
         const directions = [{dx:0, dy:-1}, {dx:1, dy:0}, {dx:0, dy:1}, {dx:-1, dy:0}];
         directions.forEach(({ dx, dy }) => {
             const nx = x + dx, ny = y + dy;
+            // ✅ FIX : slot déjà créé pour cette case depuis un autre voisin → on ne le double pas
+            const slotKey = `${nx},${ny}`;
+            if (createdSlots.has(slotKey)) return;
             if (!this.plateau.isFree(nx, ny)) return;
             if (!this.plateau.canPlaceTile(nx, ny, tile, this.isRiverPhase)) return;
+            createdSlots.add(slotKey);
 
             const slot = document.createElement('div');
             slot.className        = 'slot';

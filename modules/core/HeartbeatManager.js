@@ -1,6 +1,9 @@
 /**
  * HeartbeatManager - Détecte les pertes de connexion silencieuses
- * Envoie un ping toutes les 5s, alerte après 30s sans réponse
+ * Envoie un ping toutes les 2 s, alerte après 5 s sans réponse (2 pings perdus d'affilée).
+ * Même valeur dans les deux sens : un invité qui juge l'hôte perdu, et l'hôte qui juge un invité
+ * parti. Les fausses alertes de l'hôte après SA PROPRE coupure sont filtrées ailleurs
+ * (ReconnectionManager._isHostIsolated) ; ce délai alimente HostMigration (HOST_GRACE_MS).
  */
 export class HeartbeatManager {
     constructor({ multiplayer, onPeerTimeout }) {
@@ -9,8 +12,10 @@ export class HeartbeatManager {
         this._interval      = null;
         this._lastPong      = {}; // { peerId: timestamp }
         this._timedOut      = new Set(); // peers déjà signalés
-        this._PING_INTERVAL = 5000;  // 5s (tests: 3s, prod: 5s)
-        this._TIMEOUT       = 30000; // 30s (tests: 15s, prod: 30s)
+        // ✅ FIX : détection plus rapide (auparavant ping 3 s / timeout 10 s). Le timeout reste
+        // supérieur à 2 intervalles : un seul pong manqué ou en retard ne déclenche pas d'alerte.
+        this._PING_INTERVAL = 2000;  // 2 s
+        this._TIMEOUT       = 5000;  // 5 s
     }
 
     start() {
@@ -52,6 +57,12 @@ export class HeartbeatManager {
      */
     receivePong(peerId) {
         this._lastPong[peerId] = Date.now();
+        // ✅ FIX : un pair qui répond de nouveau est vivant — le retirer des « déjà signalés ».
+        // Sans cela, un invité qui avait détecté la perte de l'hôte puis l'avait retrouvé (même
+        // id) ne détectait JAMAIS une seconde perte du même hôte (garde `_timedOut`), et restait
+        // bloqué sur une connexion morte. Côté invité uniquement : côté hôte, c'est le
+        // handshake de reconnexion (CAS 3/5) qui réactive le joueur, pas un simple pong.
+        if (!this.multiplayer.isHost) this._timedOut.delete(peerId);
     }
 
     /**

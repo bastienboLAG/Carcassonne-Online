@@ -28,6 +28,16 @@ import {
     renderDragonPiece, renderFairyPiece, removeFairyPiece, releaseFairyIfDetached,
 } from './modules/game/DragonUI.js';
 import {
+    initTowerUI, clearTowerCursors, checkPendingReciprocalExchange,
+    renderAllTowersFromState, // ✨ NOUVEAU — redessine towers/gardes après undo ou reconnexion
+    // ✅ FIX NOUVEAU — blocage de l'échange automatique de prisonniers pendant qu'un choix
+    // est en attente : résolution automatique à l'exclusion, remap d'identité à la
+    // reconnexion, réaffichage de la modale après un reload de page.
+    resolvePendingPrisonerExchangeForPlayer,
+    restorePendingPrisonerExchangeUI,
+} from './modules/game/TowerUI.js';
+import { TowerRules } from './modules/rules/TowerRules.js'; // ✨ NOUVEAU (import direct non utilisé ici mais gardé pour clarté — l'instanciation réelle se fait dans GameModuleInitializer)
+import {
     initTurnUI,
     updateTurnDisplay, updateMobileButtons, updateMobileTilePreview,
     afficherMessage, afficherToast, hideToast,
@@ -67,6 +77,7 @@ import { GameEventSetup }         from './modules/game/GameEventSetup.js';
 import { UnplaceableTileManager } from './modules/game/UnplaceableTileManager.js';
 import { HeartbeatManager }       from './modules/core/HeartbeatManager.js';
 import { FinalScoresManager }     from './modules/game/FinalScoresManager.js';
+import { HostMigration }          from './modules/game/HostMigration.js'; // ✨ NOUVEAU — changement d'hôte
 
 import { ScorePanelUI }    from './modules/ui/ScorePanelUI.js';
 import { SlotsUI }         from './modules/ui/SlotsUI.js';
@@ -153,6 +164,7 @@ let meepleDisplayUI = null;
 
 let unplaceableManager = null;
 let dragonRules = null;   // Extension Princesse & Dragon
+let towerRules  = null;   // ✨ NOUVEAU — Extension Tour
 let finalScoresManager = null;
 
 // ── Reconnexion / Pause ──────────────────────────────────────────────────────
@@ -160,6 +172,81 @@ const PAUSE_TIMEOUT_MS = 60_000;  // 1 min (tests) → 3 min (prod)
 let reconnectionManager = null;
 let gameSyncCallbacks   = null;   // instance GameSyncCallbacks, expose hostDrawAndSend()
 const _voluntaryLeaves = new Set(); // peerIds ayant quitté volontairement (leave-game)
+
+// ✨ NOUVEAU : met à jour tous les affichages du code de partie (menu en jeu, lobby) — appelé
+// après un changement d'hôte. Auparavant ces textes n'étaient écrits qu'au démarrage de partie
+// (initGameMenu) / à la création ou la jonction du salon.
+function _refreshGameCodeDisplays() {
+    const menu = document.getElementById('menu-code-display');
+    if (menu) menu.textContent = `Code : ${gameCode || '—'}`;
+    const lobbyText = document.getElementById('game-code-text');
+    if (lobbyText) lobbyText.textContent = `Code: ${gameCode}`;
+    const lobbyBox = document.getElementById('game-code-container');
+    if (lobbyBox && gameCode) lobbyBox.style.display = 'block';
+}
+
+// ✨ NOUVEAU (option B) : l'ancien hôte, informé que la partie continue chez un nouvel hôte,
+// quitte son rôle et rejoint automatiquement avec le nouveau code (même pseudo → CAS 3).
+async function _rejoinAsGuest(code, inGame = true) {
+    returnToInitialLobby();
+    // returnToInitialLobby() détruit l'ancien peer après 100 ms : attendre avant de rejoindre
+    await new Promise(r => setTimeout(r, 900));
+    document.getElementById('join-code-input').value = code;
+    // En partie : réponse automatique player-info au game-in-progress (pas de modale
+    // joueur/spectateur). Au salon, la jonction normale suffit (pas de game-in-progress).
+    if (inGame) window._isAutoReconnecting = true;
+    await _doJoin(false);
+}
+
+// ✨ NOUVEAU — Changement d'hôte en cours de partie (snapshot, élection, promotion)
+let hostMigration = null;
+function _getHostMigration() {
+    if (!hostMigration) {
+        hostMigration = new HostMigration({
+            getMultiplayer:         () => multiplayer,
+            getGameSync:            () => gameSync,
+            getGameState:           () => gameState,
+            getReconnectionManager: () => reconnectionManager,
+            getHeartbeatManager:    () => heartbeatManager,
+            getTurnManager:         () => turnManager,
+            getUndoManager:         () => undoManager,
+            getDeck:                () => deck,
+            getPlayers:             () => players,
+            setPlayers:             (v) => { players = v; },
+            getIsHost:              () => isHost,
+            setIsHost:              (v) => { isHost = v; },
+            setGameCode:            (v) => { gameCode = v; _refreshGameCodeDisplays(); },
+            getVoluntaryLeaves:     () => _voluntaryLeaves,
+            rejoinAsGuest:          (code, inGame) => _rejoinAsGuest(code, inGame),
+            // ✨ NOUVEAU (lot 2) — hôte de lobby
+            prepareHostLobby:       () => _prepareHostLobby(),
+            activateHostLobby:      () => _activateHostLobby(),
+            refreshLobby:           () => { lobbyUI.setPlayers(players); updateLobbyUI(); },
+            sendLobbyPlayerInfo:    () => multiplayer.broadcast({
+                type: 'player-info', name: playerName, color: playerColor,
+                isSpectator: playerColor === 'spectator',
+                version: APP_VERSION,
+                origin: window.location.hostname + window.location.pathname.replace(/\/+$/, ''),
+            }),
+            setCurrentTileForPlayer:(v) => { currentTileForPlayer = v; },
+            setPendingAbbePoints:   (v) => { pendingAbbePoints = v; },
+            hideAllCursors:         () => hideAllCursors(),
+            resolvePendingPrisonerExchange: (id) => resolvePendingPrisonerExchangeForPlayer(id),
+            attachGameSyncCallbacks: () => attachGameSyncCallbacks(),
+            getInGameNetworkDeps:   () => _buildInGameNetworkDeps(),
+            refreshGameMenu: () => initGameMenu({
+                getGameConfig:  () => gameConfig,
+                getIsHost:      () => isHost,
+                getGameCode:    () => gameCode,
+                getIsSpectator: () => _isSpectator(),
+            }),
+            updateTurnDisplay,
+            afficherToast,
+            returnToInitialLobby:   (msg) => returnToInitialLobby(msg),
+        });
+    }
+    return hostMigration;
+}
 
 function _isSpectator() {
     if (!gameState || !multiplayer) return false;
@@ -251,6 +338,15 @@ eventBus.on('tile-drawn', (data) => {
     if (isOwnTurnStart && gameState) {
         gameState._pendingPrincessTile = null;
         gameState._pendingPortalTile = null;
+        // ✅ FIX : _pendingTowerCapture (transitoire, non sérialisé — voir GameState.js)
+        // manquait ici. Côté invité, GameEventSetup._installEndTurn retourne avant de le
+        // remettre à null (seul l'hôte le fait, sur SA copie locale) : sans ce reset au
+        // début du tour suivant du même joueur, une ancienne cible de capture Tour
+        // (ex: le garde d'une tour voisine, calculé lors d'une pose d'étage un tour
+        // précédent) pouvait réapparaître comme curseur cliquable sans qu'aucun nouvel
+        // étage n'ait été posé ce tour-ci (showPendingTowerCaptureIfAny relit cette
+        // valeur à chaque showMeepleActionCursors).
+        gameState._pendingTowerCapture = null;
     }
     // Invité : reset des flags de placement du tour précédent
     // (l'hôte le fait via undoManager.reset(), le guest doit le faire ici)
@@ -297,14 +393,32 @@ eventBus.on('tile-drawn', (data) => {
     }
 
 
-    if (isOwnTurnStart && isMyTurn && tilePlacement && unplaceableManager) {
-        const isRiverPhase = tuileEnMain?.id?.startsWith('river-') ?? false;
-        const placeable = unplaceableManager.isTilePlaceable(tuileEnMain, tilePlacement.plateau, isRiverPhase);
-        if (!placeable) {
-            const actionText = gameConfig?.unplaceableAction === 'reshuffle'
-                ? 'remise dans la pioche'
-                : 'détruite';
-            unplaceableManager.showUnplaceableBadge(tuileEnMain, actionText);
+    // ✅ FIX : une tuile reçue par resynchronisation d'état complet (changement d'hôte, reconnexion,
+    // rechargement de page — `fromFullSync`, posé par ReconnectionManager.applyFullStateSync) n'est
+    // pas un « début de tour propre » (isOwnTurnStart est faux car fromNetwork), donc la vérification
+    // « tuile implaçable » ne s'exécutait JAMAIS pour elle : le joueur concerné restait bloqué sans
+    // badge ni modale (slots grisés pour une tuile dragon sans volcan, ou aucun slot pour une tuile
+    // réellement implaçable). On la vérifie donc aussi dans ce cas, pour le joueur dont c'est le tour.
+    const _isFullSyncDraw = !!data.fromFullSync;
+    if ((isOwnTurnStart || _isFullSyncDraw) && isMyTurn && tilePlacement && unplaceableManager) {
+        // Tuile dragon sans volcan : le badge dédié est normalement posé par hostDrawAndSend
+        // (pioche normale) ; pour une tuile reçue par full-state-sync, c'est ici qu'on le pose.
+        const _isDragonPrematureFS = _isFullSyncDraw && !!(
+            gameConfig?.tileGroups?.dragon && gameConfig?.extensions?.dragon &&
+            tileHasDragonZone(tuileEnMain) &&
+            !Object.values(plateau.placedTiles ?? {}).some(t => tileHasVolcanoZone(t))
+        );
+        if (_isDragonPrematureFS) {
+            unplaceableManager.showUnplaceableBadgeDragon(tuileEnMain.id);
+        } else {
+            const isRiverPhase = tuileEnMain?.id?.startsWith('river-') ?? false;
+            const placeable = unplaceableManager.isTilePlaceable(tuileEnMain, tilePlacement.plateau, isRiverPhase);
+            if (!placeable) {
+                const actionText = gameConfig?.unplaceableAction === 'reshuffle'
+                    ? 'remise dans la pioche'
+                    : 'détruite';
+                unplaceableManager.showUnplaceableBadge(tuileEnMain, actionText);
+            }
         }
     }
 });
@@ -321,6 +435,17 @@ eventBus.on('turn-changed', (data) => {
     if (turnManager && data.isBonusTurn !== undefined) {
         turnManager.isBonusTurn = data.isBonusTurn;
     }
+    // ✨ NOUVEAU : un changement de tour signifie que l'action précédente ne peut plus être
+    // annulée — les captures de tour en attente de validation deviennent définitivement
+    // rachetables (cf. GameState._freshCaptures / TowerUI.setupPrisonerBuyback).
+    if (gameState) gameState._freshCaptures = [];
+    // ✅ FIX : rachat de prisonnier — une seule rançon par tour de jeu, un tour bonus
+    // (bâtisseur) comptant comme la suite du tour précédent. À cet instant,
+    // turnManager.isBonusTurn a déjà été mis à jour ci-dessus (ou l'était déjà pour le
+    // tour en cours) : on ne réinitialise donc ce flag que lorsqu'on entre dans un
+    // véritable nouveau tour (isBonusTurn === false), jamais lors du passage vers/depuis
+    // le tour bonus du même joueur (cf. GameState._turnBuybackUsed).
+    if (gameState && !turnManager?.isBonusTurn) gameState._turnBuybackUsed = false;
     updateTurnDisplay();
 });
 
@@ -506,6 +631,185 @@ colorOptions.forEach(option => {
 // ═══════════════════════════════════════════════════════
 // LOBBY — créer une partie
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// ✨ NOUVEAU — Installation d'un hôte de lobby
+// Factorisé depuis le clic « Créer une partie » pour être réutilisé quand un invité devient
+// hôte (changement d'hôte en partie ou au lobby — voir modules/game/HostMigration.js).
+// ═══════════════════════════════════════════════════════
+let _hostOptionSyncInstalled = false;
+
+function _installHostLobbyOptionSync() {
+    if (_hostOptionSyncInstalled) return; // listeners DOM : une seule installation (relisent `multiplayer` dynamiquement)
+    _hostOptionSyncInstalled = true;
+
+    // Sync temps réel de toutes les options vers les invités
+    // ✨ NOUVEAU : 'ext-ransom' ajouté (rançon, dépend de la capture par les tours)
+    ['base-fields', 'list-remaining', 'use-test-deck', 'enable-debug', 'ext-abbot', 'tiles-abbot', 'ext-large-meeple', 'ext-cathedrals', 'ext-inns', 'tiles-inns-cathedrals', 'tiles-traders-builders', 'ext-builder', 'ext-merchants', 'ext-pig', 'tiles-dragon', 'ext-dragon', 'ext-princess', 'ext-portal', 'ext-fairy-protection', 'ext-fairy-score-turn', 'ext-fairy-score-zone', 'tiles-tower', 'ext-tower', 'ext-ransom'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', (e) => {
+            multiplayer.broadcast({ type: 'option-change', option: id, value: e.target.checked });
+        });
+    });
+    // Sync des radios (unplaceable + start)
+    document.querySelectorAll('input[name="unplaceable"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            if (e.target.checked) multiplayer.broadcast({ type: 'option-change', option: 'unplaceable', value: e.target.value });
+        });
+    });
+    document.querySelectorAll('input[name="start"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            if (e.target.checked) multiplayer.broadcast({ type: 'option-change', option: 'start', value: e.target.value });
+        });
+    });
+}
+
+function _lobbyHeartbeatTimeout(peerId) {
+    players = players.filter(p => p.id !== peerId);
+    lobbyUI.setPlayers(players);
+    multiplayer.broadcast({ type: 'players-update', players });
+    console.warn(`💔 Joueur ${peerId} retiré du lobby (timeout heartbeat)`);
+}
+
+function _buildHostLobbyHandler() {
+    return (data, from) => {
+        console.log('📨 [HÔTE] Reçu:', data);
+
+        if (data.type === 'player-info') {
+            // Vérifier compatibilité version + origine
+            const _compat = _checkCompatibility(data.version, data.origin);
+            if (!_compat.ok) {
+                multiplayer.sendTo(from, { type: 'rejoin-rejected', reason: _compat.reason });
+                return;
+            }
+            if (!players.find(p => p.id === from)) {
+                // ✅ FIX : seules les couleurs de joueurs comptent comme « prises » — 'spectator' est
+                // partagée par tous les spectateurs. Auparavant un 2e spectateur se voyait réattribuer
+                // une vraie couleur libre, et un 7e joueur (plus aucune couleur libre) recevait 'blue'
+                // en doublon. ✨ NOUVEAU : sans couleur libre (salon complet), le nouvel arrivant
+                // devient automatiquement spectateur.
+                const takenPlaying = players.filter(p => p.color !== 'spectator').map(p => p.color);
+                let assigned;
+                if (data.isSpectator || data.color === 'spectator') assigned = 'spectator';
+                else if (!takenPlaying.includes(data.color))        assigned = data.color;
+                else assigned = allColors.find(c => !takenPlaying.includes(c)) || 'spectator';
+                players.push({ id: from, name: data.name, color: assigned, isHost: false });
+                lobbyUI.setPlayers(players);
+            }
+            multiplayer.broadcast({ type: 'players-update', players });
+
+            // ✅ Envoyer l'état courant des options directement au nouvel invité
+            // (les broadcasts précédents ne l'avaient pas encore, il les a manqués)
+            const currentOptions = {
+                'base-fields':           document.getElementById('base-fields')?.checked           ?? true,
+                'list-remaining':        document.getElementById('list-remaining')?.checked        ?? true,
+                'use-test-deck':         document.getElementById('use-test-deck')?.checked         ?? false,
+                'enable-debug':          document.getElementById('enable-debug')?.checked          ?? false,
+                'unplaceable':           document.querySelector('input[name="unplaceable"]:checked')?.value ?? 'reshuffle',
+                'ext-abbot':             document.getElementById('ext-abbot')?.checked             ?? false,
+                'tiles-abbot':           document.getElementById('tiles-abbot')?.checked           ?? false,
+                'ext-large-meeple':      document.getElementById('ext-large-meeple')?.checked      ?? false,
+                'ext-cathedrals':        document.getElementById('ext-cathedrals')?.checked        ?? false,
+                'ext-inns':              document.getElementById('ext-inns')?.checked              ?? false,
+                'tiles-inns-cathedrals': document.getElementById('tiles-inns-cathedrals')?.checked ?? false,
+                'tiles-traders-builders':document.getElementById('tiles-traders-builders')?.checked ?? false,
+                'ext-builder':           document.getElementById('ext-builder')?.checked           ?? false,
+                'ext-merchants':         document.getElementById('ext-merchants')?.checked         ?? false,
+                'ext-pig':               document.getElementById('ext-pig')?.checked               ?? false,
+                'tiles-dragon':          document.getElementById('tiles-dragon')?.checked          ?? false,
+                'ext-dragon':            document.getElementById('ext-dragon')?.checked            ?? false,
+                'ext-princess':          document.getElementById('ext-princess')?.checked          ?? false,
+                'ext-portal':            document.getElementById('ext-portal')?.checked            ?? false,
+                'ext-fairy-protection':  document.getElementById('ext-fairy-protection')?.checked  ?? false,
+                'ext-fairy-score-turn':  document.getElementById('ext-fairy-score-turn')?.checked  ?? false,
+                'ext-fairy-score-zone':  document.getElementById('ext-fairy-score-zone')?.checked  ?? false,
+                'tiles-tower':           document.getElementById('tiles-tower')?.checked           ?? false, // ✨ NOUVEAU
+                'ext-tower':             document.getElementById('ext-tower')?.checked             ?? false, // ✨ NOUVEAU
+                'ext-ransom':            document.getElementById('ext-ransom')?.checked            ?? false, // ✨ NOUVEAU — rançon
+                'start':                 document.querySelector('input[name="start"]:checked')?.value ?? 'unique',
+            };
+            multiplayer.sendTo(from, { type: 'options-sync', options: currentOptions });
+        }
+
+        if (data.type === 'color-change') {
+            const player     = players.find(p => p.id === data.playerId);
+            // ✅ FIX : 'spectator' n'est jamais « prise » (plusieurs spectateurs possibles)
+            const colorTaken = data.color !== 'spectator' && players.some(p => p.id !== data.playerId && p.color === data.color);
+            if (player && !colorTaken) {
+                player.color = data.color;
+                lobbyUI.updatePlayersList();
+                multiplayer.broadcast({ type: 'players-update', players });
+            }
+        }
+
+        if (data.type === 'player-order-update') {
+            players = data.players;
+            lobbyUI.setPlayers(players);
+        }
+
+        if (data.type === 'player-left') {
+            // Un invité quitte volontairement
+            players = players.filter(p => p.id !== from);
+            lobbyUI.setPlayers(players);
+            multiplayer.broadcast({ type: 'players-update', players });
+        }
+
+        // ✨ NOUVEAU : le nouvel hôte du salon prévient l'ancien hôte (revenu en ligne)
+        if (data.type === 'host-moved') {
+            _getHostMigration().onHostMoved(data, from);
+        }
+    };
+}
+
+/**
+ * Prépare un hôte de lobby : handler lobby hôte (rangé dans multiplayer._lobbyHostHandler, repris
+ * par LobbyNavigator.returnToLobby), synchro des options, callbacks du salon. N'active PAS le
+ * handler : voir _activateHostLobby (au lobby) — une partie en cours garde sa propre chaîne.
+ */
+function _prepareHostLobby() {
+    lobbyUI.setIsHost(true);
+    _installHostLobbyOptionSync();
+    multiplayer._lobbyHostHandler = _buildHostLobbyHandler();
+
+    // Hôte : kick un invité
+    lobbyUI.onKickPlayer = (playerId) => {
+        multiplayer.sendTo(playerId, { type: 'you-are-kicked' });
+        players = players.filter(p => p.id !== playerId);
+        lobbyUI.setPlayers(players);
+        multiplayer.broadcast({ type: 'players-update', players });
+    };
+
+    // Hôte : quitter le lobby — ✨ NOUVEAU : passe la main à un invité au lieu de fermer le salon
+    lobbyUI.onHostLeave = () => _getHostMigration().leaveLobbyAsHost();
+}
+
+/** Active l'écoute lobby d'un hôte (création de partie, ou invité promu hôte au lobby). */
+function _activateHostLobby() {
+    // Un invité promu a encore le heartbeat de son ancien rôle : le remplacer (au premier
+    // joueur connecté, onPlayerJoined démarre le heartbeat hôte comme à la création).
+    if (heartbeatManager) { heartbeatManager.stop(); heartbeatManager = null; }
+
+    multiplayer.onPlayerJoined = (playerId) => {
+        console.log('👤 Nouveau joueur connecté:', playerId);
+        if (heartbeatManager) {
+            // Heartbeat déjà actif : juste enregistrer le nouveau peer
+            heartbeatManager._lastPong[playerId] = Date.now();
+        } else {
+            // Premier joueur : démarrer le heartbeat
+            _startHeartbeat(_lobbyHeartbeatTimeout);
+        }
+    };
+
+    // ✅ Retrait immédiat si un invité déconnecte dans le lobby
+    multiplayer.onPlayerLeft = (peerId) => {
+        console.log('👋 [LOBBY] Joueur déconnecté:', peerId);
+        players = players.filter(p => p.id !== peerId);
+        lobbyUI.setPlayers(players);
+        multiplayer.broadcast({ type: 'players-update', players });
+    };
+
+    multiplayer.onDataReceived = multiplayer._lobbyHostHandler;
+}
+
 document.getElementById('create-game-btn').addEventListener('click', async () => {
     if (!playerName) { alert('Veuillez entrer un pseudo !'); return; }
 
@@ -522,141 +826,8 @@ document.getElementById('create-game-btn').addEventListener('click', async () =>
         lobbyUI.setIsHost(true);
         lobbyUI.setPlayers(players);
 
-        // Sync temps réel de toutes les options vers les invités
-        ['base-fields', 'list-remaining', 'use-test-deck', 'enable-debug', 'ext-abbot', 'tiles-abbot', 'ext-large-meeple', 'ext-cathedrals', 'ext-inns', 'tiles-inns-cathedrals', 'tiles-traders-builders', 'ext-builder', 'ext-merchants', 'ext-pig', 'tiles-dragon', 'ext-dragon', 'ext-princess', 'ext-portal', 'ext-fairy-protection', 'ext-fairy-score-turn', 'ext-fairy-score-zone'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.addEventListener('change', (e) => {
-                multiplayer.broadcast({ type: 'option-change', option: id, value: e.target.checked });
-            });
-        });
-        // Sync des radios (unplaceable + start)
-        document.querySelectorAll('input[name="unplaceable"]').forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                if (e.target.checked) multiplayer.broadcast({ type: 'option-change', option: 'unplaceable', value: e.target.value });
-            });
-        });
-        document.querySelectorAll('input[name="start"]').forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                if (e.target.checked) multiplayer.broadcast({ type: 'option-change', option: 'start', value: e.target.value });
-            });
-        });
-
-        const _lobbyHeartbeatTimeout = (peerId) => {
-            players = players.filter(p => p.id !== peerId);
-            lobbyUI.setPlayers(players);
-            multiplayer.broadcast({ type: 'players-update', players });
-            console.warn(`💔 Joueur ${peerId} retiré du lobby (timeout heartbeat)`);
-        };
-
-        multiplayer.onPlayerJoined = (playerId) => {
-            console.log('👤 Nouveau joueur connecté:', playerId);
-            if (heartbeatManager) {
-                // Heartbeat déjà actif : juste enregistrer le nouveau peer
-                heartbeatManager._lastPong[playerId] = Date.now();
-            } else {
-                // Premier joueur : démarrer le heartbeat
-                _startHeartbeat(_lobbyHeartbeatTimeout);
-            }
-        };
-
-        // ✅ Retrait immédiat si un invité déconnecte dans le lobby
-        multiplayer.onPlayerLeft = (peerId) => {
-            console.log('👋 [LOBBY] Joueur déconnecté:', peerId);
-            players = players.filter(p => p.id !== peerId);
-            lobbyUI.setPlayers(players);
-            multiplayer.broadcast({ type: 'players-update', players });
-        };
-
-        multiplayer._lobbyHostHandler = null; // sera set après définition
-        const _hostLobbyHandler = (data, from) => {
-            console.log('📨 [HÔTE] Reçu:', data);
-
-            if (data.type === 'player-info') {
-                // Vérifier compatibilité version + origine
-                const _compat = _checkCompatibility(data.version, data.origin);
-                if (!_compat.ok) {
-                    multiplayer.sendTo(from, { type: 'rejoin-rejected', reason: _compat.reason });
-                    return;
-                }
-                if (!players.find(p => p.id === from)) {
-                    const taken    = players.map(p => p.color);
-                    const assigned = taken.includes(data.color)
-                        ? (allColors.find(c => !taken.includes(c)) || 'blue')
-                        : data.color;
-                    players.push({ id: from, name: data.name, color: assigned, isHost: false });
-                    lobbyUI.setPlayers(players);
-                }
-                multiplayer.broadcast({ type: 'players-update', players });
-
-                // ✅ Envoyer l'état courant des options directement au nouvel invité
-                // (les broadcasts précédents ne l'avaient pas encore, il les a manqués)
-                const currentOptions = {
-                    'base-fields':           document.getElementById('base-fields')?.checked           ?? true,
-                    'list-remaining':        document.getElementById('list-remaining')?.checked        ?? true,
-                    'use-test-deck':         document.getElementById('use-test-deck')?.checked         ?? false,
-                    'enable-debug':          document.getElementById('enable-debug')?.checked          ?? false,
-                    'unplaceable':           document.querySelector('input[name="unplaceable"]:checked')?.value ?? 'reshuffle',
-                    'ext-abbot':             document.getElementById('ext-abbot')?.checked             ?? false,
-                    'tiles-abbot':           document.getElementById('tiles-abbot')?.checked           ?? false,
-                    'ext-large-meeple':      document.getElementById('ext-large-meeple')?.checked      ?? false,
-                    'ext-cathedrals':        document.getElementById('ext-cathedrals')?.checked        ?? false,
-                    'ext-inns':              document.getElementById('ext-inns')?.checked              ?? false,
-                    'tiles-inns-cathedrals': document.getElementById('tiles-inns-cathedrals')?.checked ?? false,
-                    'tiles-traders-builders':document.getElementById('tiles-traders-builders')?.checked ?? false,
-                    'ext-builder':           document.getElementById('ext-builder')?.checked           ?? false,
-                    'ext-merchants':         document.getElementById('ext-merchants')?.checked         ?? false,
-                    'ext-pig':               document.getElementById('ext-pig')?.checked               ?? false,
-                    'tiles-dragon':          document.getElementById('tiles-dragon')?.checked          ?? false,
-                    'ext-dragon':            document.getElementById('ext-dragon')?.checked            ?? false,
-                    'ext-princess':          document.getElementById('ext-princess')?.checked          ?? false,
-                    'ext-portal':            document.getElementById('ext-portal')?.checked            ?? false,
-                    'ext-fairy-protection':  document.getElementById('ext-fairy-protection')?.checked  ?? false,
-                    'ext-fairy-score-turn':  document.getElementById('ext-fairy-score-turn')?.checked  ?? false,
-                    'ext-fairy-score-zone':  document.getElementById('ext-fairy-score-zone')?.checked  ?? false,
-                    'start':                 document.querySelector('input[name="start"]:checked')?.value ?? 'unique',
-                };
-                multiplayer.sendTo(from, { type: 'options-sync', options: currentOptions });
-            }
-
-            if (data.type === 'color-change') {
-                const player     = players.find(p => p.id === data.playerId);
-                const colorTaken = players.some(p => p.id !== data.playerId && p.color === data.color);
-                if (player && !colorTaken) {
-                    player.color = data.color;
-                    lobbyUI.updatePlayersList();
-                    multiplayer.broadcast({ type: 'players-update', players });
-                }
-            }
-
-            if (data.type === 'player-order-update') {
-                players = data.players;
-                lobbyUI.setPlayers(players);
-            }
-
-            if (data.type === 'player-left') {
-                // Un invité quitte volontairement
-                players = players.filter(p => p.id !== from);
-                lobbyUI.setPlayers(players);
-                multiplayer.broadcast({ type: 'players-update', players });
-            }
-        };
-        multiplayer.onDataReceived = _hostLobbyHandler;
-        multiplayer._lobbyHostHandler = _hostLobbyHandler;
-
-        // Hôte : kick un invité
-        lobbyUI.onKickPlayer = (playerId) => {
-            multiplayer.sendTo(playerId, { type: 'you-are-kicked' });
-            players = players.filter(p => p.id !== playerId);
-            lobbyUI.setPlayers(players);
-            multiplayer.broadcast({ type: 'players-update', players });
-        };
-
-        // Hôte : quitter le lobby (kick général + retour menu)
-        lobbyUI.onHostLeave = () => {
-            const invites = players.filter(p => !p.isHost);
-            if (invites.length > 0) multiplayer.broadcast({ type: 'you-are-kicked' });
-            returnToInitialLobby();
-        };
+        _prepareHostLobby();
+        _activateHostLobby();
 
     } catch (error) {
         console.error('❌ Erreur:', error);
@@ -724,6 +895,10 @@ function _makeJoiner() {
         returnToInitialLobby,
         startGameForInvite,
         updateLobbyUI,
+        // ✨ NOUVEAU — changement d'hôte au salon (HostMigration)
+        onLobbyHostLost:     () => _getHostMigration().onLobbyHostLost(),
+        onLobbyHostHello:    () => _getHostMigration().onLobbyHostHello(),
+        onLobbyHostTransfer: (data) => _getHostMigration().onLobbyHostTransfer(data),
         updateAllAvailability,
         updateOptionsAccess,
         updateMasterCheckboxes,
@@ -753,7 +928,8 @@ document.getElementById('join-cancel-btn').addEventListener('click', () => {
     document.getElementById('join-modal').style.display = 'none';
 });
 
-function _showRoleChoiceModal(cb) { lobbyUI.showRoleChoiceModal(cb); }
+// ✨ NOUVEAU : `opts` transmis (ex. { playerDisabled } — partie complète : seul « Spectateur » proposé)
+function _showRoleChoiceModal(cb, opts) { lobbyUI.showRoleChoiceModal(cb, opts); }
 
 function showJoinError(msg) { lobbyUI.showJoinError(msg); }
 
@@ -766,8 +942,10 @@ document.getElementById('start-game-btn').addEventListener('click', async () => 
     gameConfig = {
         playFields:         document.getElementById('base-fields').checked,
         showRemainingTiles: document.getElementById('list-remaining').checked,
-        testDeck:           document.getElementById('use-test-deck').checked,
-        enableDebug:        document.getElementById('enable-debug').checked,
+        // ✅ FIX (version publique) : les cases « Deck de test » et « Mode debug » ont été retirées
+        // de index.html — lecture tolérante à leur absence, retombe à false.
+        testDeck:           document.getElementById('use-test-deck')?.checked ?? false,
+        enableDebug:        document.getElementById('enable-debug')?.checked ?? false,
         unplaceableAction:  document.querySelector('input[name="unplaceable"]:checked')?.value || 'destroy',
         startType: document.querySelector('input[name="start"]:checked')?.value || 'unique',
         extensions: {
@@ -784,7 +962,11 @@ document.getElementById('start-game-btn').addEventListener('click', async () => 
             portal:          document.getElementById('ext-portal')?.checked              ?? false,
             fairyProtection: document.getElementById('ext-fairy-protection')?.checked     ?? false,
             fairyScoreTurn:  document.getElementById('ext-fairy-score-turn')?.checked     ?? false,
-            fairyScoreZone:  document.getElementById('ext-fairy-score-zone')?.checked     ?? false
+            fairyScoreZone:  document.getElementById('ext-fairy-score-zone')?.checked     ?? false,
+            tower:           document.getElementById('ext-tower')?.checked               ?? false, // ✨ NOUVEAU
+            // ✨ NOUVEAU : rançon (rachat de prisonnier). Sans elle, les prisonniers ne sont libérés que
+            // par échange automatique (cf. TowerUI.setupPrisonerBuyback / executePrisonerBuybackHost).
+            ransom:          document.getElementById('ext-ransom')?.checked              ?? false
         },
         tileGroups: {
             base:  true,
@@ -792,6 +974,7 @@ document.getElementById('start-game-btn').addEventListener('click', async () => 
             inns_cathedrals:  document.getElementById('tiles-inns-cathedrals')?.checked   ?? false,
             traders_builders: document.getElementById('tiles-traders-builders')?.checked  ?? false,
             dragon:           document.getElementById('tiles-dragon')?.checked            ?? false,
+            tower:            document.getElementById('tiles-tower')?.checked             ?? false, // ✨ NOUVEAU
             river: document.querySelector('input[name="start"]:checked')?.value === 'river'
         }
     };
@@ -805,8 +988,6 @@ document.getElementById('start-game-btn').addEventListener('click', async () => 
     await startGame();
 });
 
-// ═══════════════════════════════════════════════════════
-// INITIALISATION COMMUNE DES MODULES
 // ═══════════════════════════════════════════════════════
 // INITIALISATION COMMUNE DES MODULES
 // ═══════════════════════════════════════════════════════
@@ -832,6 +1013,7 @@ function initializeGameModules() {
         getTilePreviewUI:     () => tilePreviewUI,
         getUnplaceableManager:() => unplaceableManager,
         getDragonRules:       () => dragonRules,
+        getTowerRules:        () => towerRules, // ✨ NOUVEAU
         getSlotsUI:           () => slotsUI,
         getLastPlacedTile:    () => lastPlacedTile,
         getScoring:           () => scoring,
@@ -848,6 +1030,7 @@ function initializeGameModules() {
         setMeepleDisplayUI:   (v) => { meepleDisplayUI  = v; },
         setUndoManager:       (v) => { undoManager      = v; },
         setDragonRules:       (v) => { dragonRules      = v; },
+        setTowerRules:        (v) => { towerRules       = v; }, // ✨ NOUVEAU
         setUnplaceableManager:(v) => { unplaceableManager = v; },
         setFinalScoresManager:(v) => { finalScoresManager = v; },
         setTuileEnMain:       (v) => { tuileEnMain = v; },
@@ -872,6 +1055,7 @@ function initializeGameModules() {
         showDragonMoveCursors,
         showDragonVisitedTiles,
         hideAllCursors,
+        renderAllTowersFromState, // ✨ NOUVEAU — relayé jusqu'à UndoManager.initVisualHandlers
     }).init();
 }
 
@@ -882,6 +1066,7 @@ function attachGameSyncCallbacks() {
         undoManager, unplaceableManager, scoring, zoneMerger, slotsUI, eventBus,
         plateau, gameConfig, ruleRegistry, scorePanelUI, tilePlacement, dragonRules,
         finalScoresManager,
+        remapPlayerId: (oldId, newId) => _remapPlayerEverywhere(oldId, newId), // ✨ NOUVEAU
         getPlacedMeeples:  () => placedMeeples,
         getWaitingToRedraw: () => waitingToRedraw,
         setWaitingToRedraw: (v) => { waitingToRedraw = v; updateTurnDisplay(); },
@@ -959,6 +1144,13 @@ function attachGameSyncCallbacks() {
         isHost,
     });
     gameSyncCallbacks.attach(isHost);
+    _getHostMigration().install(); // ✨ NOUVEAU : snapshot (hôte) / réception du snapshot (invités)
+    // ✅ FIX : rejoin-rejected reçu en partie (ex. « Partie complète ») n'était géré par personne
+    // (GameSync l'intercepte avant le handler lobby) : la modale de reconnexion restait affichée.
+    gameSync.onRejoinRejected = (reason) => {
+        reconnectionManager?.hideReconnectOverlay();
+        returnToInitialLobby(reason || 'Impossible de rejoindre la partie.');
+    };
 }
 
 function _hostDrawAndSend() { return gameSyncCallbacks?.hostDrawAndSend() ?? null; }
@@ -981,6 +1173,34 @@ eventBus.on('network-dragon-state-update', (data) => {
     // Retirer visuellement les meeples mangés
     if (data.eatenKeys?.length) {
         data.eatenKeys.forEach(key => {
+            // ✅ FIX : un garde verrouillant une tour n'est pas dans placedMeeples — sa clé
+            // spéciale "tower-lock:x,y" (posée par DragonRules._eatMeeplesAt) désigne le pion
+            // visuel .tower-lock-meeple du conteneur de cette tuile, pas un .meeple[data-key].
+            // Sans ce cas, le garde mangé par le dragon restait affiché visuellement chez les
+            // invités, alors que l'état (retour réserve, déverrouillage) était déjà correct
+            // côté hôte et répercuté ici via gameState.extraState.towers (désérialisé plus
+            // tôt via GameState.deserialize()/mutation directe côté hôte).
+            if (key.startsWith('tower-lock:')) {
+                const coords = key.slice('tower-lock:'.length);
+                // ✅ FIX : broadcastDragonState() ne transporte que dragonPos/dragonPhase/
+                // fairyState/players — jamais gameState.extraState. Le déverrouillage de la
+                // tour (lockedBy/lockMeepleType/lockMeepleColor mis à null) n'était donc
+                // appliqué QUE sur la copie de gameState de l'hôte (via DragonRules
+                // ._eatMeeplesAt), jamais répercuté sur la copie locale d'un invité. Résultat :
+                // la tour restait "verrouillée par ce joueur" à tort dans son propre état —
+                // l'empêchant d'y reposer un étage/garde plus tard (TowerRules.isLocked
+                // renvoie true), ET laissant la fée continuer de le proposer comme cible
+                // valide (DragonRules.getFairyTargets relit ce même état local). On applique
+                // donc ici la même mutation que côté hôte.
+                const tower = gameState.extraState?.towers?.[coords];
+                if (tower) {
+                    tower.lockedBy        = null;
+                    tower.lockMeepleType  = null;
+                    tower.lockMeepleColor = null;
+                }
+                document.querySelector(`.meeple-container[data-pos="${coords}"] .tower-lock-meeple`)?.remove();
+                return;
+            }
             document.querySelectorAll(`.meeple[data-key="${key}"]`).forEach(el => el.remove());
             delete placedMeeples[key];
             releaseFairyIfDetached(key);
@@ -991,6 +1211,12 @@ eventBus.on('network-dragon-state-update', (data) => {
     if (gameState.dragonPos) {
         renderDragonPiece(gameState.dragonPos.x, gameState.dragonPos.y);
     }
+    // ✅ FIX : re-synchroniser le rendu visuel de la fée avec l'état reçu de l'hôte —
+    // nécessaire car la fée peut désormais être attachée à un garde de tour mangé par le
+    // dragon (cf. DragonRules._eatMeeplesAt), et gameState.fairyState vient d'être écrasé
+    // par data.fairyState juste au-dessus sans qu'aucun rendu ne soit déclenché ici.
+    if (gameState.fairyState?.meepleKey) renderFairyPiece(gameState.fairyState.meepleKey);
+    else removeFairyPiece();
 
     // Détecter si le dragon vient de se déplacer (position changée)
     const newPos = gameState.dragonPos ? `${gameState.dragonPos.x},${gameState.dragonPos.y}` : null;
@@ -1069,7 +1295,14 @@ eventBus.on('fairy-detached-show-targets', () => {
  */
 function buildPlayersForBroadcast() {
     if (!gameState) return players;
-    const enriched = [...players];
+    // ✅ FIX : joindre l'état `disconnected` de gameState à chaque joueur de la liste. Sans cela,
+    // un joueur qui revient avec le MÊME id (CAS 5) restait affiché « déconnecté » chez les invités
+    // reconnectés avant lui : leur full-state-sync le décrivait encore déconnecté et players-update
+    // ne remettait jamais ce drapeau à false (désynchronisation « qui voit qui en ligne »).
+    const enriched = players.map(p => {
+        const gp = gameState.players.find(x => x.id === p.id);
+        return gp ? { ...p, disconnected: !!gp.disconnected } : p;
+    });
     gameState.players.forEach(gp => {
         if (gp.kicked && gp.color !== 'spectator') {
             // Ajouter seulement s'il n'est pas déjà dans la liste
@@ -1177,6 +1410,24 @@ function _makeStarter() {
             getRuleRegistry:      () => ruleRegistry,
             afficherToast,
         }),
+        // ✨ NOUVEAU — deps pour initTowerUI
+        getTowerUIDeps: () => ({
+            getGameState:        () => gameState,
+            getGameConfig:       () => gameConfig,
+            getMultiplayer:      () => multiplayer,
+            getGameSync:         () => gameSync,
+            getTowerRules:       () => towerRules,
+            getZoneMerger:       () => zoneMerger,
+            getPlacedMeeples:    () => placedMeeples,
+            getPlateau:          () => plateau,
+            getScorePanelUI:     () => scorePanelUI, // ✨ NOUVEAU — échange automatique de prisonniers
+            getUndoManager:      () => undoManager,
+            getIsHost:           () => isHost,
+            getIsMyTurn:         () => isMyTurn,
+            onUpdateTurnDisplay: () => updateTurnDisplay(),
+            hideAllCursors:      () => hideAllCursors(),
+            afficherToast, // ✨ NOUVEAU — toast du rachat de prisonnier
+        }),
         // deps pour initMeepleActionsUI
         getMeepleActionsUIDeps: () => ({
             getGameState:           () => gameState,
@@ -1223,6 +1474,13 @@ function _makeStarter() {
             afficherToast,
             onGameSyncInit:          () => { if (gameSync) gameSync.init(); },
             onReturnToInitialLobby:  () => returnToInitialLobby(),
+            // ✅ FIX NOUVEAU — résout automatiquement (prisonnier le plus ancien) un échange
+            // de prisonniers en attente si le joueur exclu est celui qui devait choisir.
+            resolvePendingPrisonerExchange: (peerId) => resolvePendingPrisonerExchangeForPlayer(peerId),
+            // ✨ NOUVEAU — perte de l'hôte côté invité → changement d'hôte (HostMigration)
+            onHostLost: () => _getHostMigration().onHostLost(),
+            // ✨ NOUVEAU — l'hôte constate qu'il est lui-même isolé du réseau
+            onHostIsolated: () => _getHostMigration().onSelfIsolated(),
         }),
         // deps pour reconnectionManager.initStateHandlers
         getStateHandlerDeps: () => ({
@@ -1251,33 +1509,58 @@ function _makeStarter() {
             renderFairyPiece,
             startGameTimerFrom,
             updateTurnDisplay,
+            renderAllTowersFromState, // ✨ NOUVEAU — corrige le rendu des tours manquant à la reconnexion
+            // ✅ FIX NOUVEAU — réaffiche la modale d'échange de prisonnier après un
+            // full-state-sync si un choix était en attente au moment du rechargement.
+            restorePendingPrisonerExchangeUI,
         }),
         // deps pour reconnectionManager.initInGameNetworkHandler
-        getInGameNetworkDeps: () => ({
-            getGameState:           () => gameState,
-            getGameSync:            () => gameSync,
-            getGameConfig:          () => gameConfig,
-            getEventBus:            () => eventBus,
-            getPlayers:             () => players,
-            setPlayers:             (v) => { players = v; },
-            getPlacedMeeples:       () => placedMeeples,
-            getScorePanelUI:        () => scorePanelUI,
-            getTurnManager:         () => turnManager,
-            getTuileEnMain:         () => tuileEnMain,
-            getHeartbeatManager:    () => heartbeatManager,
-            getVoluntaryLeaves:     () => _voluntaryLeaves,
-            getPlayerName:          () => playerName,
-            getPlayerColorVar:      () => playerColor,
-            buildPlayersForBroadcast,
-            afficherToast,
-            updateTurnDisplay,
-            pauseGame,
-            resumeGame,
-            startHeartbeat:             (cb) => _startHeartbeat(cb),
-            startAutoReconnect:          () => _startAutoReconnect(),
-            excludeDisconnectedPlayer:   (name) => _excludeDisconnectedPlayer(name),
-        }),
+        getInGameNetworkDeps: () => _buildInGameNetworkDeps(),
     });
+}
+
+// ✨ NOUVEAU : un joueur est revenu sous un nouvel id réseau — remplace l'ancien id PARTOUT :
+// gameState (joueurs, tours verrouillées, prisonniers, fée, états transitoires), snapshots
+// d'annulation, meeples posés. Appelé par l'hôte (ReconnectionManager, CAS 3) puis par chaque
+// invité à la réception de `player-id-remapped` (GameSyncCallbacks).
+function _remapPlayerEverywhere(oldId, newId) {
+    if (!oldId || !newId || oldId === newId) return;
+    gameState?.remapPlayerId(oldId, newId);
+    undoManager?.remapPlayerId(oldId, newId);
+    Object.values(placedMeeples).forEach(m => { if (m.playerId === oldId) m.playerId = newId; });
+    eventBus.emit('score-updated'); // redessine les panneaux (prisonniers, couleurs)
+}
+
+// ✨ NOUVEAU : deps du handler réseau en cours de partie, extraites de _makeStarter() pour
+// pouvoir être réutilisées par HostMigration lors de la promotion d'un invité en hôte.
+function _buildInGameNetworkDeps() {
+    return {
+        getGameState:           () => gameState,
+        getGameSync:            () => gameSync,
+        getGameConfig:          () => gameConfig,
+        getEventBus:            () => eventBus,
+        getPlayers:             () => players,
+        setPlayers:             (v) => { players = v; },
+        getPlacedMeeples:       () => placedMeeples,
+        getScorePanelUI:        () => scorePanelUI,
+        getTurnManager:         () => turnManager,
+        getTuileEnMain:         () => tuileEnMain,
+        getHeartbeatManager:    () => heartbeatManager,
+        getVoluntaryLeaves:     () => _voluntaryLeaves,
+        getPlayerName:          () => playerName,
+        getPlayerColorVar:      () => playerColor,
+        buildPlayersForBroadcast,
+        afficherToast,
+        updateTurnDisplay,
+        pauseGame,
+        resumeGame,
+        startHeartbeat:             (cb) => _startHeartbeat(cb),
+        startAutoReconnect:          () => _startAutoReconnect(),
+        excludeDisconnectedPlayer:   (name) => _excludeDisconnectedPlayer(name),
+        // ✅ FIX NOUVEAU — remap de l'identité réseau (CAS 3 : même joueur qui
+        // reprend son identité) dans l'état de l'échange automatique de prisonniers.
+        remapPlayerId: (oldId, newId) => _remapPlayerEverywhere(oldId, newId),
+    };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1294,30 +1577,6 @@ async function startGameForInvite(fullStateData = null) {
     await _makeStarter().startGuest(fullStateData);
 }
 
-// ═══════════════════════════════════════════════════════
-// MOBILE — Mise à jour de l'UI
-// ═══════════════════════════════════════════════════════
-
-/**
- * Met à jour le style de la carte mobile du joueur actif selon le tour bonus
- */
-
-
-
-// ═══════════════════════════════════════════════════════
-// ABBÉ — Rappel anticipé
-// ═══════════════════════════════════════════════════════
-
-/**
- * Rappeler l'Abbé depuis le plateau
- * Appelé quand le joueur clique sur l'Abbé rappelable en phase 2
- */
-// ═══════════════════════════════════════════════════════
-// MEEPLES
-// ═══════════════════════════════════════════════════════
-// ── Dragon prématuré : modales 1 et 2 ────────────────────────────────
-
-// Invités : modale dragon prématuré
 // ═══════════════════════════════════════════════════════
 // EVENT LISTENERS DU JEU
 // ═══════════════════════════════════════════════════════
@@ -1364,6 +1623,8 @@ function setupEventListeners() {
         hostDrawAndSend:         _hostDrawAndSend,
         hideAllCursors,
         clearDragonCursors,
+        clearTowerCursors, // ✨ NOUVEAU
+        checkPendingReciprocalExchange, // ✨ NOUVEAU : échange automatique de prisonniers différé à la fin du tour
         broadcastDragonState,
         startDragonTurnUI,
         advanceDragonTurnHost,
@@ -1398,6 +1659,10 @@ function _makeLobbyNavigator() {
         getHeartbeatManager:      () => heartbeatManager,
         getTurnManager:           () => turnManager,
         getPlayerColor:           () => playerColor,
+        // ✨ NOUVEAU — changement d'hôte au salon (HostMigration)
+        resetHostMigration:       () => hostMigration?.reset(),
+        leaveLobbyAsHost:         () => _getHostMigration().leaveLobbyAsHost(),
+        onLobbyHostLost:          () => _getHostMigration().onLobbyHostLost(),
         setInLobby:               (v) => { inLobby = v; },
         setIsHost:                (v) => { isHost = v; },
         setGameCode:              (v) => { gameCode = v; },
@@ -1418,6 +1683,8 @@ function _makeLobbyNavigator() {
             tilePlacement = null; meeplePlacement = null; turnManager = null;
             unplaceableManager = null; finalScoresManager = null;
             waitingToRedraw = false; pendingAbbePoints = null;
+            towerRules = null; // ✨ NOUVEAU
+            hostMigration?.reset(); // ✨ NOUVEAU : snapshot/élection propres à la partie terminée
             ruleRegistry.disable('base'); ruleRegistry.disable('abbot');
             ruleRegistry.disable('inns'); ruleRegistry.disable('builders');
         },

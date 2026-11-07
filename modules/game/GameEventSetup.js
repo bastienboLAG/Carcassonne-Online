@@ -22,6 +22,7 @@ export class GameEventSetup {
         this._installModals(d);
         this._installMobile(d);
         this._installMobileMenu(d);
+        this._installSelectorAutoClose(); // ✅ FIX : fermeture du sélecteur de meeple au toucher extérieur (mobile)
 
         this._installed = true;
         console.log('✅ Event listeners installés');
@@ -30,6 +31,26 @@ export class GameEventSetup {
     _closeMenu() {
         const popover = document.getElementById('game-menu-popover');
         if (popover) popover.style.display = 'none';
+    }
+
+    // ── Fermeture automatique du sélecteur de meeple ──────────────────────────
+
+    /**
+     * ✅ FIX : sur mobile, les boutons (annuler, terminer le tour, rotation…) sont branchés sur
+     * `touchend` avec preventDefault() : le navigateur ne génère alors AUCUN événement `click`,
+     * donc l'écouteur « clic extérieur » posé sur `document` par chaque sélecteur ne se
+     * déclenchait jamais. Le sélecteur restait ouvert après une annulation de tuile ou une fin de
+     * tour, et permettait de poser un meeple hors de propos.
+     * `pointerdown` est émis pour tout contact (souris ou tactile), indépendamment de
+     * preventDefault() sur touchend. Tous les sélecteurs (meeple, portail, fée/abbé, tour) partagent
+     * l'id `meeple-selector` : un seul écouteur global, installé une fois (garde `_installed`),
+     * les couvre donc tous. Phase de capture : insensible à un éventuel stopPropagation().
+     */
+    _installSelectorAutoClose() {
+        document.addEventListener('pointerdown', (e) => {
+            const selector = document.getElementById('meeple-selector');
+            if (selector && !selector.contains(e.target)) selector.remove();
+        }, true);
     }
 
     // ── Rotation tuile ────────────────────────────────────────────────────────
@@ -71,6 +92,13 @@ export class GameEventSetup {
                     const _t = d.hostDrawAndSend();
                     if (_t) d.getTurnManager().receiveYourTurn(_t.id);
                     d.setWaitingToRedraw(false);
+                    // ✅ FIX : la repioche (tuile implaçable / dragon sans volcan remélangé) modifie la
+                    // tuile en main ET la pioche (tuile détruite ou remélangée) SANS passer par
+                    // syncTurnEnd : le dernier snapshot de changement d'hôte restait donc périmé
+                    // (ancienne tuile, ancienne pioche). Un hôte perdu juste après faisait reprendre
+                    // la partie par son successeur avec une tuile déjà écartée. On rediffuse le
+                    // snapshot (hook posé par HostMigration.install, sans effet hors hôte).
+                    d.getGameSync()?.onTurnEndSynced?.();
                 } else {
                     const gameSync = d.getGameSync();
                     if (gameSync) gameSync.syncUnplaceableRedraw();
@@ -203,7 +231,13 @@ export class GameEventSetup {
             document.querySelectorAll('.meeple-cursors-container').forEach(c => c.remove());
             gameState._pendingPrincessTile = null;
             gameState._pendingPortalTile   = null;
+            gameState._pendingTowerCapture = null; // ✨ NOUVEAU
+            d.clearTowerCursors?.();               // ✨ NOUVEAU
             if (d.getUndoManager()) d.getUndoManager().reset();
+            d.checkPendingReciprocalExchange?.();  // ✨ NOUVEAU : échange automatique de prisonniers différé
+                                                    // à la fin du tour du capturant — voir TowerUI.checkPendingReciprocalExchange
+                                                    // et la note dans executeTowerCaptureHost pour le raisonnement (l'action
+                                                    // n'étant plus annulable à partir d'ici, l'échange peut être résolu sans risque)
 
             if (gameConfig.tileGroups?.dragon && gameConfig.extensions?.dragon && d.getDragonRules() && gameState._pendingDragonTile) {
                 const { playerIndex } = gameState._pendingDragonTile;
@@ -382,11 +416,27 @@ export class GameEventSetup {
                 zones:          zoneMerger.registry.serialize(),
                 tileToZone:     Array.from(zoneMerger.tileToZone.entries()),
                 placedMeeples:  JSON.parse(JSON.stringify(placedMeeples)),
-                playerMeeples:  gameState.players.map(p => ({ id: p.id, meeples: p.meeples, hasAbbot: p.hasAbbot, hasLargeMeeple: p.hasLargeMeeple, hasBuilder: p.hasBuilder, hasPig: p.hasPig })),
+                playerMeeples:  gameState.players.map(p => ({
+                    id: p.id, meeples: p.meeples, hasAbbot: p.hasAbbot,
+                    hasLargeMeeple: p.hasLargeMeeple, hasBuilder: p.hasBuilder, hasPig: p.hasPig,
+                    towerPieces: p.towerPieces, // ✨ NOUVEAU
+                    // ✅ FIX : rachat de prisonnier — transmettre aux invités le score et le
+                    // détail "Rachats" DÉJÀ restaurés par undoManager.undo() ci-dessus (même
+                    // raison que turnBuybackUsed juste en dessous), sinon les points gagnés/
+                    // perdus par le rachat annulé restaient acquis côté invités.
+                    score: p.score, buybacks: p.scoreDetail?.buybacks ?? 0
+                })),
                 fairyState:     JSON.parse(JSON.stringify(gameState.fairyState ?? { ownerId: null, meepleKey: null })),
                 dragonPos:      JSON.parse(JSON.stringify(gameState.dragonPos ?? null)),
                 dragonPhase:    JSON.parse(JSON.stringify(gameState.dragonPhase ?? {})),
-                pendingPortalTile: gameState._pendingPortalTile ? JSON.parse(JSON.stringify(gameState._pendingPortalTile)) : null
+                pendingPortalTile: gameState._pendingPortalTile ? JSON.parse(JSON.stringify(gameState._pendingPortalTile)) : null,
+                extraState:     JSON.parse(JSON.stringify(gameState.extraState)), // ✨ NOUVEAU
+                // ✅ FIX : rachat de prisonnier — transmettre aux invités la valeur DÉJÀ
+                // restaurée par undoManager.undo() ci-dessus (restoreSnapshot mutant
+                // gameState._turnBuybackUsed en cohérence avec extraState.prisoners), pour
+                // qu'ils lèvent aussi le blocage "une rançon par tour" quand le rachat qui
+                // l'avait posé vient d'être annulé.
+                turnBuybackUsed: gameState._turnBuybackUsed ?? false
             };
 
             undoManager.applyLocally(undoneAction);
